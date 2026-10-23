@@ -1,6 +1,88 @@
 // Copyright 2026 Google LLC
 // SPDX-License-Identifier: Apache-2.0
 
+// Wheel ELF system dependency extraction infers the C, C++, and Fortran shared
+// library packages required to rebuild a Linux platform wheel from source.
+//
+// Python binary wheels (`manylinux` and `musllinux`) do not declare external
+// system libraries in `.dist-info` metadata. Instead, compiled Python extension
+// modules and bundled shared libraries inside the wheel archive retain ELF
+// `.dynamic` sections (`SHT_DYNAMIC`) and dynamic string tables (`.dynstr`)
+// that record the shared object name (SONAME) a library provides (`DT_SONAME`)
+// and the shared libraries it links against (`DT_NEEDED`).
+//
+// When the PyPA `auditwheel repair` tool builds a distributable wheel, it
+// checks every ELF binary's `DT_NEEDED` imports against the target platform
+// tag's PEP symbol policy:
+//   - External libraries outside the policy: `auditwheel` copies the resolved
+//     shared library file into `<pkg>.libs/` (or `.libs_<pkg>/` in older
+//     `auditwheel` releases), inserts an 8-character hash before the first dot
+//     in both the filename and the library's `DT_SONAME` (such as
+//     `libcgraph-17278668.so.6.0.0`) to prevent dynamic linker collisions, and
+//     rewrites the importing binary's `DT_NEEDED` entry via `patchelf`.
+//   - Policy-allowlisted libraries: Libraries that the platform policy assumes
+//     the host system provides (such as `libc.so.6`, `libm.so.6`, `libGL.so.1`,
+//     and `libX11.so.6`) are not copied into `.libs/` and keep their original
+//     `DT_NEEDED` entries.
+//   - Wheel-internal libraries: Shared libraries installed inside the package's
+//     own module tree outside `.libs/` (such as `torch/lib/libc10.so`) are
+//     built by the project itself rather than provided by system packages.
+//
+// `inferELFSystemDeps` recovers the upstream system package specifiers in four
+// steps:
+//  1. Candidate collection (`isBundledLibPath`): Scans `.so` and `.so.<ver>`
+//     ELF entries (up to `maxELFFileSize`) in the wheel zip archive. Each ELF
+//     file's own name is taken from `DT_SONAME` when present, falling back to
+//     its archive filename. For bundled files in `<pkg>.libs/` or
+//     `.libs_<pkg>/`, that name is added as a candidate. For shared objects
+//     outside `.libs/`, both the archive filename and `DT_SONAME` are recorded
+//     in `internalLibs` so intra-wheel links are ignored. Every ELF file's
+//     `DT_NEEDED` imports are also collected as candidates.
+//  2. Unbundling and SONAME normalization (`unbundledSoname`): Strips the
+//     `auditwheel` `-<8+ hex>` hash suffix (`auditwheelHashPat`) and collapses
+//     3-component `major.minor.patch` symlink target versions back to the
+//     major application binary interface (ABI) version (`sonameFullVersionPat`,
+//     turning `libcgraph-17278668.so.6.0.0` into `libcgraph.so.6`).
+//     Two-component versions such as `libssl.so.1.1` are kept intact because
+//     the minor number is part of the ABI SONAME.
+//  3. Filtering (`isBuiltinLibrary`, `libraryStem`): Drops `internalLibs`,
+//     Python extension modules (`.cpython-*`, `.pypy*`, `.abi3.so`), names
+//     without a `lib<stem>.so` prefix, and core C, C++, Fortran, GCC, and
+//     `libpython` runtime libraries pre-installed in PyPA build containers
+//     (`builtinLibraries` and `builtinLibPrefixes`). Non-core PEP 513 and
+//     PEP 599 allowlisted libraries such as `libGL.so.1` and `libX11.so.6` are
+//     retained so their development headers are installed when an extension
+//     links against them.
+//  4. Package manager formatting (`formatLibraryDeps`): Rebuilding from source
+//     requires both the runtime shared library and the development package that
+//     provides headers and the unversioned linker symlink (`lib<stem>.so` for
+//     `-l<stem>`):
+//       - Glibc (`manylinux` / RPM `yum`): `<soname>()(64bit)` selects the
+//         runtime package via the virtual capability that `rpmbuild` generates
+//         from `DT_SONAME`. `/usr/lib64/lib<stem>.so` selects the `-devel`
+//         package via RPM file-path resolution on the unversioned linker
+//         symlink.
+//       - Musl (`musllinux` / Alpine `apk`): `so:<soname>` selects the runtime
+//         package via `apk`'s virtual shared-object index, and `pc:lib<stem>`
+//         selects the `-dev` package via `apk`'s `pkg-config` virtual provider
+//         index because `apk` does not index arbitrary file paths.
+//
+// References:
+//   - System V ABI, Ch. 5 (Dynamic Linking: `.dynamic`, `DT_NEEDED`, `DT_SONAME`):
+//     https://refspecs.linuxfoundation.org/elf/gabi4+/ch5.dynamic.html
+//   - PyPA `auditwheel` (`repair`, `.libs` grafting, and `patchelf` hashing):
+//     https://github.com/pypa/auditwheel
+//   - PEP 513 (`manylinux1`), PEP 599 (`manylinux2014`), PEP 600 (perennial
+//     `manylinux`), and PEP 656 (`musllinux`):
+//     https://peps.python.org/pep-0513/
+//     https://peps.python.org/pep-0599/
+//     https://peps.python.org/pep-0600/
+//     https://peps.python.org/pep-0656/
+//   - Fedora Packaging Guidelines (Devel Packages and unversioned `.so` symlinks):
+//     https://docs.fedoraproject.org/en-US/packaging-guidelines/#_devel_packages
+//   - Alpine Linux `APKBUILD` Reference (`so:` and `pc:` virtual providers):
+//     https://wiki.alpinelinux.org/wiki/APKBUILD_Reference
+
 package pypi
 
 import (
@@ -117,9 +199,9 @@ func formatLibraryDeps(soname string, libc platform.LibcImpl) []string {
 	}
 }
 
-// inferELFSystemDeps extracts shared library dependencies from Executable and
-// Linkable Format (ELF) shared objects in a wheel archive and formats them for
-// the target libc's package manager.
+// inferELFSystemDeps extracts shared library dependencies from ELF shared
+// objects in a wheel archive and formats them for the target libc's package
+// manager.
 func inferELFSystemDeps(zr *zip.Reader, libc platform.LibcImpl) ([]string, error) {
 	var rawCandidates []string
 	internalLibs := make(map[string]bool)
