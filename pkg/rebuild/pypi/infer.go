@@ -588,16 +588,17 @@ func inferBaseImage(pins platform.CibuildwheelPinTable, platformTag string, uplo
 }
 
 // inferBuildRoot returns the absolute path that upstream built the repository
-// at, as recorded in the debug info of the wheel's extension modules. It
-// returns an empty string, which builds in the checkout, if the debug info
-// records no usable root or the checkout itself.
+// at, as recorded in the wheel's extension modules, from DWARF debug info if
+// present or .rodata source paths if stripped. It returns an empty string,
+// which builds in the checkout, if the wheel records no usable root or the
+// checkout itself.
 func inferBuildRoot(zr *zip.Reader, tree *object.Tree) string {
-	root, skipped, err := buildRootFromDWARF(zr, tree)
+	root, skipped, err := buildRootFromELF(zr, tree)
 	if len(skipped) > 0 {
-		log.Printf("Skipped %d modules whose debug info could not be read while inferring the build root, first: %v", len(skipped), skipped[0])
+		log.Printf("Skipped %d sections that could not be read while inferring the build root, first: %v", len(skipped), skipped[0])
 	}
 	if err != nil {
-		log.Println(errors.Wrap(err, "Failed to read the build root from DWARF"))
+		log.Println(errors.Wrap(err, "Failed to read the build root from the wheel"))
 	}
 	switch {
 	case root == "":
@@ -606,7 +607,7 @@ func inferBuildRoot(zr *zip.Reader, tree *object.Tree) string {
 		log.Printf("Upstream built in %s, which is the checkout, so no build root is needed", root)
 		return ""
 	}
-	log.Printf("Using build root %s from DWARF", root)
+	log.Printf("Using build root %s from the wheel", root)
 	return root
 }
 

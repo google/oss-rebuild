@@ -16,15 +16,16 @@ import (
 	"github.com/google/oss-rebuild/pkg/archive"
 )
 
+type elfSection struct {
+	name string
+	typ  elf.SectionType
+	data []byte
+}
+
 // elfWithUnits returns a minimal ELF shared object whose DWARF debug info holds
 // the given compile units, or a stripped one if there are none.
 func elfWithUnits(units ...compileUnit) []byte {
-	type section struct {
-		name string
-		typ  elf.SectionType
-		data []byte
-	}
-	sections := []section{{name: ".shstrtab", typ: elf.SHT_STRTAB}}
+	var sections []elfSection
 	if len(units) > 0 {
 		// A single abbreviation declares compile units without children whose
 		// name and comp_dir are inline strings.
@@ -40,8 +41,23 @@ func elfWithUnits(units ...compileUnit) []byte {
 			info = append(info, 8)
 			info = append(info, die...)
 		}
-		sections = append(sections, section{".debug_abbrev", elf.SHT_PROGBITS, abbrev}, section{".debug_info", elf.SHT_PROGBITS, info})
+		sections = append(sections, elfSection{".debug_abbrev", elf.SHT_PROGBITS, abbrev}, elfSection{".debug_info", elf.SHT_PROGBITS, info})
 	}
+	return buildELF(sections...)
+}
+
+// elfWithRodata returns a stripped ELF shared object whose .rodata section
+// holds the given NUL-terminated strings.
+func elfWithRodata(strs ...string) []byte {
+	var rodata []byte
+	for _, s := range strs {
+		rodata = append(append(rodata, s...), 0)
+	}
+	return buildELF(elfSection{".rodata", elf.SHT_PROGBITS, rodata})
+}
+
+func buildELF(extra ...elfSection) []byte {
+	sections := append([]elfSection{{name: ".shstrtab", typ: elf.SHT_STRTAB}}, extra...)
 	nameOffsets := make([]uint32, len(sections))
 	shstrtab := []byte{0}
 	for i, s := range sections {
@@ -87,14 +103,15 @@ func readWheel(t *testing.T, entries ...archive.ZipEntry) *zip.Reader {
 	return must(zip.NewReader(bytes.NewReader(whl), int64(len(whl))))
 }
 
-func TestCompileUnits(t *testing.T) {
+func TestSourceUnits(t *testing.T) {
 	speedups := compileUnit{Name: "pkg/_speedups.c", CompDir: "/project"}
 	parser := compileUnit{Name: "pkg/_parser.c", CompDir: "/project"}
 	zlib := compileUnit{Name: "deflate.c", CompDir: "/tmp/zlib-1.3.1"}
 	tests := []struct {
 		name        string
 		entries     []archive.ZipEntry
-		want        []compileUnit
+		wantDWARF   []compileUnit
+		wantRodata  []string
 		wantSkipped int
 	}{
 		{
@@ -104,7 +121,20 @@ func TestCompileUnits(t *testing.T) {
 				zipEntry("pkg/_speedups.cpython-312-x86_64-linux-gnu.so", string(elfWithUnits(speedups))),
 				zipEntry("pkg/_parser.abi3.so", string(elfWithUnits(parser, speedups))),
 			},
-			want: []compileUnit{speedups, parser, speedups},
+			wantDWARF: []compileUnit{speedups, parser, speedups},
+		},
+		{
+			name: "RodataSourcePaths",
+			entries: []archive.ZipEntry{
+				zipEntry("pkg/_speedups.cpython-312-x86_64-linux-gnu.so", string(elfWithRodata(
+					"/tmp/build/pkg/src/module.c",
+					"/io/native/include/header.hpp",
+					"/root/.cargo/registry/src/compact_str-0.9.0/src/lib.rs",
+					"relative/path.c",
+					"assertion failed: x != 0 in /project/src/module.c",
+				))),
+			},
+			wantRodata: []string{"/tmp/build/pkg/src/module.c", "/io/native/include/header.hpp"},
 		},
 		{
 			name: "VendoredLibraries",
@@ -112,17 +142,14 @@ func TestCompileUnits(t *testing.T) {
 				zipEntry("pkg.libs/libz-1a2b3c4d.so", string(elfWithUnits(zlib))),
 				zipEntry("pkg/.libs/libz.so", string(elfWithUnits(zlib))),
 			},
-			want: nil,
 		},
 		{
 			name:    "StrippedModule",
 			entries: []archive.ZipEntry{zipEntry("pkg/_speedups.cpython-312-x86_64-linux-gnu.so", string(elfWithUnits()))},
-			want:    nil,
 		},
 		{
 			name:    "NotELF",
 			entries: []archive.ZipEntry{zipEntry("pkg/_speedups.so", "INPUT(libspeedups.so.1)\n")},
-			want:    nil,
 		},
 		{
 			name: "MalformedModule",
@@ -130,18 +157,32 @@ func TestCompileUnits(t *testing.T) {
 				zipEntry("pkg/_broken.so", "\x7fELF\x02\x01"),
 				zipEntry("pkg/_speedups.cpython-312-x86_64-linux-gnu.so", string(elfWithUnits(speedups))),
 			},
-			want:        []compileUnit{speedups},
+			wantDWARF:   []compileUnit{speedups},
+			wantSkipped: 1,
+		},
+		{
+			name: "MalformedDebugInfoKeepsRodata",
+			entries: []archive.ZipEntry{
+				zipEntry("pkg/_speedups.cpython-312-x86_64-linux-gnu.so", string(buildELF(
+					elfSection{".debug_info", elf.SHT_PROGBITS, []byte{0xff, 0xff, 0xff}},
+					elfSection{".rodata", elf.SHT_PROGBITS, []byte("/project/pkg/_speedups.c\x00")},
+				))),
+			},
+			wantRodata:  []string{"/project/pkg/_speedups.c"},
 			wantSkipped: 1,
 		},
 	}
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
-			got, skipped := compileUnits(readWheel(t, tc.entries...))
-			if diff := cmp.Diff(tc.want, got); diff != "" {
-				t.Errorf("compileUnits() returned diff (-want +got):\n%s", diff)
+			gotDWARF, gotRodata, skipped := sourceUnits(readWheel(t, tc.entries...))
+			if diff := cmp.Diff(tc.wantDWARF, gotDWARF); diff != "" {
+				t.Errorf("sourceUnits() DWARF diff (-want +got):\n%s", diff)
+			}
+			if diff := cmp.Diff(tc.wantRodata, gotRodata); diff != "" {
+				t.Errorf("sourceUnits() .rodata diff (-want +got):\n%s", diff)
 			}
 			if len(skipped) != tc.wantSkipped {
-				t.Errorf("compileUnits() skipped %d modules, want %d: %v", len(skipped), tc.wantSkipped, skipped)
+				t.Errorf("sourceUnits() skipped %d modules, want %d: %v", len(skipped), tc.wantSkipped, skipped)
 			}
 		})
 	}
@@ -303,6 +344,73 @@ func TestVoteBuildRoot(t *testing.T) {
 			}
 			if got := voteBuildRoot(tc.units, files); got != tc.want {
 				t.Errorf("voteBuildRoot() = %q, want %q", got, tc.want)
+			}
+		})
+	}
+}
+
+func TestVoteRodataBuildRoot(t *testing.T) {
+	tests := []struct {
+		name  string
+		files []string
+		paths []string
+		want  string
+	}{
+		{
+			name:  "ProjectSource",
+			files: []string{"src/module.c"},
+			paths: []string{"/project/src/module.c"},
+			want:  "/project",
+		},
+		{
+			name:  "LongestRepositoryPath",
+			files: []string{"include/log.h", "lib/include/log.h"},
+			paths: []string{"/io/lib/include/log.h"},
+			want:  "/io",
+		},
+		{
+			name:  "TopLevelFile",
+			files: []string{"config.h"},
+			paths: []string{"/opt/vendor/include/config.h"},
+			want:  "",
+		},
+		{
+			name:  "InstalledPackageHeader",
+			files: []string{"src/module.c", "pybind11/detail/common.h"},
+			paths: []string{
+				"/project/src/module.c",
+				"/tmp/pip-build-env-a1b2/overlay/lib/python3.12/site-packages/pybind11/include/pybind11/detail/common.h",
+				"/tmp/pip-build-env-a1b2/overlay/lib/python3.12/site-packages/pybind11/include/pybind11/detail/common.h",
+			},
+			want: "/project",
+		},
+		{
+			name:  "CargoRegistrySource",
+			files: []string{"zstd/lib/common/xxhash.c"},
+			paths: []string{"/root/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/zstd-sys-2.0.13/zstd/lib/common/xxhash.c"},
+			want:  "",
+		},
+		{
+			name:  "GeneratedSource",
+			files: []string{"pkg/_mod.pyx"},
+			paths: []string{"/project/build/pkg/_mod.c"},
+			want:  "",
+		},
+		{
+			name:  "ImageDirRoot",
+			files: []string{"python/src/module.c"},
+			paths: []string{"/tmp/python/src/module.c"},
+			want:  "",
+		},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			files := make(map[string]bool)
+			for _, f := range tc.files {
+				files[f] = true
+			}
+			if got := voteRodataBuildRoot(tc.paths, files); got != tc.want {
+				t.Errorf("voteRodataBuildRoot() = %q, want %q", got, tc.want)
 			}
 		})
 	}

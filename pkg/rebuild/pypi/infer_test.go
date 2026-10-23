@@ -768,7 +768,11 @@ func TestInferBaseImage(t *testing.T) {
 }
 
 func TestInferBuildRoot(t *testing.T) {
-	repo := must(gitxtest.CreateRepo([]gitxtest.Commit{{ID: "initial-commit", Files: gitxtest.FileContent{"src/module.c": "int answer = 42;\n"}}}, nil))
+	repo := must(gitxtest.CreateRepo([]gitxtest.Commit{{ID: "initial-commit", Files: gitxtest.FileContent{
+		"src/module.c":        "int answer = 42;\n",
+		"include/lib/log.h":   "",
+		"include/lib/array.h": "",
+	}}}, nil))
 	tree := must(must(repo.CommitObject(repo.Commits["initial-commit"])).Tree())
 	tests := []struct {
 		name   string
@@ -779,6 +783,18 @@ func TestInferBuildRoot(t *testing.T) {
 			name:   "DebugInfo",
 			module: elfWithUnits(compileUnit{Name: "src/module.c", CompDir: "/tmp/build/pkg"}),
 			want:   "/tmp/build/pkg",
+		},
+		{
+			name:   "StrippedWithRodata",
+			module: elfWithRodata("/tmp/build/pkg/src/module.c"),
+			want:   "/tmp/build/pkg",
+		},
+		{
+			// Headers that a CI step installed into a system directory must
+			// not outvote the sources built in the project.
+			name:   "StrippedWithInstalledHeaders",
+			module: elfWithRodata("/project/src/module.c", "/usr/local/include/lib/log.h", "/usr/local/include/lib/array.h"),
+			want:   "/project",
 		},
 		{
 			name:   "Stripped",

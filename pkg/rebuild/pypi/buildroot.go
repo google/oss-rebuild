@@ -19,10 +19,11 @@
 // Extraction and voting follow these rules:
 //   - Inspected modules: .so members up to maxModuleSize, excluding shared
 //     libraries that auditwheel grafts into "<distribution>.libs/" or
-//     "<pkg>/.libs/". Modules whose debug info cannot be read are left out of
-//     the vote and returned in skipped so one malformed module does not hide
-//     the root recorded by the others.
-//   - Compile unit paths (DWARF 4 §3.1.1 DW_TAG_compile_unit):
+//     "<pkg>/.libs/". Modules or sections that cannot be read are left out of
+//     the vote and returned in skipped so one malformed module or debug
+//     section does not hide the root recorded by the others.
+//   - Compile unit paths (DWARF 4 §3.1.1 DW_TAG_compile_unit, preferred when
+//     present):
 //       - C and C++ (setuptools, meson-python): DW_AT_name is relative to
 //         DW_AT_comp_dir (the project root or a "build/<abi>" subdirectory)
 //         and resolves to "<comp_dir>/<name>".
@@ -35,17 +36,31 @@
 //       - Toolchain and Link-Time Optimization (LTO) units: C runtime startup
 //         objects and "<artificial>" LTO partitions do not match the tree and
 //         drop out.
+//   - .rodata source paths (fallback when DWARF yields no root):
+//       - Stripped modules and CMake Release builds without "-g" have no
+//         .debug_info section, but retain NUL-terminated __FILE__ strings from
+//         assertions and logging macros in .rodata.
+//       - Only absolute C and C++ source and header paths matching
+//         buildRootPat are considered. Rust .rs paths are excluded because
+//         rustc records relative paths for workspace crates and absolute paths
+//         only for external Cargo dependencies, whose "src/lib.rs" suffix
+//         would match the workspace crate.
+//       - Because .rodata has no DW_AT_comp_dir to anchor paths and includes
+//         strings from all linked headers, the repository-relative suffix must
+//         contain "/" (so top-level names like "config.h" cannot match
+//         unrelated headers) and generated .pyx or .py sources are not
+//         matched.
 //   - Repository suffix matching: The longest suffix of the clean absolute
 //     source path that names a file in the tree is the repository-relative
 //     path, and the prefix before it is the candidate build root. Taking the
 //     longest suffix keeps a top-level file from shadowing a file of the same
 //     name in a subdirectory.
-//   - Generated C and C++ (Cython, mypyc): When a .c or .cpp suffix is not in
-//     the tree, a sibling .pyx or .py file in the tree matches only if
-//     DW_AT_comp_dir lies within the candidate root. This admits in-tree
-//     Cython builds while rejecting mypyc and Cython build_dir outputs written
-//     to build directories that mirror the package layout. Relative DW_AT_name
-//     paths require the same containment.
+//   - Generated C and C++ (Cython, mypyc, DWARF only): When a .c or .cpp
+//     suffix is not in the tree, a sibling .pyx or .py file in the tree matches
+//     only if DW_AT_comp_dir lies within the candidate root. This admits
+//     in-tree Cython builds while rejecting mypyc and Cython build_dir outputs
+//     written to build directories that mirror the package layout. Relative
+//     DW_AT_name paths require the same containment.
 //   - Voting: Candidate roots inside "site-packages", "dist-packages" or
 //     ".cargo" hold unpacked dependencies rather than the repository and drop
 //     out alongside roots rejected by validateBuildRoot. The root with the
@@ -85,37 +100,54 @@ type compileUnit struct {
 	CompDir string // working directory of the compiler (DW_AT_comp_dir)
 }
 
-// buildRootFromDWARF returns the absolute path that upstream built the
-// repository at, as recorded in the DWARF debug info of the wheel's extension
-// modules, or "" if no debug info refers to a file in tree. skipped holds an
-// error for each module whose debug info could not be read.
-func buildRootFromDWARF(zr *zip.Reader, tree *object.Tree) (root string, skipped []error, err error) {
-	units, skipped := compileUnits(zr)
-	if len(units) == 0 {
+// buildRootFromELF returns the absolute path that upstream built the
+// repository at, as recorded in the ELF sections of the wheel's extension
+// modules, or "" if none refer to a file in tree. DWARF debug info takes
+// precedence over .rodata source paths. skipped holds an error for each module
+// or section that could not be read.
+func buildRootFromELF(zr *zip.Reader, tree *object.Tree) (root string, skipped []error, err error) {
+	units, rodataPaths, skipped := sourceUnits(zr)
+	if len(units) == 0 && len(rodataPaths) == 0 {
 		return "", skipped, nil
 	}
 	files, err := repoFiles(tree)
 	if err != nil {
 		return "", skipped, errors.Wrap(err, "listing repository files")
 	}
-	return voteBuildRoot(units, files), skipped, nil
+	if root := voteBuildRoot(units, files); root != "" {
+		return root, skipped, nil
+	}
+	return voteRodataBuildRoot(rodataPaths, files), skipped, nil
 }
 
-// compileUnits returns the DWARF compile units of the wheel's extension
-// modules, recording an error in skipped for each module that cannot be read.
-func compileUnits(zr *zip.Reader) (units []compileUnit, skipped []error) {
+// sourceUnits returns the DWARF compile units and .rodata source paths of the
+// wheel's extension modules, recording an error in skipped for each module or
+// section that cannot be read.
+func sourceUnits(zr *zip.Reader) (units []compileUnit, rodataPaths []string, skipped []error) {
 	for _, f := range zr.File {
 		if !isExtensionModule(f.Name) || f.UncompressedSize64 > maxModuleSize {
 			continue
 		}
-		moduleUnits, err := moduleCompileUnits(f)
+		ef, err := openELF(f)
 		if err != nil {
 			skipped = append(skipped, errors.Wrapf(err, "reading %s", f.Name))
 			continue
 		}
-		units = append(units, moduleUnits...)
+		if ef == nil {
+			continue
+		}
+		du, err := moduleCompileUnits(ef)
+		if err != nil {
+			skipped = append(skipped, errors.Wrapf(err, "reading debug info of %s", f.Name))
+		}
+		units = append(units, du...)
+		rp, err := moduleRodataPaths(ef)
+		if err != nil {
+			skipped = append(skipped, errors.Wrapf(err, "reading .rodata of %s", f.Name))
+		}
+		rodataPaths = append(rodataPaths, rp...)
 	}
-	return units, skipped
+	return units, rodataPaths, skipped
 }
 
 // isExtensionModule reports whether name is a shared object outside the
@@ -125,9 +157,8 @@ func isExtensionModule(name string) bool {
 	return strings.HasSuffix(name, ".so") && !strings.Contains(path.Dir(name)+"/", ".libs/")
 }
 
-// moduleCompileUnits returns the compile units in the debug info of f, or
-// nil, nil if f is not an ELF file or is stripped.
-func moduleCompileUnits(f *zip.File) ([]compileUnit, error) {
+// openELF parses f as an ELF file, or returns nil, nil if it is not ELF.
+func openELF(f *zip.File) (*elf.File, error) {
 	rc, err := f.Open()
 	if err != nil {
 		return nil, errors.Wrap(err, "opening module")
@@ -144,6 +175,12 @@ func moduleCompileUnits(f *zip.File) ([]compileUnit, error) {
 	if err != nil {
 		return nil, errors.Wrap(err, "parsing ELF")
 	}
+	return ef, nil
+}
+
+// moduleCompileUnits returns the compile units in the debug info of ef, or
+// nil, nil if ef is stripped.
+func moduleCompileUnits(ef *elf.File) ([]compileUnit, error) {
 	// NOTE: ef.DWARF returns an error when debug sections are absent, so
 	// checking for them first distinguishes stripped modules from malformed
 	// debug info.
@@ -173,6 +210,39 @@ func moduleCompileUnits(f *zip.File) ([]compileUnit, error) {
 	}
 }
 
+// moduleRodataPaths returns the NUL-terminated C and C++ source paths in the
+// .rodata section of ef.
+func moduleRodataPaths(ef *elf.File) ([]string, error) {
+	sec := ef.Section(".rodata")
+	if sec == nil {
+		return nil, nil
+	}
+	b, err := sec.Data()
+	if err != nil {
+		return nil, errors.Wrap(err, "reading .rodata")
+	}
+	var paths []string
+	for len(b) > 0 {
+		var entry []byte
+		entry, b, _ = bytes.Cut(b, []byte{0})
+		if isSourcePath(entry) {
+			paths = append(paths, string(entry))
+		}
+	}
+	return paths, nil
+}
+
+// isSourcePath reports whether b is an absolute C or C++ source or header path
+// made of characters valid in a build root.
+func isSourcePath(b []byte) bool {
+	switch path.Ext(string(b)) {
+	case ".c", ".cc", ".cpp", ".cxx", ".h", ".hh", ".hpp", ".hxx":
+		return buildRootPat.Match(b)
+	default:
+		return false
+	}
+}
+
 func repoFiles(tree *object.Tree) (map[string]bool, error) {
 	files := make(map[string]bool)
 	w := object.NewTreeWalker(tree, true, nil)
@@ -191,12 +261,27 @@ func repoFiles(tree *object.Tree) (map[string]bool, error) {
 	}
 }
 
-// voteBuildRoot returns the candidate root that the most compile units agree
-// on, breaking ties by the lexically smallest root.
 func voteBuildRoot(units []compileUnit, files map[string]bool) string {
-	votes := make(map[string]int)
+	roots := make([]string, 0, len(units))
 	for _, u := range units {
-		root := u.buildRoot(files)
+		roots = append(roots, u.buildRoot(files))
+	}
+	return mostCommonRoot(roots)
+}
+
+func voteRodataBuildRoot(paths []string, files map[string]bool) string {
+	roots := make([]string, 0, len(paths))
+	for _, p := range paths {
+		roots = append(roots, rodataBuildRoot(p, files))
+	}
+	return mostCommonRoot(roots)
+}
+
+// mostCommonRoot returns the usable root outside dependency trees that occurs
+// most often in roots, breaking ties by the lexically smallest root.
+func mostCommonRoot(roots []string) string {
+	votes := make(map[string]int)
+	for _, root := range roots {
 		if root == "" || isDependencyTree(root) || (root != checkoutDir && validateBuildRoot(root) != nil) {
 			continue
 		}
@@ -219,6 +304,25 @@ func isDependencyTree(root string) bool {
 	return slices.ContainsFunc(strings.Split(root, "/"), func(dir string) bool {
 		return slices.Contains(dependencyTreeDirs, dir)
 	})
+}
+
+// rodataBuildRoot returns the prefix of p before its longest multi-segment
+// suffix in files, or "" if no suffix matches.
+func rodataBuildRoot(p string, files map[string]bool) string {
+	p = path.Clean(p)
+	for i := 1; i < len(p); i++ {
+		if p[i] != '/' {
+			continue
+		}
+		root, rel := p[:i], p[i+1:]
+		if !strings.Contains(rel, "/") {
+			return ""
+		}
+		if files[rel] {
+			return root
+		}
+	}
+	return ""
 }
 
 // buildRoot returns the prefix of the unit's source path before its longest
