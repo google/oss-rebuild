@@ -780,6 +780,12 @@ func TestInferStrategyPlatformWheelSystemDeps(t *testing.T) {
         version = "1.14"
         [build-system]
         requires = ["setuptools>=61"]
+        [[tool.cibuildwheel.overrides]]
+        select = "*-manylinux*"
+        before-all = "dnf install -y graphviz-devel"
+        [[tool.cibuildwheel.overrides]]
+        select = "*-musllinux*"
+        before-all = "apk add graphviz-dev"
 `, nil))
 	filename := "pygraphviz-1.14-cp310-cp310-musllinux_1_2_x86_64.whl"
 	wheelURL := "https://files.pythonhosted.org/" + filename
@@ -816,7 +822,7 @@ func TestInferStrategyPlatformWheelSystemDeps(t *testing.T) {
 	if !ok {
 		t.Fatalf("InferStrategy() returned %T, want *PlatformWheelBuild", strat)
 	}
-	want := []string{"so:libcgraph.so.6", "pc:libcgraph"}
+	want := []string{"graphviz-dev", "so:libcgraph.so.6", "pc:libcgraph"}
 	if diff := cmp.Diff(want, got.SystemDeps); diff != "" {
 		t.Errorf("PlatformWheelBuild.SystemDeps diff (-want +got):\n%s", diff)
 	}
