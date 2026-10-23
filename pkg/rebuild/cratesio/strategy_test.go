@@ -296,3 +296,41 @@ printf '[source.crates-io]\nreplace-with = "timewarp"\n[source.timewarp]\nregist
 		})
 	}
 }
+
+func TestCratesIOCargoPackageMissingTimewarpHost(t *testing.T) {
+	defaultLocation := rebuild.Location{
+		Dir:  "the_dir",
+		Ref:  "the_ref",
+		Repo: "the_repo",
+	}
+	target := rebuild.Target{Ecosystem: rebuild.CratesIO, Package: "the_package", Version: "the_version", Artifact: "the_artifact"}
+	tests := []struct {
+		name     string
+		strategy rebuild.Strategy
+	}{
+		{
+			name: "SparseRegistry",
+			strategy: &CratesIOCargoPackage{
+				Location:       defaultLocation,
+				RustVersion:    "1.77.0",
+				RegistryCommit: "abc1234",
+			},
+		},
+		{
+			name: "GitIndexRegistry",
+			strategy: &CratesIOCargoPackage{
+				Location:       defaultLocation,
+				RustVersion:    "1.55.0",
+				RegistryCommit: "abc1234",
+				PackageNames:   []string{"serde", "tokio"},
+			},
+		},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			if _, err := tc.strategy.GenerateFor(target, rebuild.BuildEnv{HasRepo: true}); err == nil {
+				t.Errorf("Strategy%v.GenerateFor() succeeded unexpectedly, want error when TimewarpHost is unset", tc.strategy)
+			}
+		})
+	}
+}
