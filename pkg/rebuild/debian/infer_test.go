@@ -22,49 +22,59 @@ func TestInferStrategy(t *testing.T) {
 		Version:   "5.2.4-1",
 		Artifact:  "xz-utils_5.2.4-1_amd64.deb",
 	}
+	// NOTE: A response body can only be read once so each case needs its own call.
+	buildInfoCall := func() httpxtest.Call {
+		return httpxtest.Call{
+			URL: "https://buildinfos.debian.net/buildinfo-pool/x/xz-utils/xz-utils_5.2.4-1_amd64.buildinfo",
+			Response: &http.Response{
+				StatusCode: http.StatusOK,
+				Body: httpxtest.Body(textwrap.Dedent(`
+					Format: 1.0
+					Source: xz-utils
+					Binary: xz-utils
+					Architecture: amd64
+					Version: 5.2.4-1
+					Build-Architecture: amd64
+					Build-Path: /build/xz-utils-abc/xz-utils-5.2.4
+					Installed-Build-Depends:
+					 dpkg (= 1.22.13)
+					Environment:
+					 DEB_BUILD_OPTIONS="parallel=4"`)[1:]),
+			},
+		}
+	}
+	debootsnapSbuild := &DebootsnapSbuild{
+		BuildInfo: FileWithChecksum{
+			URL: "https://buildinfos.debian.net/buildinfo-pool/x/xz-utils/xz-utils_5.2.4-1_amd64.buildinfo",
+		},
+		Architecture:      "amd64",
+		BuildArch:         "amd64",
+		HostArch:          "amd64",
+		SrcPackage:        "xz-utils",
+		SrcVersion:        "5.2.4-1",
+		SrcVersionNoEpoch: "5.2.4-1",
+		BuildPath:         "/build/xz-utils-abc",
+		DscDir:            "xz-utils-abc",
+		DpkgVersion:       "1.22.13",
+		Env:               []string{"DEB_BUILD_OPTIONS=parallel=4"},
+	}
 	tests := []struct {
-		name  string
-		hint  rebuild.Strategy
-		calls []httpxtest.Call
-		want  rebuild.Strategy
+		name    string
+		hint    rebuild.Strategy
+		calls   []httpxtest.Call
+		want    rebuild.Strategy
+		wantErr bool
 	}{
 		{
-			name: "DefaultDebootsnapSbuild",
-			calls: []httpxtest.Call{
-				{
-					URL: "https://buildinfos.debian.net/buildinfo-pool/x/xz-utils/xz-utils_5.2.4-1_amd64.buildinfo",
-					Response: &http.Response{
-						StatusCode: http.StatusOK,
-						Body: httpxtest.Body(textwrap.Dedent(`
-							Format: 1.0
-							Source: xz-utils
-							Binary: xz-utils
-							Architecture: amd64
-							Version: 5.2.4-1
-							Build-Architecture: amd64
-							Build-Path: /build/xz-utils-abc/xz-utils-5.2.4
-							Installed-Build-Depends:
-							 dpkg (= 1.22.13)
-							Environment:
-							 DEB_BUILD_OPTIONS="parallel=4"`)[1:]),
-					},
-				},
-			},
-			want: &DebootsnapSbuild{
-				BuildInfo: FileWithChecksum{
-					URL: "https://buildinfos.debian.net/buildinfo-pool/x/xz-utils/xz-utils_5.2.4-1_amd64.buildinfo",
-				},
-				Architecture:      "amd64",
-				BuildArch:         "amd64",
-				HostArch:          "amd64",
-				SrcPackage:        "xz-utils",
-				SrcVersion:        "5.2.4-1",
-				SrcVersionNoEpoch: "5.2.4-1",
-				BuildPath:         "/build/xz-utils-abc",
-				DscDir:            "xz-utils-abc",
-				DpkgVersion:       "1.22.13",
-				Env:               []string{"DEB_BUILD_OPTIONS=parallel=4"},
-			},
+			name:  "DefaultDebootsnapSbuild",
+			calls: []httpxtest.Call{buildInfoCall()},
+			want:  debootsnapSbuild,
+		},
+		{
+			name:  "LocationHint",
+			hint:  &rebuild.LocationHint{Location: rebuild.Location{Repo: "https://salsa.debian.org/debian/xz-utils"}},
+			calls: []httpxtest.Call{buildInfoCall()},
+			want:  debootsnapSbuild,
 		},
 		{
 			name: "DebianPackageHint",
@@ -118,6 +128,12 @@ func TestInferStrategy(t *testing.T) {
 				UseNoCheck: true,
 			},
 		},
+		{
+			name:    "UnsupportedHint",
+			hint:    &rebuild.ManualStrategy{},
+			calls:   []httpxtest.Call{buildInfoCall()},
+			wantErr: true,
+		},
 	}
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
@@ -129,6 +145,12 @@ func TestInferStrategy(t *testing.T) {
 				Debian: debreg.HTTPRegistry{Client: client},
 			}
 			got, err := Rebuilder{}.InferStrategy(context.Background(), target, mux, nil, tc.hint)
+			if tc.wantErr {
+				if err == nil {
+					t.Fatalf("InferStrategy() = %v, want error", got)
+				}
+				return
+			}
 			if err != nil {
 				t.Fatalf("InferStrategy() unexpected error: %v", err)
 			}

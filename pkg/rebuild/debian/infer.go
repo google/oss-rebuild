@@ -89,7 +89,7 @@ func inferDSC(ctx context.Context, t rebuild.Target, mux rebuild.RegistryMux) (r
 	return &p, nil
 }
 
-func inferDebrebuild(t rebuild.Target, hint rebuild.Strategy) (rebuild.Strategy, error) {
+func inferDebrebuild(t rebuild.Target, hint *Debrebuild) (rebuild.Strategy, error) {
 	_, name, err := ParseComponent(t.Package)
 	if err != nil {
 		return nil, err
@@ -108,10 +108,8 @@ func inferDebrebuild(t rebuild.Target, hint rebuild.Strategy) (rebuild.Strategy,
 	infoURL := debian.BuildInfoURL(name, v, a.Arch)
 	// TODO: Populate the checksum
 	strat := Debrebuild{BuildInfo: FileWithChecksum{URL: infoURL, MD5: ""}}
-	if s, ok := hint.(*Debrebuild); ok {
-		if s.UseNoCheck {
-			strat.UseNoCheck = true
-		}
+	if hint != nil && hint.UseNoCheck {
+		strat.UseNoCheck = true
 	}
 	return &strat, nil
 }
@@ -219,10 +217,14 @@ func inferDebootsnapSbuild(ctx context.Context, t rebuild.Target, mux rebuild.Re
 }
 
 func (Rebuilder) InferStrategy(ctx context.Context, t rebuild.Target, mux rebuild.RegistryMux, rcfg *rebuild.RepoConfig, hint rebuild.Strategy) (rebuild.Strategy, error) {
-	if _, ok := hint.(*DebianPackage); ok {
+	switch h := hint.(type) {
+	case *DebianPackage:
 		return inferDSC(ctx, t, mux)
-	} else if _, ok := hint.(*Debrebuild); ok {
-		return inferDebrebuild(t, hint)
+	case *Debrebuild:
+		return inferDebrebuild(t, h)
+	case nil, *rebuild.LocationHint:
+		return inferDebootsnapSbuild(ctx, t, mux)
+	default:
+		return nil, errors.Errorf("unsupported hint type: %T", hint)
 	}
-	return inferDebootsnapSbuild(ctx, t, mux)
 }
