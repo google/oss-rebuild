@@ -3,7 +3,10 @@
 
 package bitmap
 
-import "math/bits"
+import (
+	"fmt"
+	"math/bits"
+)
 
 // Bitmap represents a bitmap data structure.
 type Bitmap struct {
@@ -33,28 +36,31 @@ func NewBatch(size, count int) []Bitmap {
 	return maps
 }
 
-// Set sets the bit at the given index to 1.
+// Set sets the bit at the given index to 1. It panics if index is out of range.
 func (b *Bitmap) Set(index int) {
-	if index < 0 || index >= b.size {
-		return
-	}
+	b.check(index)
 	b.bits[index/64] |= 1 << (index % 64)
 }
 
-// Clear sets the bit at the given index to 0.
+// Clear sets the bit at the given index to 0. It panics if index is out of range.
 func (b *Bitmap) Clear(index int) {
-	if index < 0 || index >= b.size {
-		return
-	}
+	b.check(index)
 	b.bits[index/64] &^= 1 << (index % 64)
 }
 
-// Get returns the value of the bit at the given index.
+// Get returns the value of the bit at the given index. It panics if index is
+// out of range.
 func (b *Bitmap) Get(index int) bool {
-	if index < 0 || index >= b.size {
-		return false
-	}
+	b.check(index)
 	return (b.bits[index/64] & (1 << (index % 64))) != 0
+}
+
+// check panics on an index outside the bitmap. An index past the size but
+// inside the last word would otherwise set a bit that Count reports.
+func (b *Bitmap) check(index int) {
+	if index < 0 || index >= b.size {
+		panic(fmt.Sprintf("bitmap index %d out of range [0, %d)", index, b.size))
+	}
 }
 
 // Count returns the number of set bits in the bitmap.
