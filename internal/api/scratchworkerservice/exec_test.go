@@ -200,6 +200,45 @@ func TestExecStart_TimeoutPartialOutputPreserved(t *testing.T) {
 	}
 }
 
+func TestExecStart_OutputCapped(t *testing.T) {
+	deps, store := newTestDeps(t)
+	const limit = 32 << 10
+	deps.MaxOutputBytes = limit
+	const opID = "op-capped"
+	req := stdReq(opID, "env-1", "yes", "runaway")
+	// Generous deadline: the cap, not the timeout, must end this op.
+	req.TimeoutSeconds = 60
+	if _, err := ExecStart(context.Background(), req, deps); err != nil {
+		t.Fatalf("ExecStart: %v", err)
+	}
+	st := waitForDone(t, store, opID, 10*time.Second)
+	if !st.OutputCapped || st.TimedOut || st.ErrMsg != "" {
+		t.Errorf("status = %+v; want OutputCapped alone", st)
+	}
+	if st.TotalBytes != limit {
+		t.Errorf("TotalBytes = %d; want %d", st.TotalBytes, limit)
+	}
+	if got := readAll(t, store, opID); len(got) != limit {
+		t.Errorf("captured %d bytes; want capture to stop at %d", len(got), limit)
+	}
+}
+
+func TestExecStart_UnderOutputCap(t *testing.T) {
+	deps, store := newTestDeps(t)
+	deps.MaxOutputBytes = 1 << 20
+	const opID = "op-under-cap"
+	if _, err := ExecStart(context.Background(), stdReq(opID, "env-1", "sh", "-c", "echo hi; echo err 1>&2"), deps); err != nil {
+		t.Fatalf("ExecStart: %v", err)
+	}
+	st := waitForDone(t, store, opID, 3*time.Second)
+	if st.OutputCapped || st.ExitCode != 0 || st.ErrMsg != "" {
+		t.Errorf("status = %+v; want clean exit", st)
+	}
+	if got := string(readAll(t, store, opID)); !strings.Contains(got, "hi") || !strings.Contains(got, "err") {
+		t.Errorf("merged output = %q; want both streams captured", got)
+	}
+}
+
 func TestExecStore_GCReleasesExpiredEntries(t *testing.T) {
 	store := NewExecStore()
 	now := time.Now().UTC()

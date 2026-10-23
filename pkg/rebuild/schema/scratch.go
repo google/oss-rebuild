@@ -105,7 +105,7 @@ type ScratchExecState string
 const (
 	ScratchExecPending   ScratchExecState = "pending"
 	ScratchExecCompleted ScratchExecState = "completed" // worker observed the command's exit (any code)
-	ScratchExecTimedOut  ScratchExecState = "timed_out" // worker- or broker-enforced deadline
+	ScratchExecTimedOut  ScratchExecState = "timed_out" // worker- or broker-enforced deadline, or the output cap
 	ScratchExecLost      ScratchExecState = "lost"      // dispatch failed, scratch gone, or sync failure
 )
 
