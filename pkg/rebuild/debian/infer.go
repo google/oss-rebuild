@@ -221,7 +221,7 @@ func inferDebootsnapSbuild(ctx context.Context, t rebuild.Target, mux rebuild.Re
 func (Rebuilder) InferStrategy(ctx context.Context, t rebuild.Target, mux rebuild.RegistryMux, rcfg *rebuild.RepoConfig, hint rebuild.Strategy) (rebuild.Strategy, error) {
 	if _, ok := hint.(*DebianPackage); ok {
 		return inferDSC(ctx, t, mux)
-	} else if _, ok := hint.(*DebianPackage); ok {
+	} else if _, ok := hint.(*Debrebuild); ok {
 		return inferDebrebuild(t, hint)
 	}
 	return inferDebootsnapSbuild(ctx, t, mux)
