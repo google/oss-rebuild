@@ -48,6 +48,9 @@ type ProposeOpts struct {
 
 type Agent interface {
 	Propose(context.Context, *ProposeOpts) (*schema.StrategyOneOf, error)
+	// Canonicalize rewrites a verified build toward the form inference
+	// produces (e.g. registry accesses confined to deps phase).
+	Canonicalize(ctx context.Context, opts *ProposeOpts, working *schema.StrategyOneOf) (out *schema.StrategyOneOf, changed bool, err error)
 	RecordIteration(*schema.AgentIteration)
 	Usage() schema.TokenUsage // agent's cumulative LLM token consumption
 }
@@ -125,6 +128,18 @@ func doIteration(ctx context.Context, sessionID string, iterNum int, agent Agent
 			}, nil
 		}
 		log.Printf("Session %s Iteration %d: local build verified; confirming on GCB", sessionID, iterNum)
+		if canon, changed, cerr := agent.Canonicalize(ctx, opts, s); cerr != nil {
+			log.Printf("Session %s Iteration %d: canonicalize failed (%v), confirming original", sessionID, iterNum, cerr)
+		} else if changed {
+			if st, _ := deps.ScratchRunner.Run(ctx, fmt.Sprintf("iter-%d-canon", iterNum), canon); st == schema.AgentIterationStatusSuccess {
+				log.Printf("Session %s Iteration %d: canonical build re-verified, confirming canonical form", sessionID, iterNum)
+				s = canon
+			} else {
+				log.Printf("Session %s Iteration %d: canonical build did not re-verify (%s), confirming original", sessionID, iterNum, st)
+			}
+		}
+		// Charge the canonicalize turn to this iteration.
+		iterUsage = agent.Usage().Sub(beforeUsage).OrNil()
 		// The confirmation build produces no scratch exec traffic for its
 		// (long) duration. Keep the VM visibly active so the idle reaper
 		// doesn't tear it down mid-session.
