@@ -280,7 +280,9 @@ func (r *runner) run() error {
 	data := flow.Data{
 		"Location": location,
 		"Target":   target,
-		"BuildEnv": cfg.buildEnv,
+		// NOTE: Templates call `BuildEnv` methods with pointer receivers, which
+		// a value in the map cannot reach.
+		"BuildEnv": &cfg.buildEnv,
 	}
 	fragment, err := flow.ResolveSteps(flowDef.Steps, nil, data)
 	if err != nil {
