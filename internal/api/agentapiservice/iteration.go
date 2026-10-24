@@ -219,7 +219,8 @@ func AgentCreateIteration(ctx context.Context, req schema.AgentCreateIterationRe
 			ErrorMessage: "",
 		}
 	}
-	if err := deps.Iterations.Update(ctx, iteration); err != nil {
+	// A caller that gave up on the build still leaves its result recorded.
+	if err := deps.Iterations.Update(context.WithoutCancel(ctx), iteration); err != nil {
 		return nil, api.AsStatus(codes.Internal, errors.Wrap(err, "updating iteration with result"))
 	}
 	return &schema.AgentCreateIterationResponse{

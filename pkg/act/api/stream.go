@@ -50,7 +50,7 @@ const maxSSELineBytes = 16 << 20
 func StreamHandler[I act.Input, E any, D act.Deps](depsFn DepsFn[D], handler StreamHandlerFn[I, E, D]) http.HandlerFunc {
 	return func(rw http.ResponseWriter, r *http.Request) {
 		// Streaming uses the request context so client disconnects propagate
-		// to the producer (unlike the unary handler, which detaches).
+		// to the producer.
 		ctx := r.Context()
 		req, ok := decodeRequest[I](rw, r)
 		if !ok {

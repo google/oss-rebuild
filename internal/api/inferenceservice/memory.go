@@ -81,8 +81,6 @@ func reserveMemory(ctx context.Context, deps *InferDeps, rebuilder rebuild.Rebui
 		// The download may still succeed, so an unsized artifact loads unreserved.
 		log.Printf("Artifact size unknown [pkg=%s, version=%v]: %v", t.Package, t.Version, err)
 	}
-	// TODO: pkg/act/api gives handlers context.Background(), so a wait can
-	// outlive its request. Pass handlers the request's context instead.
 	return deps.Memory.reserve(ctx, repoFactor*repoSize+artifactFactor*artifactSize)
 }
 

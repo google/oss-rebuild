@@ -228,18 +228,18 @@ func HTMLHandler[I act.Input, O any, D act.Deps](depsFn DepsFn[D], handler Handl
 
 func handleUsingResponder[I act.Input, O any, D act.Deps](depsFn DepsFn[D], handler HandlerFn[I, O, D], responder func(http.ResponseWriter, *O) error) http.HandlerFunc {
 	return func(rw http.ResponseWriter, r *http.Request) {
-		ctx := context.Background()
 		req, ok := decodeRequest[I](rw, r)
 		if !ok {
 			return
 		}
-		deps, err := depsFn(ctx)
+		// Deps can be cached across requests, so they don't take this one's context.
+		deps, err := depsFn(context.Background())
 		if err != nil {
 			log.Println(errors.Wrap(err, "initializing dependencies"))
 			http.Error(rw, http.StatusText(http.StatusInternalServerError), http.StatusInternalServerError)
 			return
 		}
-		o, err := handler(ctx, req, deps)
+		o, err := handler(r.Context(), req, deps)
 		if err != nil {
 			writeStatusError(rw, err)
 			return
