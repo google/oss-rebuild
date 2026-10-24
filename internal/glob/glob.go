@@ -20,7 +20,7 @@ func Match(pattern, name string) (bool, error) {
 	if !strings.Contains(pattern, "**") {
 		return path.Match(pattern, name)
 	}
-	if err := validateGlobstarPattern(pattern); err != nil {
+	if err := Validate(pattern); err != nil {
 		return false, err
 	}
 	// Match the pattern before and after ** separately
@@ -53,6 +53,19 @@ func Match(pattern, name string) (bool, error) {
 		}
 	}
 	return true, nil
+}
+
+// Validate returns an error if pattern is malformed.
+func Validate(pattern string) error {
+	if err := validateGlobstarPattern(pattern); err != nil {
+		return err
+	}
+	for _, part := range strings.Split(pattern, "**") {
+		if _, err := path.Match(part, ""); err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
 func validateGlobstarPattern(pattern string) error {
