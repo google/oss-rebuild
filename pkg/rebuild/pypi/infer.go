@@ -556,6 +556,13 @@ func inferBuild(ctx context.Context, t rebuild.Target, mux rebuild.RegistryMux, 
 		if err != nil {
 			return nil, errors.Wrap(err, "inferring build paths")
 		}
+		cythonReq, err := inferCythonRequirement(tree, dir, release.Name, zr, reqs)
+		if err != nil {
+			return nil, errors.Wrap(err, "inferring Cython requirement")
+		}
+		if cythonReq != "" {
+			reqs = append(reqs, cythonReq)
+		}
 		return &PlatformWheelBuild{
 			Location: rebuild.Location{
 				Repo:       rcfg.URI,
@@ -665,6 +672,71 @@ func inferBuildPaths(zr *zip.Reader, tree *git2.Tree, usesCibuildwheel bool) (bu
 		log.Printf("Using build env path %s from %s", buildEnvPath, source)
 	}
 	return buildRoot, buildEnvPath, nil
+}
+
+var (
+	// setupCythonImportPat matches a setup.py that compiles extensions with Cython.
+	setupCythonImportPat = re.MustCompile(`(?m)^\s*(?:from\s+Cython\b|import\s+[Cc]ython\b)`)
+	// cythonABIModulePat matches the Cython version embedded in extension modules.
+	// NOTE: CYTHON_ABI is the Cython version with '.' replaced by '_', optionally
+	// followed by a PEP 440 pre-release tag (a1, b2, rc1) and, from 3.1 on, by
+	// lowercase feature suffixes such as "limited" or "noamsend".
+	cythonABIModulePat = re.MustCompile(`_cython_(\d+)_(\d+)_(\d+)((?:a|b|rc)\d+)?(?:[a-z]|\b)`)
+)
+
+// inferCythonRequirement pins Cython to the version the wheel's extension
+// modules record when setup.py imports it, returning "" if setup.py does not
+// or no module records a version.
+func inferCythonRequirement(tree *git2.Tree, dir, pkg string, zr *zip.Reader, reqs []string) (string, error) {
+	// NOTE: inferRequirements derives setuptools from the wheel's Generator header
+	// even when pyproject.toml selects flit_core, which ignores setup.py. Cython's
+	// own setup.py imports Cython from the source checkout.
+	if !hasRequirement(reqs, "setuptools") || hasRequirement(reqs, "flit-core", "cython") || pypireg.NormalizedName(pkg) == "cython" {
+		return "", nil
+	}
+	f, err := tree.File(path.Join(dir, "setup.py"))
+	if errors.Is(err, git2.ErrFileNotFound) {
+		return "", nil
+	} else if err != nil {
+		return "", errors.Wrap(err, "finding setup.py")
+	}
+	src, err := f.Contents()
+	if err != nil {
+		return "", errors.Wrap(err, "reading setup.py")
+	}
+	if !setupCythonImportPat.MatchString(src) {
+		return "", nil
+	}
+	if v := wheelCythonVersion(zr); v != "" {
+		return "Cython==" + v, nil
+	}
+	return "", nil
+}
+
+// wheelCythonVersion returns the Cython version that the wheel's extension
+// modules record in .rodata, or "" if none does.
+func wheelCythonVersion(zr *zip.Reader) string {
+	for _, f := range zr.File {
+		if !isExtensionModule(f.Name) || f.UncompressedSize64 > maxModuleSize {
+			continue
+		}
+		ef, err := openELF(f)
+		if err != nil {
+			continue
+		}
+		sec := ef.Section(".rodata")
+		if sec == nil {
+			continue
+		}
+		b, err := sec.Data()
+		if err != nil {
+			continue
+		}
+		if m := cythonABIModulePat.FindSubmatch(b); m != nil {
+			return fmt.Sprintf("%s.%s.%s%s", m[1], m[2], m[3], m[4])
+		}
+	}
+	return ""
 }
 
 var (

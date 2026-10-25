@@ -1170,3 +1170,50 @@ func TestInferBuildEnvPath(t *testing.T) {
 		})
 	}
 }
+
+func TestInferCythonRequirement(t *testing.T) {
+	const importsCython = "from Cython.Build import cythonize\n"
+	tests := []struct {
+		name    string
+		pkg     string
+		setupPy string
+		module  []byte
+		reqs    []string
+		want    string
+	}{
+		{name: "PinnedFromELF", setupPy: importsCython, module: elfWithRodata("_cython_3_2_4"), want: "Cython==3.2.4"},
+		{name: "PreRelease", setupPy: importsCython, module: elfWithRodata("_cython_3_0_0a11"), want: "Cython==3.0.0a11"},
+		{name: "FeatureSuffix", setupPy: importsCython, module: elfWithRodata("_cython_3_2_9limitednoamsend"), want: "Cython==3.2.9"},
+		{name: "NoELFVersion", setupPy: importsCython, module: elfWithRodata("libc.so.6")},
+		{name: "NoCythonImport", setupPy: "from setuptools import setup\n", module: elfWithRodata("_cython_3_2_4")},
+		{name: "NoSetupPy", module: elfWithRodata("_cython_3_2_4")},
+		{name: "CythonAlreadyRequired", setupPy: importsCython, module: elfWithRodata("_cython_3_2_4"), reqs: []string{"setuptools", "Cython>=3"}},
+		{name: "FlitCore", setupPy: importsCython, module: elfWithRodata("_cython_3_2_4"), reqs: []string{"setuptools", "flit_core>=3.12,<4"}},
+		{name: "CythonItself", pkg: "Cython", setupPy: importsCython, module: elfWithRodata("_cython_3_2_4")},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			files := gitxtest.FileContent{"README.md": ""}
+			if tc.setupPy != "" {
+				files["setup.py"] = tc.setupPy
+			}
+			repo := must(gitxtest.CreateRepo([]gitxtest.Commit{{ID: "initial", Files: files}}, nil))
+			tree := must(must(repo.Repository.CommitObject(git2.Hash(repo.Commits["initial"]))).Tree())
+			zr := readWheel(t, zipEntry("pkg/mod.cpython-312-x86_64-linux-gnu.so", string(tc.module)))
+			pkg, reqs := "example", []string{"setuptools==80.9.0"}
+			if tc.pkg != "" {
+				pkg = tc.pkg
+			}
+			if tc.reqs != nil {
+				reqs = tc.reqs
+			}
+			got, err := inferCythonRequirement(tree, "", pkg, zr, reqs)
+			if err != nil {
+				t.Fatalf("inferCythonRequirement() returned error: %v", err)
+			}
+			if got != tc.want {
+				t.Errorf("inferCythonRequirement() = %q, want %q", got, tc.want)
+			}
+		})
+	}
+}
