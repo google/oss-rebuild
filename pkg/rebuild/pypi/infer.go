@@ -531,11 +531,12 @@ func inferBuild(ctx context.Context, t rebuild.Target, mux rebuild.RegistryMux, 
 		if err != nil {
 			log.Println(errors.Wrap(err, "Failed to extract cibuildwheel specs"))
 		}
-		buildEnv, envReqs, err := inferWheelBuildEnv(tree, dir, release.Name, zr, tags, reqs)
+		wheelEnv, err := inferWheelBuildEnv(tree, dir, release.Name, zr, tags, reqs)
 		if err != nil {
 			return nil, errors.Wrap(err, "inferring wheel build env")
 		}
-		reqs = mergeRequirements(reqs, envReqs)
+		reqs = mergeRequirements(reqs, wheelEnv.reqs)
+		sysDeps = appendUnique(sysDeps, wheelEnv.sysDeps...)
 		return &PlatformWheelBuild{
 			Location: rebuild.Location{
 				Repo:       rcfg.URI,
@@ -547,7 +548,7 @@ func inferBuild(ctx context.Context, t rebuild.Target, mux rebuild.RegistryMux, 
 			ABITag:       tags.ABI,
 			PlatformTag:  tags.Platform,
 			Requirements: reqs,
-			BuildEnv:     buildEnv,
+			BuildEnv:     wheelEnv.env,
 			SystemDeps:   sysDeps,
 			RegistryTime: a.UploadTime,
 			BaseImage:    inferBaseImage(platform.CibuildwheelPins, tags.Platform, a.UploadTime, cibwSpecs...),
@@ -761,44 +762,65 @@ var (
 	extraMarkerPat = re.MustCompile(`\bextra\b`)
 )
 
+// wheelBuildEnv is what compiling a wheel's extension modules adds to the
+// inferred PlatformWheelBuild.
+type wheelBuildEnv struct {
+	env     map[string]string // nil when no variable is needed
+	reqs    []string          // Python build requirements
+	sysDeps []string          // system packages such as the compiler
+}
+
 // inferWheelBuildEnv inspects the upstream wheel and repository build files
-// for environment variable gates and companion build requirements needed to
-// compile mypyc, Cython, or optional Rust extension modules.
-func inferWheelBuildEnv(tree *object.Tree, dir, pkg string, zr *zip.Reader, tags WheelTags, reqs []string) (map[string]string, []string, error) {
+// for environment variable gates, companion build requirements, and compiler
+// system packages needed to compile mypyc, Cython, or optional Rust extension
+// modules.
+func inferWheelBuildEnv(tree *object.Tree, dir, pkg string, zr *zip.Reader, tags WheelTags, reqs []string) (wheelBuildEnv, error) {
 	if tree == nil || zr == nil {
-		return nil, nil, nil
+		return wheelBuildEnv{}, nil
 	}
 	// NOTE: inferRequirements derives setuptools from the wheel's Generator header
 	// even when pyproject.toml selects flit_core or hatchling, which ignore setup.py.
 	isSetuptools := hasRequirement(reqs, "setuptools") && !hasRequirement(reqs, "flit-core", "hatchling")
 	isHatchling := hasRequirement(reqs, "hatchling")
 	if !isSetuptools && !isHatchling {
-		return nil, nil, nil
+		return wheelBuildEnv{}, nil
 	}
-	hasSO, hasMypycSO, hasABI3SO, cythonVersion := inspectWheelNativeModules(zr)
-	if !hasSO {
-		return nil, nil, nil
+	info := inspectWheelNativeModules(zr)
+	if !info.hasSO {
+		return wheelBuildEnv{}, nil
 	}
-	env := make(map[string]string)
-	var extraReqs []string
+	out := wheelBuildEnv{env: make(map[string]string)}
 	if isSetuptools {
-		setuptoolsReqs, err := inferSetuptoolsWheelBuildEnv(tree, dir, pkg, tags, reqs, hasMypycSO, hasABI3SO, cythonVersion, env)
+		setuptoolsReqs, err := inferSetuptoolsWheelBuildEnv(tree, dir, pkg, tags, reqs, info.hasMypycSO, info.hasABI3SO, info.cythonVersion, out.env)
 		if err != nil {
-			return nil, nil, err
+			return wheelBuildEnv{}, err
 		}
-		extraReqs = append(extraReqs, setuptoolsReqs...)
+		out.reqs = append(out.reqs, setuptoolsReqs...)
 	}
 	if isHatchling {
-		hatchReqs, err := inferHatchlingWheelBuildEnv(tree, dir, zr, hasMypycSO, cythonVersion, env)
+		hatchReqs, err := inferHatchlingWheelBuildEnv(tree, dir, zr, info.hasMypycSO, info.cythonVersion, out.env)
 		if err != nil {
-			return nil, nil, err
+			return wheelBuildEnv{}, err
 		}
-		extraReqs = append(extraReqs, hatchReqs...)
+		out.reqs = append(out.reqs, hatchReqs...)
 	}
-	if len(env) == 0 {
-		return nil, extraReqs, nil
+	if info.hasMypycClang {
+		out.env["CC"] = "clang"
+		out.sysDeps = append(out.sysDeps, "clang")
 	}
-	return env, extraReqs, nil
+	// NOTE: mypycify appends -O<opt> -g<debug> after sysconfig CFLAGS, so
+	// MYPYC_DEBUG_LEVEL=0 (-g0) removes .debug_* sections even when the
+	// interpreter's default CFLAGS contain -g. MYPYC_OPT_LEVEL=3 is mypyc's
+	// default and is pinned so the strategy records the decision explicitly.
+	// Require at least one parsed mypyc ELF before concluding -g0.
+	if info.inspectedMypyc && !info.hasMypycDebug {
+		out.env["MYPYC_OPT_LEVEL"] = "3"
+		out.env["MYPYC_DEBUG_LEVEL"] = "0"
+	}
+	if len(out.env) == 0 {
+		out.env = nil
+	}
+	return out, nil
 }
 
 // inferSetuptoolsWheelBuildEnv enables setup.py environment gates and returns
@@ -939,7 +961,21 @@ func extractWheelRuntimeRequires(zr *zip.Reader) []string {
 	return nil
 }
 
-func inspectWheelNativeModules(zr *zip.Reader) (hasSO, hasMypycSO, hasABI3SO bool, cythonVersion string) {
+type wheelNativeModuleInfo struct {
+	hasSO          bool
+	hasMypycSO     bool
+	hasABI3SO      bool
+	inspectedMypyc bool // a __mypyc ELF was parsed, so hasMypycDebug is evidence
+	hasMypycClang  bool
+	hasMypycDebug  bool
+	cythonVersion  string
+}
+
+// inspectWheelNativeModules summarizes the project's own extension modules in
+// one pass. It skips auditwheel-bundled libraries and takes compiler and debug
+// facts only from __mypyc modules, since Cython modules may keep the -g default.
+func inspectWheelNativeModules(zr *zip.Reader) wheelNativeModuleInfo {
+	var info wheelNativeModuleInfo
 	for _, f := range zr.File {
 		if f.FileInfo().IsDir() || isBundledLibPath(f.Name) {
 			continue
@@ -947,48 +983,91 @@ func inspectWheelNativeModules(zr *zip.Reader) (hasSO, hasMypycSO, hasABI3SO boo
 		if !strings.HasSuffix(f.Name, ".so") && !strings.Contains(f.Name, ".so.") {
 			continue
 		}
-		hasSO = true
-		if strings.Contains(f.Name, "__mypyc") {
-			hasMypycSO = true
+		info.hasSO = true
+		isMypyc := strings.Contains(f.Name, "__mypyc")
+		if isMypyc {
+			info.hasMypycSO = true
 		}
 		if strings.HasSuffix(f.Name, ".abi3.so") {
-			hasABI3SO = true
+			info.hasABI3SO = true
 		}
-		if cythonVersion == "" && f.UncompressedSize64 <= maxELFFileSize {
-			cythonVersion = extractELFFileCythonVersion(f)
+		if f.UncompressedSize64 > maxELFFileSize {
+			continue
+		}
+		needCython := info.cythonVersion == ""
+		needClang := isMypyc && !info.hasMypycClang
+		needDebug := isMypyc && !info.hasMypycDebug
+		if !needCython && !needClang && !needDebug {
+			continue
+		}
+		cyVer, isClang, hasDebug, ok := inspectELFFile(f, needCython)
+		if !ok {
+			continue
+		}
+		if needCython && cyVer != "" {
+			info.cythonVersion = cyVer
+		}
+		if isMypyc {
+			info.inspectedMypyc = true
+			if isClang {
+				info.hasMypycClang = true
+			}
+			if hasDebug {
+				info.hasMypycDebug = true
+			}
 		}
 	}
-	return hasSO, hasMypycSO, hasABI3SO, cythonVersion
+	return info
 }
 
-func extractELFFileCythonVersion(f *zip.File) string {
+// inspectELFFile reads the compiler, debug and Cython facts one extension module
+// records. ok is false when the file cannot be read or parsed as ELF, so callers
+// skip it instead of treating it as a module built without debug info.
+func inspectELFFile(f *zip.File, needCython bool) (cythonVersion string, isClang, hasDebug, ok bool) {
 	rc, err := f.Open()
 	if err != nil {
-		return ""
+		return "", false, false, false
 	}
 	data, err := io.ReadAll(rc)
 	rc.Close()
 	if err != nil {
-		return ""
+		return "", false, false, false
 	}
 	ef, err := elf.NewFile(bytes.NewReader(data))
 	if err != nil {
-		return ""
+		return "", false, false, false
 	}
-	for _, secName := range []string{".rodata", ".dynstr"} {
-		sec := ef.Section(secName)
-		if sec == nil {
-			continue
-		}
-		secData, err := sec.Data()
-		if err != nil {
-			continue
-		}
-		if m := cythonABIModulePat.FindSubmatch(secData); m != nil {
-			return fmt.Sprintf("%s.%s.%s%s", m[1], m[2], m[3], m[4])
+	if needCython {
+		for _, secName := range []string{".rodata", ".dynstr"} {
+			sec := ef.Section(secName)
+			if sec == nil {
+				continue
+			}
+			secData, err := sec.Data()
+			if err != nil {
+				continue
+			}
+			if m := cythonABIModulePat.FindSubmatch(secData); m != nil {
+				cythonVersion = fmt.Sprintf("%s.%s.%s%s", m[1], m[2], m[3], m[4])
+				break
+			}
 		}
 	}
-	return ""
+	// NOTE: clang-built shared objects still carry "GCC: (GNU) ..." entries
+	// in .comment from the manylinux container's CRT objects, so check for
+	// the presence of "clang version" rather than the absence of GCC.
+	if commentSec := ef.Section(".comment"); commentSec != nil {
+		if commentData, err := commentSec.Data(); err == nil && bytes.Contains(commentData, []byte("clang version")) {
+			isClang = true
+		}
+	}
+	for _, sec := range ef.Sections {
+		if strings.HasPrefix(sec.Name, ".debug_") || strings.HasPrefix(sec.Name, ".zdebug_") {
+			hasDebug = true
+			break
+		}
+	}
+	return cythonVersion, isClang, hasDebug, true
 }
 
 // pinCythonRequirement replaces req's version constraint with cythonVersion
