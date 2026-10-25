@@ -173,8 +173,7 @@ func HighestLibcVersionTag(tags []Tag) (Tag, error) {
 // from a wheel and returns the individual tag with the highest associated libc version.
 //
 // This tag is passed to auditwheel repair --plat, which only accepts a single policy name
-// supported by the build container's libc before wheel tags restores the full compressed tag
-// string. Returns the input tags unchanged if parsing fails.
+// supported by the build container's libc. Returns the input tags unchanged if parsing fails.
 func HighestLibcTagString(platformTags string) string {
 	tags, err := ParsePlatformTags(platformTags)
 	if err != nil || len(tags) == 0 {
