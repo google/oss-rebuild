@@ -202,34 +202,40 @@ func (t *TransparentProxyService) ProxyTLS(addr string) {
 		}
 		inflightRequests.Add(1)
 		defer inflightRequests.Done()
-		go func(c net.Conn) {
-			log.Println("Connection from ", c.RemoteAddr())
-			conn, hello, err := handshake.PeekClientHello(c)
-			if err != nil {
-				log.Printf("Error accepting new connection - %v", err)
-				return
-			}
-			host := hello.ServerName
-			if host == "" {
-				log.Printf("Cannot support non-SNI enabled clients")
-				c.Close()
-				return
-			}
-			log.Printf("Connecting to %s", host)
-			connectReq := &http.Request{
-				Method: "CONNECT",
-				URL: &url.URL{
-					Opaque: host,
-					Host:   net.JoinHostPort(host, tlsPort),
-				},
-				Host:       net.JoinHostPort(host, tlsPort),
-				Header:     make(http.Header),
-				RemoteAddr: c.RemoteAddr().String(),
-			}
-			resp := eatConnectResponseWriter{conn}
-			t.Proxy.ServeHTTP(resp, connectReq)
-		}(c)
+		go t.serveTLS(c)
 	}
+}
+
+// serveTLS proxies a redirected TLS connection as a CONNECT to its SNI host.
+func (t *TransparentProxyService) serveTLS(c net.Conn) {
+	log.Println("Connection from ", c.RemoteAddr())
+	conn, hello, err := handshake.PeekClientHello(c)
+	if err != nil {
+		log.Printf("Error accepting new connection - %v", err)
+		return
+	}
+	host := hello.ServerName
+	if host == "" {
+		log.Printf("Cannot support non-SNI enabled clients")
+		c.Close()
+		return
+	}
+	log.Printf("Connecting to %s", host)
+	connectReq := &http.Request{
+		Method: "CONNECT",
+		URL: &url.URL{
+			Opaque: host,
+			Host:   net.JoinHostPort(host, tlsPort),
+		},
+		Proto:      "HTTP/1.1",
+		ProtoMajor: 1,
+		ProtoMinor: 1,
+		Host:       net.JoinHostPort(host, tlsPort),
+		Header:     make(http.Header),
+		RemoteAddr: c.RemoteAddr().String(),
+	}
+	resp := eatConnectResponseWriter{conn}
+	t.Proxy.ServeHTTP(resp, connectReq)
 }
 
 func (t *TransparentProxyService) ServeAdmin(addr string) {
@@ -326,7 +332,7 @@ func (tc eatConnectResponseWriter) Header() http.Header {
 }
 
 func (tc eatConnectResponseWriter) Write(buf []byte) (int, error) {
-	if bytes.Equal(buf, []byte("HTTP/1.0 200 OK\r\n\r\n")) {
+	if bytes.Equal(buf, []byte("HTTP/1.1 200 OK\r\n\r\n")) {
 		return len(buf), nil // ignore the HTTP OK response Write() from the CONNECT request
 	}
 	return tc.Conn.Write(buf)
