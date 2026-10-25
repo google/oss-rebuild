@@ -555,7 +555,18 @@ func inferBuild(ctx context.Context, t rebuild.Target, mux rebuild.RegistryMux, 
 		if elfDeps, err := inferELFSystemDeps(zr, highest.LibcImpl); err != nil {
 			log.Println(errors.Wrap(err, "extracting ELF system deps from wheel"))
 		} else {
-			sysDeps = appendUnique(sysDeps, elfDeps...)
+			sysDeps = mergeSystemDeps(sysDeps, elfDeps)
+		}
+		var rustVersion string
+		needsRust, err := usesRust(reqs, tree, dir)
+		if err != nil {
+			return nil, errors.Wrap(err, "detecting rust build")
+		}
+		if needsRust {
+			rustVersion, err = inferRustVersion(zr, tree, dir, a.UploadTime)
+			if err != nil {
+				return nil, errors.Wrap(err, "inferring rust toolchain version")
+			}
 		}
 		cibwSpecs, err := extractCibuildwheelSpecs(tree)
 		if err != nil {
@@ -576,6 +587,7 @@ func inferBuild(ctx context.Context, t rebuild.Target, mux rebuild.RegistryMux, 
 			RegistryTime: a.UploadTime,
 			BaseImage:    inferBaseImage(platform.CibuildwheelPins, tags.Platform, a.UploadTime, cibwSpecs...),
 			BuildRoot:    inferBuildRoot(zr, tree),
+			RustVersion:  rustVersion,
 		}, nil
 	} else {
 		return &PureWheelBuild{

@@ -724,6 +724,49 @@ PYTHONPATH=/deps/wheel-cli /deps/bin/python3 -m wheel tags --remove --platform-t
 				OutputPath: "the_dir/dist/the_artifact",
 			},
 		},
+		{
+			"WithRustVersionMusl",
+			&PlatformWheelBuild{
+				Location:     defaultLocation,
+				PythonTag:    "cp312",
+				ABITag:       "cp312",
+				PlatformTag:  "musllinux_1_2_x86_64",
+				Requirements: []string{"setuptools-rust"},
+				SystemDeps:   []string{"lld"},
+				RustVersion:  "1.97.1",
+			},
+			rebuild.Instructions{
+				Location: defaultLocation,
+				Source:   "git checkout --force 'the_ref'",
+				Deps: `for py in /opt/python/cp312-cp312/bin/python /opt/python/cp312-*/bin/python; do [ -x "$py" ] && break; done
+"$py" -m venv /deps
+/deps/bin/pip install build wheel
+/deps/bin/pip install --target /deps/wheel-cli wheel
+/deps/bin/pip install 'setuptools-rust'
+wget -O rustup-init https://static.rust-lang.org/rustup/archive/1.29.3/x86_64-unknown-linux-musl/rustup-init
+echo '1552169aba2836777136ccff7a381e95c17233b5d8250cd5e10ae3cb971bfcfc  rustup-init' | sha256sum -c -
+chmod +x rustup-init
+CARGO_HOME=/root/.cargo RUSTUP_HOME=/root/.rustup ./rustup-init -y --profile minimal --default-toolchain 1.97.1 --no-modify-path
+rm -f rustup-init`,
+				Build: `export CARGO_HOME=/root/.cargo RUSTUP_HOME=/root/.rustup RUSTUP_TOOLCHAIN=1.97.1 PATH=/root/.rustup/toolchains/1.97.1-x86_64-unknown-linux-musl/bin:/root/.cargo/bin:$PATH
+/deps/bin/python3 -m build --wheel -n the_dir
+mkdir -p the_dir/dist/repaired
+AUDITWHEEL="/deps/bin/auditwheel"
+if [ ! -x "$AUDITWHEEL" ]; then
+  AUDITWHEEL="auditwheel"
+fi
+$AUDITWHEEL repair the_dir/dist/*.whl --plat musllinux_1_2_x86_64 -w the_dir/dist/repaired/
+rm -f the_dir/dist/*.whl
+mv the_dir/dist/repaired/*.whl the_dir/dist/
+rm -rf the_dir/dist/repaired
+PYTHONPATH=/deps/wheel-cli /deps/bin/python3 -m wheel tags --remove --platform-tag musllinux_1_2_x86_64 the_dir/dist/*.whl`,
+				Requires: rebuild.RequiredEnv{
+					BaseImage:  "quay.io/pypa/musllinux_1_2_x86_64",
+					SystemDeps: []string{"lld", "git", "wget"},
+				},
+				OutputPath: "the_dir/dist/the_artifact",
+			},
+		},
 	}
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
@@ -903,6 +946,48 @@ func TestValidateBuildRoot(t *testing.T) {
 			b := &PlatformWheelBuild{PlatformTag: "manylinux2014_x86_64", BuildRoot: tt.buildRoot}
 			if _, err := b.ToWorkflow(); (err != nil) != tt.wantErr {
 				t.Errorf("ToWorkflow() error = %v, wantErr %v", err, tt.wantErr)
+			}
+		})
+	}
+}
+
+func TestPlatformWheelBuildRustValidation(t *testing.T) {
+	tests := []struct {
+		name     string
+		strategy *PlatformWheelBuild
+		wantErr  bool
+	}{
+		{
+			name: "NightlyRustVersionRejected",
+			strategy: &PlatformWheelBuild{
+				PlatformTag: "manylinux_2_17_x86_64",
+				RustVersion: "1.97.1-nightly",
+			},
+			wantErr: true,
+		},
+		{
+			name: "TwoComponentRustVersionRejected",
+			strategy: &PlatformWheelBuild{
+				PlatformTag: "manylinux_2_17_x86_64",
+				RustVersion: "1.96",
+			},
+			wantErr: true,
+		},
+		{
+			name: "UnsupportedArchForRustToolchainRejected",
+			strategy: &PlatformWheelBuild{
+				PlatformTag: "manylinux2014_aarch64",
+				BaseImage:   "quay.io/pypa/manylinux2014_aarch64",
+				RustVersion: "1.97.1",
+			},
+			wantErr: true,
+		},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			_, err := tc.strategy.ToWorkflow()
+			if (err != nil) != tc.wantErr {
+				t.Fatalf("ToWorkflow() error = %v, wantErr %v", err, tc.wantErr)
 			}
 		})
 	}

@@ -221,3 +221,59 @@ func TestInferELFSystemDeps(t *testing.T) {
 		})
 	}
 }
+
+func TestInferELFSystemDepsSystemLLD(t *testing.T) {
+	tests := []struct {
+		name    string
+		entries []archive.ZipEntry
+		libc    platform.LibcImpl
+		want    []string
+	}{
+		{
+			name: "SystemLLDOnMusl",
+			entries: []archive.ZipEntry{
+				{
+					FileHeader: &zip.FileHeader{Name: "pkg/_native.cpython-312-x86_64-linux-musl.so"},
+					Body:       elfWithComment("GCC: (Alpine 14.2.0)\x00Linker: LLD 20.1.8\x00rustc version 1.97.1 (8bab26f4f 2026-07-14)"),
+				},
+			},
+			libc: platform.Musl,
+			want: []string{"lld"},
+		},
+		{
+			name: "RustupBundledLLDIgnoredOnMusl",
+			entries: []archive.ZipEntry{
+				{
+					FileHeader: &zip.FileHeader{Name: "pkg/_native.cpython-312-x86_64-linux-musl.so"},
+					Body:       elfWithComment("Linker: LLD 21.1.8 (/checkout/src/llvm-project/llvm abc123)\x00rustc version 1.94.1"),
+				},
+			},
+			libc: platform.Musl,
+			want: nil,
+		},
+		{
+			name: "SystemLLDIgnoredOnGlibc",
+			entries: []archive.ZipEntry{
+				{
+					FileHeader: &zip.FileHeader{Name: "pkg/_native.cpython-312-x86_64-linux-gnu.so"},
+					Body:       elfWithComment("Linker: LLD 20.1.8\x00rustc version 1.97.1"),
+				},
+			},
+			libc: platform.Glibc,
+			want: nil,
+		},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			buf := must(archivetest.ZipFile(tc.entries))
+			zr := must(zip.NewReader(bytes.NewReader(buf.Bytes()), int64(buf.Len())))
+			got, err := inferELFSystemDeps(zr, tc.libc)
+			if err != nil {
+				t.Fatalf("inferELFSystemDeps() unexpected error: %v", err)
+			}
+			if diff := cmp.Diff(tc.want, got); diff != "" {
+				t.Errorf("inferELFSystemDeps() diff (-want +got):\n%s", diff)
+			}
+		})
+	}
+}
