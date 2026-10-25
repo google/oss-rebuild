@@ -502,6 +502,7 @@ func inferBuild(ctx context.Context, t rebuild.Target, mux rebuild.RegistryMux, 
 	if err != nil {
 		return nil, errors.Wrapf(err, "Failed to get tree")
 	}
+	var sanitizeSetupCfg bool
 	// Extract pyproject.toml requirements.
 	{
 		newFoundDir, err := pypiresolver.DiscoverBuildDir(ctx, tree, name, version, dir)
@@ -518,6 +519,13 @@ func inferBuild(ctx context.Context, t rebuild.Target, mux rebuild.RegistryMux, 
 			reqs = mergeRequirements(reqs, buildReqs)
 		}
 		reqs = mergeRequirements(reqs, implicitRequirements(reqs))
+		sanitizeSetupCfg, err = pypiresolver.NeedsSetupCfgSanitize(ctx, tree, dir, version)
+		if err != nil {
+			return nil, errors.Wrap(err, "checking setup.cfg egg_info tags")
+		}
+		if sanitizeSetupCfg && !setuptoolsSupportsExtraConfig(reqs, a.UploadTime) {
+			sanitizeSetupCfg = false
+		}
 	}
 	if strings.HasSuffix(a.Filename, ".tar.gz") {
 		return &SdistBuild{
@@ -527,9 +535,10 @@ func inferBuild(ctx context.Context, t rebuild.Target, mux rebuild.RegistryMux, 
 				Ref:        ref,
 				Submodules: submodules,
 			},
-			PythonVersion: inferPythonVersion(reqs, a.UploadTime),
-			Requirements:  reqs,
-			RegistryTime:  a.UploadTime,
+			PythonVersion:    inferPythonVersion(reqs, a.UploadTime),
+			Requirements:     reqs,
+			RegistryTime:     a.UploadTime,
+			SanitizeSetupCfg: sanitizeSetupCfg,
 		}, nil
 	} else if strings.HasSuffix(a.Filename, ".whl") && !strings.HasSuffix(a.Filename, "none-any.whl") {
 		tags := extractWheelTags(a.Filename)
@@ -576,17 +585,18 @@ func inferBuild(ctx context.Context, t rebuild.Target, mux rebuild.RegistryMux, 
 				Ref:        ref,
 				Submodules: submodules,
 			},
-			PythonTag:    tags.Python,
-			ABITag:       tags.ABI,
-			PlatformTag:  tags.Platform,
-			Requirements: reqs,
-			SystemDeps:   sysDeps,
-			RegistryTime: a.UploadTime,
-			BaseImage:    inferBaseImage(platform.CibuildwheelPins, tags.Platform, a.UploadTime, cibwSpecs...),
-			BuildRoot:    buildRoot,
-			BuildEnvPath: buildEnvPath,
-			RustVersion:  rustVersion,
-			CargoTarget:  rustVersion != "" && maturinTakesTarget(reqs),
+			PythonTag:        tags.Python,
+			ABITag:           tags.ABI,
+			PlatformTag:      tags.Platform,
+			Requirements:     reqs,
+			SystemDeps:       sysDeps,
+			RegistryTime:     a.UploadTime,
+			BaseImage:        inferBaseImage(platform.CibuildwheelPins, tags.Platform, a.UploadTime, cibwSpecs...),
+			BuildRoot:        buildRoot,
+			BuildEnvPath:     buildEnvPath,
+			RustVersion:      rustVersion,
+			CargoTarget:      rustVersion != "" && maturinTakesTarget(reqs),
+			SanitizeSetupCfg: sanitizeSetupCfg,
 		}, nil
 	} else {
 		return &PureWheelBuild{
@@ -596,10 +606,11 @@ func inferBuild(ctx context.Context, t rebuild.Target, mux rebuild.RegistryMux, 
 				Ref:        ref,
 				Submodules: submodules,
 			},
-			PythonVersion: inferPythonVersion(reqs, a.UploadTime),
-			Requirements:  reqs,
-			RegistryTime:  a.UploadTime,
-			PythonTag:     pythonTag(a.Filename, reqs),
+			PythonVersion:    inferPythonVersion(reqs, a.UploadTime),
+			Requirements:     reqs,
+			RegistryTime:     a.UploadTime,
+			PythonTag:        pythonTag(a.Filename, reqs),
+			SanitizeSetupCfg: sanitizeSetupCfg,
 		}, nil
 	}
 }
@@ -793,6 +804,10 @@ func moduleSectionMatch(zr *zip.Reader, section string, pat *re.Regexp) [][]byte
 }
 
 var (
+	// setuptools 65.4.0 (released 2022-09-24) added DIST_EXTRA_CONFIG support
+	// to its vendored distutils (pypa/distutils#177).
+	setuptoolsDistExtraConfigVersion = "65.4.0"
+	setuptoolsDistExtraConfigDate    = time.Date(2022, time.September, 24, 0, 0, 0, 0, time.UTC)
 	// setuptools 66.1.0 (released 2023-01-20) was the first release whose
 	// pkg_resources stopped referencing pkgutil.ImpImporter, which Python 3.12
 	// removed. Older setuptools fails to import on 3.12.
@@ -801,6 +816,27 @@ var (
 	// Upper bounds within a PEP 440 version specifier.
 	versionCeilingPat = re.MustCompile(`(<=?|==)\s*([\d.]+)`)
 )
+
+// setuptoolsSupportsExtraConfig reports whether the build will resolve a
+// setuptools release that honours DIST_EXTRA_CONFIG: the upload must not
+// predate the release that added it, and any upper bound on setuptools in
+// reqs must allow that release.
+func setuptoolsSupportsExtraConfig(reqs []string, registryTime time.Time) bool {
+	if registryTime.Before(setuptoolsDistExtraConfigDate) {
+		return false
+	}
+	for _, req := range reqs {
+		if requirementName(req) != "setuptools" {
+			continue
+		}
+		for _, m := range versionCeilingPat.FindAllStringSubmatch(req, -1) {
+			if c := versionx.ApproxCompare(m[2], setuptoolsDistExtraConfigVersion); c < 0 || c == 0 && m[1] == "<" {
+				return false
+			}
+		}
+	}
+	return true
+}
 
 // inferPythonVersion pins Python 3.11 when the build may import a setuptools
 // older than the ImpImporter fix: any upload predating it, since pip or the

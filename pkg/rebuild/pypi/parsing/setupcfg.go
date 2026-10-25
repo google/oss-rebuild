@@ -7,6 +7,7 @@ import (
 	"context"
 	"log"
 	"path/filepath"
+	re "regexp"
 	"strings"
 
 	"github.com/google/oss-rebuild/pkg/ini"
@@ -14,6 +15,58 @@ import (
 	"github.com/msuozzo/go-git2"
 	"github.com/pkg/errors"
 )
+
+var dateSuffixPat = re.MustCompile(`\d{8}`)
+
+func isTruthySetupCfgBool(val string) bool {
+	switch strings.ToLower(strings.TrimSpace(val)) {
+	case "1", "true", "yes", "on":
+		return true
+	default:
+		return false
+	}
+}
+
+// NeedsSetupCfgSanitize reports whether setup.cfg in searchDir sets [egg_info]
+// tag_build or tag_date to a value that conflicts with the release version.
+// tag_build is matched as a case-insensitive substring after trimming leading
+// "._-" characters, and tag_date is considered satisfied when version contains
+// any eight-digit date run (since a dated release cannot be reproduced by
+// either clearing the date or stamping today's date).
+func NeedsSetupCfgSanitize(ctx context.Context, tree *git2.Tree, searchDir, version string) (bool, error) {
+	if searchDir == "" {
+		searchDir = "."
+	}
+	f, err := tree.File(filepath.Join(searchDir, "setup.cfg"))
+	if errors.Is(err, git2.ErrFileNotFound) {
+		return false, nil
+	}
+	if err != nil {
+		return false, errors.Wrap(err, "finding setup.cfg file")
+	}
+	cfgContents, err := f.Contents()
+	if err != nil {
+		return false, errors.Wrap(err, "reading setup.cfg")
+	}
+	cfg, err := ini.Parse(strings.NewReader(cfgContents))
+	if err != nil {
+		// NOTE: A setup.cfg our parser rejects is a rejected candidate, not an
+		// infrastructure failure. The build decides whether setuptools accepts it.
+		return false, nil
+	}
+	if tagBuild, ok := cfg.GetValue("egg_info", "tag_build"); ok {
+		tag := strings.TrimLeft(strings.TrimSpace(tagBuild), "._-")
+		if tag != "" && !strings.Contains(strings.ToLower(version), strings.ToLower(tag)) {
+			return true, nil
+		}
+	}
+	if tagDate, ok := cfg.GetValue("egg_info", "tag_date"); ok {
+		if isTruthySetupCfgBool(tagDate) && !dateSuffixPat.MatchString(version) {
+			return true, nil
+		}
+	}
+	return false, nil
+}
 
 func splitRequiresList(value string) []string {
 	// cfg specification in this doc: https://setuptools.pypa.io/en/latest/userguide/declarative_config.html
