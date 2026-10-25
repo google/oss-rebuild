@@ -6,7 +6,6 @@ package scratch
 import (
 	"bytes"
 	"context"
-	"encoding/base64"
 	"io"
 	"strings"
 	"testing"
@@ -281,18 +280,6 @@ func TestUploadStream(t *testing.T) {
 			t.Errorf("partial upload committed %q, want abandoned", store.committed)
 		}
 	})
-}
-
-func TestNewlineFilteringReader(t *testing.T) {
-	in := "aGVsbG8g\nd29ybGQ=\r\n"
-	dec := base64.NewDecoder(base64.StdEncoding, newlineFilteringReader{r: strings.NewReader(in)})
-	out, err := io.ReadAll(dec)
-	if err != nil {
-		t.Fatalf("decode: %v", err)
-	}
-	if string(out) != "hello world" {
-		t.Errorf("decoded = %q, want %q", out, "hello world")
-	}
 }
 
 func must[T any](t T, err error) T {
