@@ -44,12 +44,25 @@ func TestSetGetClear(t *testing.T) {
 	}
 }
 
-func TestSetGetClearOutOfRange(t *testing.T) {
+func TestSetGetClearOutOfRangePanics(t *testing.T) {
 	b := New(100)
-	b.Set(200)   // Should not panic
-	b.Clear(200) // Should not panic
-	if b.Get(200) {
-		t.Error("Expected out of range Get to return false")
+	for _, tc := range []struct {
+		name string
+		op   func()
+	}{
+		{"SetPastSize", func() { b.Set(100) }},
+		{"SetNegative", func() { b.Set(-1) }},
+		{"ClearPastSize", func() { b.Clear(200) }},
+		{"GetPastSize", func() { b.Get(127) }}, // inside the last word, past size
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			defer func() {
+				if recover() == nil {
+					t.Error("want panic")
+				}
+			}()
+			tc.op()
+		})
 	}
 }
 
