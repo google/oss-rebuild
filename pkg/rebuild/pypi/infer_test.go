@@ -1175,6 +1175,151 @@ func TestInferWheelBuildEnv(t *testing.T) {
 			reqs:    []string{"setuptools==84.0.0"},
 			wantErr: true,
 		},
+		{
+			name: "HatchlingMypycHookWithRuntimeDependenciesFromMetadata",
+			pkg:  "black",
+			repoYAML: `commits:
+  - id: initial
+    files:
+      pyproject.toml: |
+        [build-system]
+        requires = ["hatchling>=1.27.0"]
+        build-backend = "hatchling.build"
+
+        [tool.hatch.build.targets.wheel.hooks.mypyc]
+        enable-by-default = false
+        dependencies = ["hatch-mypyc>=0.16.0", "mypy==1.20.2"]
+        require-runtime-dependencies = true
+`,
+			wheelEntries: []archive.ZipEntry{
+				{FileHeader: &zip.FileHeader{Name: "a1b2c3__mypyc.cpython-312-x86_64-linux-gnu.so"}, Body: plainELF},
+				{
+					FileHeader: &zip.FileHeader{Name: "black/_vendor/vendored-1.0.dist-info/METADATA"},
+					Body:       []byte("Metadata-Version: 2.4\nName: vendored\nRequires-Dist: ignored-vendored-dep>=1.0\n"),
+				},
+				{
+					FileHeader: &zip.FileHeader{Name: "black-26.5.1.dist-info/METADATA"},
+					Body: []byte(
+						"Metadata-Version: 2.4\n" +
+							"Name: black\n" +
+							"Requires-Dist: click>=8.0.0\n" +
+							"Requires-Dist: pathspec>=1.0.0\n" +
+							"Requires-Dist: tomli>=1.1.0; python_version < '3.11'\n" +
+							"Requires-Dist: colorama>=0.4.3; extra == 'colorama'\n" +
+							"Requires-Dist: uvloop>=0.15.2; (sys_platform != 'win32') and extra == 'uvloop'\n" +
+							"\n" +
+							"Requires-Dist: ignored-readme-body-line>=1.0\n",
+					),
+				},
+			},
+			tags:    WheelTags{Python: "cp312", ABI: "cp312", Platform: "manylinux_2_28_x86_64"},
+			reqs:    []string{"hatchling==1.27.0"},
+			wantEnv: map[string]string{"HATCH_BUILD_HOOK_ENABLE_MYPYC": "1"},
+			wantReqs: []string{
+				"hatch-mypyc>=0.16.0",
+				"mypy==1.20.2",
+				"click>=8.0.0",
+				"pathspec>=1.0.0",
+				"tomli>=1.1.0; python_version < '3.11'",
+			},
+		},
+		{
+			name: "HatchlingCythonHookWithoutDirectCythonDependency",
+			pkg:  "psygnal",
+			repoYAML: `commits:
+  - id: initial
+    files:
+      pyproject.toml: |
+        [build-system]
+        requires = ["hatchling"]
+        build-backend = "hatchling.build"
+
+        [tool.hatch.build.targets.wheel.hooks.cython]
+        enable-by-default = false
+        dependencies = ["hatch-cython"]
+`,
+			wheelEntries: []archive.ZipEntry{
+				{FileHeader: &zip.FileHeader{Name: "psygnal/_signal.cpython-312-x86_64-linux-gnu.so"}, Body: cython329ELF},
+			},
+			tags:     WheelTags{Python: "cp312", ABI: "cp312", Platform: "manylinux_2_28_x86_64"},
+			reqs:     []string{"hatchling==1.27.0"},
+			wantEnv:  map[string]string{"HATCH_BUILD_HOOK_ENABLE_CYTHON": "1"},
+			wantReqs: []string{"hatch-cython", "Cython==3.2.9"},
+		},
+		{
+			name: "HatchlingSkippedAndUnmatchedHooks",
+			pkg:  "example",
+			repoYAML: `commits:
+  - id: initial
+    files:
+      setup.py: |
+        import os
+        if os.getenv("EXAMPLE_USE_CYTHON"):
+            pass
+      pyproject.toml: |
+        [build-system]
+        requires = ["hatchling"]
+        build-backend = "hatchling.build"
+
+        [tool.hatch.build.targets.wheel.hooks.cython]
+        enable-by-default = false
+        dependencies = ["hatch-cython"]
+
+        [tool.hatch.build.targets.wheel.hooks.mypyc]
+        enable-by-default = false
+        dependencies = ["hatch-mypyc"]
+
+        [tool.hatch.build.targets.wheel.hooks.vcs]
+        enable-by-default = false
+        dependencies = ["hatch-vcs"]
+
+        [tool.hatch.build.targets.wheel.hooks.custom]
+        enable-by-default = true
+        dependencies = ["setuptools"]
+`,
+			wheelEntries: []archive.ZipEntry{
+				{FileHeader: &zip.FileHeader{Name: "example/_ext.cpython-312-x86_64-linux-gnu.so"}, Body: plainELF},
+			},
+			tags: WheelTags{Python: "cp312", ABI: "cp312", Platform: "manylinux_2_28_x86_64"},
+			reqs: []string{"hatchling==1.27.0", "setuptools==84.0.0"},
+		},
+		{
+			name: "HatchlingCustomCythonAndMypycHooks",
+			pkg:  "chardet",
+			repoYAML: `commits:
+  - id: initial
+    files:
+      pyproject.toml: |
+        [build-system]
+        requires = ["hatchling", "hatch-vcs"]
+        build-backend = "hatchling.build"
+
+        [tool.hatch.build.targets.wheel.hooks.custom]
+        enable-by-default = false
+        dependencies = ["Cython>=3.0", "setuptools"]
+
+        [tool.hatch.build.targets.wheel.hooks.mypyc]
+        enable-by-default = false
+        dependencies = ["hatch-mypyc>=0.16.0", "mypy>=1.19"]
+        require-runtime-dependencies = false
+`,
+			wheelEntries: []archive.ZipEntry{
+				{FileHeader: &zip.FileHeader{Name: "chardet/_kernel.cpython-312-x86_64-linux-gnu.so"}, Body: cython329ELF},
+				{FileHeader: &zip.FileHeader{Name: "0123abcd__mypyc.cpython-312-x86_64-linux-gnu.so"}, Body: plainELF},
+			},
+			tags: WheelTags{Python: "cp312", ABI: "cp312", Platform: "manylinux_2_28_x86_64"},
+			reqs: []string{"hatchling==1.27.0", "hatch-vcs"},
+			wantEnv: map[string]string{
+				"HATCH_BUILD_HOOK_ENABLE_CUSTOM": "1",
+				"HATCH_BUILD_HOOK_ENABLE_MYPYC":  "1",
+			},
+			wantReqs: []string{
+				"Cython==3.2.9",
+				"setuptools",
+				"hatch-mypyc>=0.16.0",
+				"mypy>=1.19",
+			},
+		},
 	}
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {

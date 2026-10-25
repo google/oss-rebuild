@@ -6,8 +6,10 @@ package parsing
 import (
 	"context"
 	"log"
+	"maps"
 	"path"
 	"path/filepath"
+	"slices"
 	"strings"
 
 	"github.com/go-git/go-git/v5/plumbing/object"
@@ -147,4 +149,81 @@ func backendPaths(v any) []string {
 		}
 	}
 	return out
+}
+
+// HatchWheelHook describes a Hatchling wheel build hook configured in
+// pyproject.toml under [tool.hatch.build.hooks.<name>] or
+// [tool.hatch.build.targets.wheel.hooks.<name>].
+type HatchWheelHook struct {
+	Name                       string
+	EnableByDefault            bool
+	Dependencies               []string
+	RequireRuntimeDependencies bool
+}
+
+type hatchHookConfig struct {
+	EnableByDefault            *bool    `toml:"enable-by-default"`
+	Dependencies               []string `toml:"dependencies"`
+	RequireRuntimeDependencies *bool    `toml:"require-runtime-dependencies"`
+}
+
+// ExtractHatchWheelHooks parses Hatchling wheel build hooks from dir's
+// pyproject.toml. A target-specific table under
+// [tool.hatch.build.targets.wheel.hooks.<name>] replaces the global table
+// under [tool.hatch.build.hooks.<name>] for the same hook.
+func ExtractHatchWheelHooks(tree *object.Tree, dir string) ([]HatchWheelHook, error) {
+	if tree == nil {
+		return nil, nil
+	}
+	f, err := tree.File(path.Join(dir, "pyproject.toml"))
+	if errors.Is(err, object.ErrFileNotFound) {
+		return nil, nil
+	}
+	if err != nil {
+		return nil, errors.Wrap(err, "finding pyproject.toml")
+	}
+	pyprojContents, err := f.Contents()
+	if err != nil {
+		return nil, errors.Wrap(err, "reading pyproject.toml")
+	}
+	var pyProject struct {
+		Tool struct {
+			Hatch struct {
+				Build struct {
+					Hooks   map[string]hatchHookConfig `toml:"hooks"`
+					Targets struct {
+						Wheel struct {
+							Hooks map[string]hatchHookConfig `toml:"hooks"`
+						} `toml:"wheel"`
+					} `toml:"targets"`
+				} `toml:"build"`
+			} `toml:"hatch"`
+		} `toml:"tool"`
+	}
+	if err := toml.Unmarshal([]byte(pyprojContents), &pyProject); err != nil {
+		return nil, errors.Wrap(err, "decoding pyproject.toml")
+	}
+	// NOTE: Hatchling replaces a global hook table with the target table of the
+	// same name instead of merging them (BuilderConfig.hook_config).
+	rawHooks := make(map[string]hatchHookConfig)
+	maps.Copy(rawHooks, pyProject.Tool.Hatch.Build.Hooks)
+	maps.Copy(rawHooks, pyProject.Tool.Hatch.Build.Targets.Wheel.Hooks)
+	var hooks []HatchWheelHook
+	for _, name := range slices.Sorted(maps.Keys(rawHooks)) {
+		cfg := rawHooks[name]
+		h := HatchWheelHook{Name: name, EnableByDefault: true}
+		if cfg.EnableByDefault != nil {
+			h.EnableByDefault = *cfg.EnableByDefault
+		}
+		if cfg.RequireRuntimeDependencies != nil {
+			h.RequireRuntimeDependencies = *cfg.RequireRuntimeDependencies
+		}
+		for _, dep := range cfg.Dependencies {
+			if trimmed := strings.TrimSpace(dep); trimmed != "" {
+				h.Dependencies = append(h.Dependencies, trimmed)
+			}
+		}
+		hooks = append(hooks, h)
+	}
+	return hooks, nil
 }

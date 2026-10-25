@@ -757,6 +757,8 @@ var (
 	requirementsCommentPat = re.MustCompile(`(?:^|\s)#.*`)
 	// requirementsIncludePat matches a pip requirements file include line.
 	requirementsIncludePat = re.MustCompile(`^(?:-r\s*|--requirement(?:\s+|=))(\S+)$`)
+	// extraMarkerPat matches Requires-Dist markers that apply only to an extra.
+	extraMarkerPat = re.MustCompile(`\bextra\b`)
 )
 
 // inferWheelBuildEnv inspects the upstream wheel and repository build files
@@ -767,25 +769,52 @@ func inferWheelBuildEnv(tree *object.Tree, dir, pkg string, zr *zip.Reader, tags
 		return nil, nil, nil
 	}
 	// NOTE: inferRequirements derives setuptools from the wheel's Generator header
-	// even when pyproject.toml selects flit_core, which ignores setup.py.
-	if !hasRequirement(reqs, "setuptools") || hasRequirement(reqs, "flit-core") {
+	// even when pyproject.toml selects flit_core or hatchling, which ignore setup.py.
+	isSetuptools := hasRequirement(reqs, "setuptools") && !hasRequirement(reqs, "flit-core", "hatchling")
+	isHatchling := hasRequirement(reqs, "hatchling")
+	if !isSetuptools && !isHatchling {
 		return nil, nil, nil
 	}
 	hasSO, hasMypycSO, hasABI3SO, cythonVersion := inspectWheelNativeModules(zr)
 	if !hasSO {
 		return nil, nil, nil
 	}
+	env := make(map[string]string)
+	var extraReqs []string
+	if isSetuptools {
+		setuptoolsReqs, err := inferSetuptoolsWheelBuildEnv(tree, dir, pkg, tags, reqs, hasMypycSO, hasABI3SO, cythonVersion, env)
+		if err != nil {
+			return nil, nil, err
+		}
+		extraReqs = append(extraReqs, setuptoolsReqs...)
+	}
+	if isHatchling {
+		hatchReqs, err := inferHatchlingWheelBuildEnv(tree, dir, zr, hasMypycSO, cythonVersion, env)
+		if err != nil {
+			return nil, nil, err
+		}
+		extraReqs = append(extraReqs, hatchReqs...)
+	}
+	if len(env) == 0 {
+		return nil, extraReqs, nil
+	}
+	return env, extraReqs, nil
+}
+
+// inferSetuptoolsWheelBuildEnv enables setup.py environment gates and returns
+// the mypyc or Cython requirements needed for setuptools projects that compile
+// native extensions only when opted in at build time.
+func inferSetuptoolsWheelBuildEnv(tree *object.Tree, dir, pkg string, tags WheelTags, reqs []string, hasMypycSO, hasABI3SO bool, cythonVersion string, env map[string]string) ([]string, error) {
 	setupFile, err := tree.File(path.Join(dir, "setup.py"))
 	if errors.Is(err, object.ErrFileNotFound) {
-		return nil, nil, nil
+		return nil, nil
 	} else if err != nil {
-		return nil, nil, errors.Wrap(err, "finding setup.py")
+		return nil, errors.Wrap(err, "finding setup.py")
 	}
 	setupSrc, err := setupFile.Contents()
 	if err != nil {
-		return nil, nil, errors.Wrap(err, "reading setup.py")
+		return nil, errors.Wrap(err, "reading setup.py")
 	}
-	env := make(map[string]string)
 	var extraReqs []string
 	usedMypyc, usedCython := false, false
 	for _, m := range setupEnvGatePat.FindAllStringSubmatch(setupSrc, -1) {
@@ -814,11 +843,11 @@ func inferWheelBuildEnv(tree *object.Tree, dir, pkg string, zr *zip.Reader, tags
 				extraReqs = append(extraReqs, "mypy")
 			}
 		} else if err != nil {
-			return nil, nil, errors.Wrap(err, "finding mypyc/build.py")
+			return nil, errors.Wrap(err, "finding mypyc/build.py")
 		} else {
 			buildReqs, err := readRequirementsFile(tree, dir, "build-requirements.txt", nil)
 			if err != nil {
-				return nil, nil, err
+				return nil, err
 			}
 			extraReqs = append(extraReqs, buildReqs...)
 		}
@@ -828,14 +857,86 @@ func inferWheelBuildEnv(tree *object.Tree, dir, pkg string, zr *zip.Reader, tags
 	if (usedCython || setupCythonImportPat.MatchString(setupSrc)) && !hasRequirement(reqs, "cython") && normalizeName(pkg) != "cython" {
 		cythonReq, err := findCythonRequirement(tree, dir, setupSrc)
 		if err != nil {
-			return nil, nil, err
+			return nil, err
 		}
 		extraReqs = append(extraReqs, pinCythonRequirement(cythonReq, cythonVersion))
 	}
-	if len(env) == 0 {
-		return nil, extraReqs, nil
+	return extraReqs, nil
+}
+
+// inferHatchlingWheelBuildEnv sets HATCH_BUILD_HOOK_ENABLE_<NAME>=1 and returns
+// hook and runtime dependencies for pyproject.toml wheel hooks with
+// enable-by-default = false so Hatchling compiles the wheel's extensions.
+func inferHatchlingWheelBuildEnv(tree *object.Tree, dir string, zr *zip.Reader, hasMypycSO bool, cythonVersion string, env map[string]string) ([]string, error) {
+	hooks, err := pypiresolver.ExtractHatchWheelHooks(tree, dir)
+	if err != nil {
+		return nil, errors.Wrap(err, "extracting hatch wheel hooks")
 	}
-	return env, extraReqs, nil
+	var extraReqs []string
+	for _, hook := range hooks {
+		if hook.EnableByDefault {
+			continue
+		}
+		switch hook.Name {
+		case "mypyc":
+			if !hasMypycSO {
+				continue
+			}
+		case "cython":
+			if cythonVersion == "" {
+				continue
+			}
+		case "custom":
+			// Accepted whenever the wheel ships native modules.
+		default:
+			continue
+		}
+		env["HATCH_BUILD_HOOK_ENABLE_"+strings.ToUpper(hook.Name)] = "1"
+		for _, dep := range hook.Dependencies {
+			extraReqs = append(extraReqs, pinCythonRequirement(dep, cythonVersion))
+		}
+		if hook.Name == "cython" && !hasRequirement(hook.Dependencies, "cython") {
+			extraReqs = append(extraReqs, "Cython=="+cythonVersion)
+		}
+		if hook.RequireRuntimeDependencies {
+			extraReqs = append(extraReqs, extractWheelRuntimeRequires(zr)...)
+		}
+	}
+	return extraReqs, nil
+}
+
+func extractWheelRuntimeRequires(zr *zip.Reader) []string {
+	for _, f := range zr.File {
+		if !strings.HasSuffix(f.Name, ".dist-info/METADATA") || path.Dir(path.Dir(f.Name)) != "." {
+			continue
+		}
+		rc, err := f.Open()
+		if err != nil {
+			continue
+		}
+		data, err := io.ReadAll(rc)
+		rc.Close()
+		if err != nil {
+			continue
+		}
+		var reqs []string
+		for _, rawLine := range strings.Split(string(data), "\n") {
+			if strings.TrimRight(rawLine, "\r") == "" {
+				break
+			}
+			after, ok := strings.CutPrefix(rawLine, "Requires-Dist:")
+			if !ok {
+				continue
+			}
+			req := strings.TrimSpace(after)
+			if req == "" || extraMarkerPat.MatchString(requirementMarker(req)) {
+				continue
+			}
+			reqs = append(reqs, req)
+		}
+		return reqs
+	}
+	return nil
 }
 
 func inspectWheelNativeModules(zr *zip.Reader) (hasSO, hasMypycSO, hasABI3SO bool, cythonVersion string) {
