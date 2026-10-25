@@ -88,6 +88,7 @@ func TestInferRequirements(t *testing.T) {
 		{"meson generator with bare version", "Wheel-Version: 1.0\nGenerator: meson 0.17.1\n", modern, []string{"meson-python==0.17.1"}},
 		{"scikit-build-core generator with parenthesized version", "Wheel-Version: 1.0\nGenerator: scikit-build-core (0.10.7)\n", modern, []string{"scikit-build-core==0.10.7"}},
 		{"scikit-build-core generator with bare version", "Wheel-Version: 1.0\nGenerator: scikit-build-core 0.11.6\n", modern, []string{"scikit-build-core==0.11.6"}},
+		{"maturin generator with parenthesized version", "Wheel-Version: 1.0\nGenerator: maturin (1.13.1)\n", modern, []string{"maturin==1.13.1"}},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {

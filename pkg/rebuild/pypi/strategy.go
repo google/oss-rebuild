@@ -71,9 +71,9 @@ func (b *PureWheelBuild) GenerateFor(t rebuild.Target, be rebuild.BuildEnv) (reb
 }
 
 // needsVenvOnPath flags backends that find their binary on PATH rather than
-// beside the interpreter, such as uv_build, meson, and ninja/cmake.
+// beside the interpreter, such as uv_build, meson, ninja/cmake, and maturin.
 func needsVenvOnPath(reqs []string) string {
-	if hasRequirement(reqs, "uv-build", "meson-python", "scikit-build-core") {
+	if hasRequirement(reqs, "uv-build", "meson-python", "scikit-build-core", "maturin") {
 		return "1"
 	}
 	return ""
