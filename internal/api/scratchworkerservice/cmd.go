@@ -18,6 +18,10 @@ import (
 // process group. Tunable for tests.
 var killGrace = 5 * time.Second
 
+// waitDelay is how long Wait keeps reading output pipes after the process
+// exits. Tunable for tests.
+var waitDelay = 2 * time.Second
+
 // timeoutUnit is multiplied by TimeoutSeconds to determine the run deadline.
 // Tunable for tests.
 var timeoutUnit = time.Second
@@ -63,6 +67,10 @@ func runCommand(ctx context.Context, spec runSpec, stdout, stderr io.Writer) (ex
 	cmd.Dir = spec.Cwd
 	cmd.Env = buildEnv(spec.Env)
 	cmd.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}
+	// NOTE: os/exec feeds a non-*os.File writer through a pipe and Wait reads
+	// it to EOF. A background child holding the pipe blocks Wait past the
+	// exit, forever if it left the process group.
+	cmd.WaitDelay = waitDelay
 
 	if err := cmd.Start(); err != nil {
 		return 0, err
@@ -91,7 +99,7 @@ func runCommand(ctx context.Context, spec runSpec, stdout, stderr io.Writer) (ex
 }
 
 func classifyExit(cmd *exec.Cmd, err error) (int, error) {
-	if err == nil {
+	if err == nil || errors.Is(err, exec.ErrWaitDelay) {
 		return cmd.ProcessState.ExitCode(), nil
 	}
 	var exitErr *exec.ExitError

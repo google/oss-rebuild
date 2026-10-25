@@ -174,8 +174,8 @@ func (r *ScratchRunner) run(ctx context.Context, runID string, oneof *schema.Str
 		return errorResult(errors.Wrap(err, "awaiting build"))
 	}
 	if result.Error != nil {
-		// Build failures (nonzero exit, worker-enforced timeout, missing
-		// artifact) are FAILED: attempts the LLM can iterate on.
+		// Build failures (nonzero exit, worker-enforced timeout, output cap,
+		// missing artifact) are FAILED: attempts the LLM can iterate on.
 		// Anything else is infrastructure and recorded as ERROR.
 		// NOTE: ERROR attempts are neither recorded nor shown to the LLM, so
 		// a deterministic error (e.g. an artifact too large to retrieve)
@@ -183,6 +183,7 @@ func (r *ScratchRunner) run(ctx context.Context, runID string, oneof *schema.Str
 		switch {
 		case errors.As(result.Error, new(*scratch.ExitError)),
 			errors.Is(result.Error, context.DeadlineExceeded),
+			errors.Is(result.Error, scratch.ErrOutputCapped),
 			errors.Is(result.Error, scratch.ErrNoArtifact):
 			return failedResult(result.Error.Error())
 		default:

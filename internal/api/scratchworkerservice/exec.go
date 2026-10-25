@@ -97,13 +97,14 @@ type OutputFrame struct {
 // ExecStatus is the worker's in-memory view of one op. Returned by
 // exec/op/status. The broker mirrors this into Firestore on sync.
 type ExecStatus struct {
-	Done       bool      `json:"done"`
-	ExitCode   int       `json:"exit_code,omitempty"`
-	TimedOut   bool      `json:"timed_out,omitempty"`
-	TotalBytes int64     `json:"total_bytes"` // Output bytes written. Monotonic.
-	StartedAt  time.Time `json:"started_at,omitzero"`
-	FinishedAt time.Time `json:"finished_at,omitzero"`
-	ErrMsg     string    `json:"err_msg,omitempty"` // Run error. If set, Done is true.
+	Done         bool      `json:"done"`
+	ExitCode     int       `json:"exit_code,omitempty"`
+	TimedOut     bool      `json:"timed_out,omitempty"`
+	OutputCapped bool      `json:"output_capped,omitempty"` // Killed at the output cap.
+	TotalBytes   int64     `json:"total_bytes"`             // Output bytes written. Monotonic.
+	StartedAt    time.Time `json:"started_at,omitzero"`
+	FinishedAt   time.Time `json:"finished_at,omitzero"`
+	ErrMsg       string    `json:"err_msg,omitempty"` // Run error. If set, Done is true.
 }
 
 // execEntry is the in-memory record the worker keeps for one op. The
@@ -119,6 +120,7 @@ type execEntry struct {
 	done           bool
 	exitCode       int
 	timedOut       bool
+	outputCapped   bool
 	errMsg         string
 }
 
@@ -174,8 +176,9 @@ func (s *ExecStore) finish(opID string, exitCode int, runErr error, totalBytes i
 	e.done = true
 	e.exitCode = exitCode
 	e.timedOut = errors.Is(runErr, context.DeadlineExceeded)
-	// Timeout error message dropped for brevity.
-	if runErr != nil && !e.timedOut {
+	e.outputCapped = errors.Is(runErr, errOutputCapped)
+	// Timeouts and caps have their own flags. ErrMsg means an infra failure.
+	if runErr != nil && !e.timedOut && !e.outputCapped {
 		e.errMsg = runErr.Error()
 	}
 	e.finishedAt = time.Now().UTC()
@@ -202,13 +205,14 @@ func (s *ExecStore) status(opID string) (ExecStatus, bool) {
 		total = e.totalBytes
 	}
 	return ExecStatus{
-		Done:       e.done,
-		ExitCode:   e.exitCode,
-		TimedOut:   e.timedOut,
-		TotalBytes: total,
-		StartedAt:  e.startedAt,
-		FinishedAt: e.finishedAt,
-		ErrMsg:     e.errMsg,
+		Done:         e.done,
+		ExitCode:     e.exitCode,
+		TimedOut:     e.timedOut,
+		OutputCapped: e.outputCapped,
+		TotalBytes:   total,
+		StartedAt:    e.startedAt,
+		FinishedAt:   e.finishedAt,
+		ErrMsg:       e.errMsg,
 	}, true
 }
 
@@ -273,7 +277,8 @@ type ExecDeps struct {
 	// Empty uses the OS default.
 	TempDir string
 	// Workdir is the default cwd when a request omits Cwd.
-	Workdir string
+	Workdir        string
+	MaxOutputBytes int64 // kills execs past it. Zero: no cap
 }
 
 // ExecStart registers the op and spawns the requested command asynchronously.
@@ -311,16 +316,30 @@ func finalizeExec(req StartRequest, outF *os.File, deps *ExecDeps) {
 		return
 	}
 
-	// Merge stdout+stderr by passing the same *os.File to both. Go's
-	// exec package serializes writes when Stdout and Stderr compare ==,
-	// so writes from each stream are atomic within themselves.
+	// Merge stdout+stderr by passing the same writer to both. Go's exec
+	// package serializes writes when Stdout and Stderr compare ==, so
+	// writes from each stream are atomic within themselves.
+	var out io.Writer = outF
+	var capped *capWriter
+	if deps.MaxOutputBytes > 0 {
+		// Past the cap the output is waste: the agent reads at most the last
+		// 100,000 bytes. Cancelling ctx kills the process group like the deadline.
+		capCtx, stopOnCap := context.WithCancel(ctx)
+		defer stopOnCap()
+		capped = &capWriter{w: outF, limit: deps.MaxOutputBytes, onCap: stopOnCap}
+		ctx, out = capCtx, capped
+	}
 	code, runErr := runCommand(ctx, runSpec{
 		Cmd:            req.Cmd,
 		Cwd:            cwd,
 		Env:            req.Env,
 		Stdin:          stdin,
 		TimeoutSeconds: req.TimeoutSeconds,
-	}, outF, outF)
+	}, out, out)
+	if capped != nil && capped.tripped {
+		// runCommand sees the cap kill as a cancellation. Record it as the cap.
+		runErr = errors.Wrapf(errOutputCapped, "output exceeded %d bytes", deps.MaxOutputBytes)
+	}
 
 	// Snapshot final size before announcing Done. Subsequent reads see
 	// this value (frozen after Done).
@@ -358,6 +377,38 @@ type OutputDeps struct {
 // pair), which the streaming layer maps to a unary HTTP error response.
 func Output(ctx context.Context, req OutputRequest, deps *OutputDeps) iter.Seq2[*OutputFrame, error] {
 	return deps.Store.outputFrom(ctx, req.ID, req.Offset)
+}
+
+// errOutputCapped marks an exec killed at the output cap.
+var errOutputCapped = errors.New("output capped")
+
+// capWriter passes the first limit bytes to w, then discards the rest and
+// calls onCap once, on the first discarded byte. Discarding keeps the
+// command from blocking on a full pipe while it is killed. Only the os/exec
+// copy goroutine writes, and cmd.Wait joins it, so reading tripped
+// afterwards needs no lock.
+type capWriter struct {
+	w       io.Writer
+	limit   int64
+	onCap   func()
+	written int64
+	tripped bool
+}
+
+func (c *capWriter) Write(p []byte) (int, error) {
+	room := c.limit - c.written
+	if room > 0 {
+		n, err := c.w.Write(p[:min(int64(len(p)), room)])
+		c.written += int64(n)
+		if err != nil {
+			return n, err
+		}
+	}
+	if !c.tripped && int64(len(p)) > room {
+		c.tripped = true
+		c.onCap()
+	}
+	return len(p), nil
 }
 
 func decodeStdin(b64 string) (io.Reader, error) {

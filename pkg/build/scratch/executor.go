@@ -52,6 +52,10 @@ const (
 // successfully but leaves no artifact at the plan's output path.
 var ErrNoArtifact = errors.New("build produced no artifact at the output path")
 
+// ErrOutputCapped is returned via build.Result.Error when a phase is killed
+// for passing the scratch exec output cap.
+var ErrOutputCapped = errors.New("killed at the exec output cap")
+
 // ExitError is build.ExitError, kept under this name for the executor's
 // callers.
 type ExitError = build.ExitError
@@ -342,8 +346,11 @@ func phaseOutcome(name string, op *longrunning.Operation[schema.ScratchExecResul
 		return errors.Wrapf(err, "executing %s phase", name)
 	}
 	if op.Error != nil {
-		if op.Error.Code == int(codes.DeadlineExceeded) {
+		switch codes.Code(op.Error.Code) {
+		case codes.DeadlineExceeded:
 			return errors.Wrapf(context.DeadlineExceeded, "%s phase timed out", name)
+		case codes.ResourceExhausted:
+			return errors.Wrapf(ErrOutputCapped, "%s phase: %s", name, op.Error.Message)
 		}
 		return errors.Wrapf(op.Error, "%s phase exec lost", name)
 	}
