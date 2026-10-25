@@ -6,6 +6,7 @@ package pypi
 import (
 	"archive/zip"
 	"bytes"
+	"cmp"
 	"context"
 	"fmt"
 	"io"
@@ -584,7 +585,7 @@ func inferBuild(ctx context.Context, t rebuild.Target, mux rebuild.RegistryMux, 
 			Requirements: reqs,
 			SystemDeps:   sysDeps,
 			RegistryTime: a.UploadTime,
-			BaseImage:    inferBaseImage(platform.CibuildwheelPins, tags.Platform, a.UploadTime, cibwSpecs...),
+			BaseImage:    inferBaseImage(platform.CibuildwheelPins, tags, a.UploadTime, cibwSpecs...),
 			BuildRoot:    buildRoot,
 			BuildEnvPath: buildEnvPath,
 			RustVersion:  rustVersion,
@@ -606,23 +607,26 @@ func inferBuild(ctx context.Context, t rebuild.Target, mux rebuild.RegistryMux, 
 	}
 }
 
-// inferBaseImage returns the build image that cibuildwheel pinned for
-// platformTag, according to pins. Any cibuildwheel version specs from the CI
-// config take precedence over the version that was current when the wheel was
-// uploaded. If no pin is known it returns an empty string, selecting the
-// unpinned image at build time.
-func inferBaseImage(pins platform.CibuildwheelPinTable, platformTag string, uploaded time.Time, cibwSpecs ...string) string {
-	repo, err := platform.SelectBaseImage(platformTag)
+// inferBaseImage returns the build image that cibuildwheel pinned for the
+// platform tag of a wheel, according to pins. Only releases that build wheels
+// for the wheel's interpreter are considered. Any cibuildwheel version specs
+// from the CI config take precedence over the version that was current when
+// the wheel was uploaded. If no pin is known it returns an empty string,
+// selecting the unpinned image at build time.
+func inferBaseImage(pins platform.CibuildwheelPinTable, tags WheelTags, uploaded time.Time, cibwSpecs ...string) string {
+	repo, err := platform.SelectBaseImage(tags.Platform)
 	if err != nil {
 		log.Println(errors.Wrap(err, "Failed to select base image"))
 		return ""
 	}
+	pythonTag := requiredPythonTag(tags)
+	pins = pins.BuildingPython(pythonTag)
 	if len(cibwSpecs) > 0 {
 		if ref, version, ok := pins.ImageAt(repo, uploaded, cibwSpecs...); ok {
 			log.Printf("Using base image %s pinned by cibuildwheel %s from the CI config", ref, version)
 			return ref
 		}
-		log.Printf("No pin known for %s in cibuildwheel %v from the CI config, falling back to the upload time", repo, cibwSpecs)
+		log.Printf("No pin known for %s (%s) in cibuildwheel %v from the CI config, falling back to the upload time", repo, cmp.Or(pythonTag, "any interpreter"), cibwSpecs)
 	}
 	if generated := platform.CibuildwheelPinsGeneratedAt; uploaded.After(generated) {
 		log.Printf("The cibuildwheel pin table generated at %s predates the upload, so releases published since are missing from it. Regenerate it with go generate ./pkg/rebuild/pypi/platform", generated.Format(time.RFC3339))
@@ -635,11 +639,24 @@ func inferBaseImage(pins platform.CibuildwheelPinTable, platformTag string, uplo
 	// auditwheel version in its SBOM.
 	ref, version, ok := pins.ImageAt(repo, uploaded)
 	if !ok {
-		log.Printf("No cibuildwheel pin known for %s at %s, using the unpinned image", repo, uploaded.Format(time.RFC3339))
+		log.Printf("No cibuildwheel pin known for %s (%s) at %s, using the unpinned image", repo, cmp.Or(pythonTag, "any interpreter"), uploaded.Format(time.RFC3339))
 		return ""
 	}
 	log.Printf("Using base image %s pinned by cibuildwheel %s", ref, version)
 	return ref
+}
+
+// requiredPythonTag returns the CPython tag of the interpreter that built a
+// wheel, such as "cp38" or "cp315", or an empty string if the ABI tag does not
+// tie the wheel to one interpreter.
+// NOTE: Only abi3 sets the python tag to the minimum supported version rather
+// than the building interpreter, and setup-venv/manylinux widens its
+// interpreter search to any cp3* only for abi3.
+func requiredPythonTag(tags WheelTags) string {
+	if tags.ABI == "abi3" {
+		return ""
+	}
+	return tags.Python
 }
 
 // inferBuildPaths returns the absolute path that upstream built the repository
