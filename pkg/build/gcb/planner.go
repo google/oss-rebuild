@@ -806,7 +806,7 @@ func (p *Planner) generateProxyBuildScript(target rebuild.Target, dockerfile str
 		"TLSPort":              "3129",
 		"CtrlPort":             "3127",
 		"DockerPort":           "3130",
-		"CertEnvVars":          []string{"PIP_CERT", "CURL_CA_BUNDLE", "NODE_EXTRA_CA_CERTS", "CLOUDSDK_CORE_CUSTOM_CA_CERTS_FILE", "NIX_SSL_CERT_FILE"},
+		"CertEnvVars":          []string{"PIP_CERT", "CURL_CA_BUNDLE", "NODE_EXTRA_CA_CERTS", "CLOUDSDK_CORE_CUSTOM_CA_CERTS_FILE", "NIX_SSL_CERT_FILE", "SSL_CERT_FILE"},
 		"TetragonSysgraphURL":  tetragonSysgraphURL,
 		"TetragonSysgraphAuth": tetragonSysgraphAuth,
 		"RunExitCode":          runExitSentinel(opts),
