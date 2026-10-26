@@ -110,7 +110,7 @@ func TestDockerRunPlanner(t *testing.T) {
 				OutputPath: "/out/rebuild",
 				Setup: textwrap.Dedent(`
 			apk add 'curl'
-			curl https://example.com/timewarp > /timewarp
+			curl -f https://example.com/timewarp > /timewarp
 			chmod +x /timewarp
 			apk update
 			apk add 'git'`[1:]),
@@ -165,7 +165,7 @@ func TestDockerRunPlanner(t *testing.T) {
 				OutputPath: "/out/rebuild",
 				Setup: textwrap.Dedent(`
 			apk add 'curl'
-			curl https://example.com/timewarp > /timewarp
+			curl -f https://example.com/timewarp > /timewarp
 			chmod +x /timewarp
 			apk update
 			apk add`[1:]),
@@ -215,7 +215,7 @@ func TestDockerRunPlanner(t *testing.T) {
 				RequiresAuth: true,
 				Setup: textwrap.Dedent(`
 			apk add 'curl'
-			curl -K - https://example.com/timewarp > /timewarp <<EOF
+			curl -f -K - https://example.com/timewarp > /timewarp <<EOF
 			header = "$AUTH_HEADER"
 			EOF
 			chmod +x /timewarp
@@ -268,7 +268,7 @@ func TestDockerRunPlanner(t *testing.T) {
 				OutputPath: "/out/rebuild",
 				Setup: textwrap.Dedent(`
 			yum install -y 'curl' '/usr/bin/nc'
-			curl https://example.com/timewarp > /timewarp
+			curl -f https://example.com/timewarp > /timewarp
 			chmod +x /timewarp
 			yum makecache
 			yum install -y 'git'`[1:]),

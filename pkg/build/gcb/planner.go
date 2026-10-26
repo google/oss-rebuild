@@ -264,7 +264,7 @@ var gcbDockerfileTpl = template.Must(
 			 {{.PackageManager.UpdateCmd}}
 			 {{.PackageManager.InstallCommand (list "curl" "netcat-openbsd")}}
 			 {{- end}}
-			 curl {{if .TimewarpAuth}}-H @/run/secrets/auth_header {{end}}{{.TimewarpURL}} > timewarp
+			 curl -f {{if .TimewarpAuth}}-H @/run/secrets/auth_header {{end}}{{.TimewarpURL}} > timewarp
 			 chmod +x timewarp
 			{{- else if eq .OS "debian"}}
 			 {{.PackageManager.UpdateCmd}}
@@ -335,7 +335,7 @@ var gcbStandardBuildTpl = template.Must(
 			{{- end}}
 			{{- if .UseSyscallMonitor}}
 			{{- if .TetragonSysgraphURL}}
-			curl {{if .TetragonSysgraphAuth}}-H @/tmp/auth_header {{end}}{{.TetragonSysgraphURL}} > tetragon_sysgraph
+			curl -f {{if .TetragonSysgraphAuth}}-H @/tmp/auth_header {{end}}{{.TetragonSysgraphURL}} > tetragon_sysgraph
 			chmod +x tetragon_sysgraph
 			docker run --name=sysgraph --detach --cpu-shares=5120 -v=/workspace/:/workspace/ docker.io/library/alpine:3.21 /workspace/tetragon_sysgraph -server unix:///workspace/tetragon/tetragon.sock -output /workspace/sysgraph.zip
 			docker logs --follow sysgraph &
@@ -425,7 +425,7 @@ var gcbProxyBuildTpl = template.Must(
 			apt install -y jq && curl -H Metadata-Flavor:Google http://metadata.google.internal/computeMetadata/v1/instance/service-accounts/{{.ServiceAccountEmail}}/token | jq .access_token > /tmp/token
 			(printf "Authorization: Bearer "; cat /tmp/token) > /tmp/auth_header
 			{{- end}}
-			curl {{if .ProxyAuth}}-H @/tmp/auth_header {{end -}} {{.ProxyURL}} > proxy
+			curl -f {{if .ProxyAuth}}-H @/tmp/auth_header {{end -}} {{.ProxyURL}} > proxy
 			chmod +x proxy
 			docker network create proxynet
 			useradd --system {{.User}}
@@ -477,7 +477,7 @@ var gcbProxyBuildTpl = template.Must(
 			grep -q "Listening for events..." <(docker logs --follow $TID 2>&1) || (docker logs $TID && exit 1)
 			TETRAGON_PID=$(docker inspect -f '{{printf "%s" "{{.State.Pid}}"}}' tetragon)
 			{{- if .TetragonSysgraphURL}}
-			curl {{if .TetragonSysgraphAuth}}-H @/tmp/auth_header {{end}}{{.TetragonSysgraphURL}} > tetragon_sysgraph
+			curl -f {{if .TetragonSysgraphAuth}}-H @/tmp/auth_header {{end}}{{.TetragonSysgraphURL}} > tetragon_sysgraph
 			chmod +x tetragon_sysgraph
 			docker run --name=sysgraph --detach --cpu-shares=5120 -v=/workspace/:/workspace/ docker.io/library/alpine:3.21 /workspace/tetragon_sysgraph -server unix:///workspace/tetragon/tetragon.sock -output /workspace/sysgraph.zip
 			docker logs --follow sysgraph &
@@ -904,7 +904,7 @@ var gcbAssetUploadTpl = template.Must(
 			{{- if .GSUtilAuth}}
 			apk add curl jq && curl -H Metadata-Flavor:Google http://metadata.google.internal/computeMetadata/v1/instance/service-accounts/{{.ServiceAccountEmail}}/token | jq .access_token > /tmp/token
 			(printf "Authorization: Bearer "; cat /tmp/token) > /tmp/auth_header
-			curl -H @/tmp/auth_header {{.GSUtilURL}} > gsutil_writeonly
+			curl -f -H @/tmp/auth_header {{.GSUtilURL}} > gsutil_writeonly
 			{{- else}}
 			wget -O gsutil_writeonly {{.GSUtilURL}}
 			{{- end}}

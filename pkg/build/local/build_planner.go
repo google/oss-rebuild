@@ -51,7 +51,7 @@ var dockerBuildDockerfileTpl = template.Must(
 			 {{.PackageManager.UpdateCmd}}
 			 {{.PackageManager.InstallCommand (list "curl" "netcat-openbsd")}}
 			 {{- end}}
-			 curl {{if .TimewarpAuth}}-H @/run/secrets/auth_header {{end}}{{.TimewarpURL}} > timewarp
+			 curl -f {{if .TimewarpAuth}}-H @/run/secrets/auth_header {{end}}{{.TimewarpURL}} > timewarp
 			 chmod +x timewarp
 			{{- end}}
 			 {{.PackageManager.UpdateCmd}}

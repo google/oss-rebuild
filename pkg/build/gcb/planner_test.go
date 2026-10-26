@@ -264,7 +264,7 @@ FROM docker.io/library/alpine:3.19
 RUN sed 's/^ //' <<'EOF' | sh
  set -eux
  apk add 'curl'
- curl https://my-bucket.storage.googleapis.com/timewarp > timewarp
+ curl -f https://my-bucket.storage.googleapis.com/timewarp > timewarp
  chmod +x timewarp
  apk add 'git' 'make'
 EOF
@@ -320,7 +320,7 @@ FROM docker.io/library/alpine:3.19
 RUN --mount=type=secret,id=auth_header sed 's/^ //' <<'EOF' | sh
  set -eux
  apk add 'curl'
- curl -H @/run/secrets/auth_header https://my-bucket.storage.googleapis.com/timewarp > timewarp
+ curl -f -H @/run/secrets/auth_header https://my-bucket.storage.googleapis.com/timewarp > timewarp
  chmod +x timewarp
  apk add 'git' 'make'
 EOF
@@ -376,7 +376,7 @@ RUN sed 's/^ //' <<'EOF' | sh
  set -eux
  apt update
  apt install -y 'curl' 'netcat-openbsd'
- curl https://my-bucket.storage.googleapis.com/timewarp > timewarp
+ curl -f https://my-bucket.storage.googleapis.com/timewarp > timewarp
  chmod +x timewarp
  apt install -y 'git' 'make'
 EOF
@@ -433,7 +433,7 @@ RUN --mount=type=secret,id=auth_header sed 's/^ //' <<'EOF' | sh
  set -eux
  apt update
  apt install -y 'curl' 'netcat-openbsd'
- curl -H @/run/secrets/auth_header https://my-bucket.storage.googleapis.com/timewarp > timewarp
+ curl -f -H @/run/secrets/auth_header https://my-bucket.storage.googleapis.com/timewarp > timewarp
  chmod +x timewarp
  apt install -y 'git' 'make'
 EOF
@@ -490,7 +490,7 @@ FROM quay.io/pypa/manylinux2014_x86_64
 RUN sed 's/^ //' <<'EOF' | sh
  set -eux
  yum install -y 'curl' '/usr/bin/nc'
- curl https://my-bucket.storage.googleapis.com/timewarp > timewarp
+ curl -f https://my-bucket.storage.googleapis.com/timewarp > timewarp
  chmod +x timewarp
  yum install -y 'git' 'make'
 EOF
@@ -821,7 +821,7 @@ func TestGCBPlannerBuildScriptWithSysgraph(t *testing.T) {
 					export TID=$(docker run --name=tetragon --detach --pid=host --cgroupns=host --privileged -v=/workspace/tetragon/:/workspace/tetragon/ -v=/sys/kernel/btf/vmlinux:/var/lib/tetragon/btf quay.io/cilium/tetragon:v1.4.1 /usr/bin/tetragon --tracing-policy-dir=/workspace/tetragon/ --server-address=unix:///workspace/tetragon/tetragon.sock --rb-size=10M --rb-queue-size=10M --event-queue-size=10000000)
 					grep -q "Listening for events..." <(docker logs --follow $TID 2>&1) || (docker logs $TID && exit 1)
 					TETRAGON_PID=$(docker inspect -f '{{.State.Pid}}' tetragon)
-					curl https://storage.googleapis.com/bucket/tetragon_sysgraph > tetragon_sysgraph
+					curl -f https://storage.googleapis.com/bucket/tetragon_sysgraph > tetragon_sysgraph
 					chmod +x tetragon_sysgraph
 					docker run --name=sysgraph --detach --cpu-shares=5120 -v=/workspace/:/workspace/ docker.io/library/alpine:3.21 /workspace/tetragon_sysgraph -server unix:///workspace/tetragon/tetragon.sock -output /workspace/sysgraph.zip
 					docker logs --follow sysgraph &
@@ -863,7 +863,7 @@ func TestGCBPlannerBuildScriptWithSysgraph(t *testing.T) {
 					TETRAGON_PID=$(docker inspect -f '{{.State.Pid}}' tetragon)
 					apt install -y jq && curl -H Metadata-Flavor:Google http://metadata.google.internal/computeMetadata/v1/instance/service-accounts/test@test.iam.gserviceaccount.com/token | jq .access_token > /tmp/token
 					(printf "Authorization: Bearer "; cat /tmp/token) > /tmp/auth_header
-					curl -H @/tmp/auth_header https://storage.googleapis.com/bucket/tetragon_sysgraph > tetragon_sysgraph
+					curl -f -H @/tmp/auth_header https://storage.googleapis.com/bucket/tetragon_sysgraph > tetragon_sysgraph
 					chmod +x tetragon_sysgraph
 					docker run --name=sysgraph --detach --cpu-shares=5120 -v=/workspace/:/workspace/ docker.io/library/alpine:3.21 /workspace/tetragon_sysgraph -server unix:///workspace/tetragon/tetragon.sock -output /workspace/sysgraph.zip
 					docker logs --follow sysgraph &
@@ -900,7 +900,7 @@ func TestGCBPlannerBuildScriptWithSysgraph(t *testing.T) {
 					#!/usr/bin/env bash
 					set -eux
 					echo 'Starting rebuild for {Ecosystem:npm Package:test-package Version:1.0.0 Artifact:test-package-1.0.0.tgz}'
-					curl https://storage.googleapis.com/bucket/proxy > proxy
+					curl -f https://storage.googleapis.com/bucket/proxy > proxy
 					chmod +x proxy
 					docker network create proxynet
 					useradd --system proxyu
@@ -941,7 +941,7 @@ func TestGCBPlannerBuildScriptWithSysgraph(t *testing.T) {
 					export TID=$(docker run --name=tetragon --detach --pid=host --cgroupns=host --privileged -v=/workspace/tetragon/:/workspace/tetragon/ -v=/sys/kernel/btf/vmlinux:/var/lib/tetragon/btf quay.io/cilium/tetragon:v1.4.1 /usr/bin/tetragon --tracing-policy-dir=/workspace/tetragon/ --server-address=unix:///workspace/tetragon/tetragon.sock --rb-size=10M --rb-queue-size=10M --event-queue-size=10000000)
 					grep -q "Listening for events..." <(docker logs --follow $TID 2>&1) || (docker logs $TID && exit 1)
 					TETRAGON_PID=$(docker inspect -f '{{.State.Pid}}' tetragon)
-					curl https://storage.googleapis.com/bucket/tetragon_sysgraph > tetragon_sysgraph
+					curl -f https://storage.googleapis.com/bucket/tetragon_sysgraph > tetragon_sysgraph
 					chmod +x tetragon_sysgraph
 					docker run --name=sysgraph --detach --cpu-shares=5120 -v=/workspace/:/workspace/ docker.io/library/alpine:3.21 /workspace/tetragon_sysgraph -server unix:///workspace/tetragon/tetragon.sock -output /workspace/sysgraph.zip
 					docker logs --follow sysgraph &
