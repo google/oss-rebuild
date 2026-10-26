@@ -94,7 +94,7 @@ func TestGCSBackendServe(t *testing.T) {
 	// Serve fixed object attrs for any request so serve() reaches the redirect.
 	gcs := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
-		fmt.Fprint(w, `{"bucket": "test-bucket", "generation": "42"}`)
+		fmt.Fprint(w, `{"bucket": "test-bucket", "generation": "42", "size": "1234"}`)
 	}))
 	defer gcs.Close()
 	client, err := storage.NewClient(context.Background(), option.WithEndpoint(gcs.URL), option.WithoutAuthentication())
@@ -140,6 +140,9 @@ func TestGCSBackendServe(t *testing.T) {
 			loc := rr.Header().Get("Location")
 			if loc != tc.want {
 				t.Errorf("Location = %q, want %q", loc, tc.want)
+			}
+			if got := rr.Header().Get(sizeHeader); got != "1234" {
+				t.Errorf("%s = %q, want %q", sizeHeader, got, "1234")
 			}
 
 			// Recover the object name the way the JSON API routes it: the

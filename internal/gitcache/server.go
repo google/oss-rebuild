@@ -30,6 +30,9 @@ import (
 
 var thresholdFudgeFactor = 24 * time.Hour
 
+// sizeHeader carries the bytes of the archive a redirect points to.
+const sizeHeader = "Git-Cache-Size"
+
 // Server provides HTTP handling for the git cache.
 type Server struct {
 	backend   cacheBackend
