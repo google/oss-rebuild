@@ -324,3 +324,49 @@ func TestClientSizeStopsWithContextMidRequest(t *testing.T) {
 		t.Errorf("Size() error = %v, want context.DeadlineExceeded", err)
 	}
 }
+
+func TestGetLinkReportsRefusals(t *testing.T) {
+	for _, tc := range []struct {
+		name   string
+		status int
+		header http.Header
+		body   string
+		check  func(t *testing.T, err error)
+	}{
+		{
+			name:   "oversize",
+			status: http.StatusRequestEntityTooLarge,
+			header: http.Header{sizeLimitHeader: {"1024"}},
+			check: func(t *testing.T, err error) {
+				var tooLarge *gitx.RepoTooLargeError
+				if !errors.As(err, &tooLarge) || tooLarge.Limit != 1024 || tooLarge.URL != "github.com/org/repo" {
+					t.Errorf("GetLink() error = %v, want a RepoTooLargeError with the 1024-byte limit", err)
+				}
+			},
+		},
+		{
+			name:   "fill failed",
+			status: http.StatusInternalServerError,
+			body:   "Fill failed: fill ran past its time budget",
+			check: func(t *testing.T, err error) {
+				if err == nil || !strings.Contains(err.Error(), "fill ran past its time budget") {
+					t.Errorf("GetLink() error = %v, want the server's reason", err)
+				}
+			},
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				for k, v := range tc.header {
+					w.Header()[k] = v
+				}
+				http.Error(w, tc.body, tc.status)
+			}))
+			defer ts.Close()
+			u, _ := url.Parse(ts.URL)
+			c := Client{IDClient: ts.Client(), APIClient: ts.Client(), URL: u}
+			_, err := c.GetLink(context.Background(), "github.com/org/repo", time.Time{})
+			tc.check(t, err)
+		})
+	}
+}

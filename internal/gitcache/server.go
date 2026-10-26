@@ -35,6 +35,18 @@ import (
 
 var thresholdFudgeFactor = 24 * time.Hour
 
+// A fill stops at fillTimeout, below the service's 60-minute request timeout
+// so the request can still report it, or once it stages more than its size
+// budget, checked every sizePollInterval.
+var (
+	fillTimeout      = 55 * time.Minute
+	errFillTimeout   = errors.New("fill ran past its time budget")
+	sizePollInterval = 5 * time.Second
+)
+
+// sizeLimitHeader carries the fill budget on a 413.
+const sizeLimitHeader = "Git-Cache-Size-Limit"
+
 // sizeHeader carries the bytes of the archive a redirect points to.
 const sizeHeader = "Git-Cache-Size"
 
@@ -47,6 +59,7 @@ type Server struct {
 	backend   cacheBackend
 	cloneFunc gitx.CloneFunc
 	remote    func(repo string) string // clone URL. defaults to https
+	fillBytes int64                    // fill budget in bytes. 0 means none
 }
 
 func (s *Server) remoteURL(repo string) string {
@@ -129,17 +142,23 @@ func (s *Server) HandleGet(rw http.ResponseWriter, httpReq *http.Request) {
 		defer release()
 		// Another fill may have finished between the check and the lease.
 		if mtime, err := s.backend.exists(held, p); err != nil || mtime.IsZero() || mtime.Before(threshold) {
-			if err := s.fill(held, u, req.Ref, p, !mtime.IsZero()); err != nil {
+			fctx, cancel := context.WithTimeoutCause(held, fillTimeout, errFillTimeout)
+			defer cancel()
+			if err := s.fill(fctx, u, req.Ref, p, !mtime.IsZero()); err != nil {
 				log.Printf("Failed to populate cache: %v\n", err)
+				var tooLarge *gitx.RepoTooLargeError
 				switch {
 				case errors.Is(err, transport.ErrAuthenticationRequired):
 					http.Error(rw, err.Error(), 400)
 				case errors.Is(context.Cause(held), errLeaseLost):
 					// The entry is now the new holder's to write.
 					respondFilling(rw)
+				case errors.As(err, &tooLarge):
+					rw.Header().Set(sizeLimitHeader, strconv.FormatInt(tooLarge.Limit, 10))
+					http.Error(rw, err.Error(), http.StatusRequestEntityTooLarge)
 				default:
 					// The previous entry stays for the next fill to refresh from.
-					http.Error(rw, "Internal Error", 500)
+					http.Error(rw, "Fill failed: "+err.Error(), 500)
 				}
 				return
 			}
@@ -160,8 +179,10 @@ func (s *Server) fill(ctx context.Context, repo, ref, cachePath string, exists b
 	// A single-ref entry is a single-branch clone, cheap to redo.
 	if exists && ref == "" {
 		err := s.refreshCache(ctx, repo, cachePath)
-		if err == nil {
-			return nil
+		// A clone fails the same way once the budget is spent.
+		var tooLarge *gitx.RepoTooLargeError
+		if err == nil || ctx.Err() != nil || errors.As(err, &tooLarge) {
+			return err
 		}
 		log.Printf("Refreshing %s by fetch failed, cloning instead: %v\n", cachePath, err)
 	}
@@ -176,13 +197,16 @@ func (c nilCache) Put(plumbing.EncodedObject)                       {}
 func (c nilCache) Clear()                                           {}
 
 // populateCache writes an archived bare checkout of the repo to the cache backend.
-func (s *Server) populateCache(ctx context.Context, repo, ref string, cachePath string) error {
+func (s *Server) populateCache(ctx context.Context, repo, ref string, cachePath string) (err error) {
 	// Create a temp directory for cloning
 	tmpDir, err := os.MkdirTemp("", "git-cache-*")
 	if err != nil {
 		return errors.Wrap(err, "creating temp directory")
 	}
 	defer os.RemoveAll(tmpDir)
+	ctx, stop := s.watchSize(ctx, repo, tmpDir)
+	defer stop()
+	defer func() { err = fillErr(ctx, err) }()
 	// Set up filesystem storage in the temp directory
 	m := osfs.New(tmpDir)
 	st := filesystem.NewStorage(m, nilCache{})
@@ -231,7 +255,7 @@ var cloneRefSpecs = []string{"+refs/heads/*:refs/heads/*", "+refs/heads/*:refs/r
 // refreshCache updates the stale entry at cachePath by fetching onto it,
 // which for a large repository costs a fraction of a clone. The result holds
 // what a clone would: the same refs, HEAD and objects.
-func (s *Server) refreshCache(ctx context.Context, repo, cachePath string) error {
+func (s *Server) refreshCache(ctx context.Context, repo, cachePath string) (err error) {
 	if !gitx.NativeGitAvailable() {
 		return errors.New("fetching needs native git")
 	}
@@ -240,6 +264,9 @@ func (s *Server) refreshCache(ctx context.Context, repo, cachePath string) error
 		return errors.Wrap(err, "creating temp directory")
 	}
 	defer os.RemoveAll(tmpDir)
+	ctx, stop := s.watchSize(ctx, repo, tmpDir)
+	defer stop()
+	defer func() { err = fillErr(ctx, err) }()
 	r, err := s.backend.reader(ctx, cachePath)
 	if err != nil {
 		return errors.Wrap(err, "opening entry")
@@ -460,4 +487,57 @@ func createTarball(srcDir string, w io.Writer) error {
 		return errors.Wrap(err, "closing gzip writer")
 	}
 	return nil
+}
+
+// fillErr reports why ctx ended in place of err, since git killed at a
+// budget reports only its signal.
+func fillErr(ctx context.Context, err error) error {
+	if cause := context.Cause(ctx); err != nil && cause != nil {
+		return cause
+	}
+	return err
+}
+
+// watchSize returns a context that ends with a RepoTooLargeError once dir
+// stages more than the fill budget, and a func to stop watching.
+func (s *Server) watchSize(ctx context.Context, repo, dir string) (context.Context, func()) {
+	if s.fillBytes <= 0 {
+		return ctx, func() {}
+	}
+	ctx, cancel := context.WithCancelCause(ctx)
+	done := make(chan struct{})
+	go func() {
+		t := time.NewTicker(sizePollInterval)
+		defer t.Stop()
+		for {
+			select {
+			case <-done:
+				return
+			case <-ctx.Done():
+				return
+			case <-t.C:
+				if dirBytes(dir) > s.fillBytes {
+					cancel(&gitx.RepoTooLargeError{URL: "https://" + repo, Limit: s.fillBytes})
+					return
+				}
+			}
+		}
+	}()
+	return ctx, func() {
+		close(done)
+		cancel(nil)
+	}
+}
+
+func dirBytes(dir string) int64 {
+	var n int64
+	filepath.WalkDir(dir, func(_ string, d fs.DirEntry, err error) error {
+		if err == nil && d.Type().IsRegular() {
+			if info, err := d.Info(); err == nil {
+				n += info.Size()
+			}
+		}
+		return nil
+	})
+	return n
 }
