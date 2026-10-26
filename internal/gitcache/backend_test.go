@@ -377,3 +377,29 @@ func TestGCSBackendLeaseEndsWhenLost(t *testing.T) {
 		t.Errorf("lease generation after release = %d, want the successor's %d kept", fake.gen, theirs)
 	}
 }
+
+func TestLocalBackendWriterAbandonsOnCancel(t *testing.T) {
+	dir := t.TempDir()
+	b := &localBackend{baseDir: dir}
+	if err := os.WriteFile(filepath.Join(dir, "entry"), []byte("previous"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	ctx, cancel := context.WithCancel(context.Background())
+	w, err := b.writer(ctx, "entry")
+	if err != nil {
+		t.Fatalf("writer() error = %v", err)
+	}
+	if _, err := w.Write([]byte("partial")); err != nil {
+		t.Fatal(err)
+	}
+	cancel()
+	if err := w.Close(); err == nil {
+		t.Error("Close() after cancel = nil, want an error")
+	}
+	if got, err := os.ReadFile(filepath.Join(dir, "entry")); err != nil || string(got) != "previous" {
+		t.Errorf("entry after an abandoned write = %q, %v, want the previous content", got, err)
+	}
+	if left, _ := filepath.Glob(filepath.Join(dir, ".tmp-*")); len(left) != 0 {
+		t.Errorf("abandoned write left %v", left)
+	}
+}
