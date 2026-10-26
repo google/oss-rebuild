@@ -67,7 +67,14 @@ var _ CloneFunc = Clone
 var (
 	// ErrRemoteNotTracked is returned when a reuse is attempted but the remote does not match.
 	ErrRemoteNotTracked = errors.New("existing repository does not track desired remote")
+	// ErrRateLimited is returned when the remote refuses a request for its rate.
+	ErrRateLimited = errors.New("remote rate-limited the request")
 )
+
+// RateLimited reports whether git's output shows the remote answered HTTP 429.
+func RateLimited(output string) bool {
+	return strings.Contains(output, "returned error: 429")
+}
 
 // fatalLineRe matches the `fatal: <reason>` line(s) that `git clone` always emits as the last line of stderr on failure.
 var fatalLineRe = regexp.MustCompile(`(?m)^fatal: (.+)$`)
@@ -98,6 +105,8 @@ func classifyCloneError(output []byte, execErr error) error {
 		strings.Contains(reason, "could not read Username"),
 		strings.Contains(reason, "could not read Password"):
 		return errors.Wrap(transport.ErrAuthenticationRequired, reason)
+	case RateLimited(reason):
+		return errors.Wrap(ErrRateLimited, reason)
 	default:
 		return errors.Errorf("git clone unknown failure: %s", reason)
 	}

@@ -59,6 +59,10 @@ const (
 	failuresSuffix = ".failures"
 )
 
+// rateLimitRetryAfter is the Retry-After for a fill the remote rate-limited,
+// which should generally be at least a minute (e.g. GitHub).
+const rateLimitRetryAfter = time.Minute
+
 // fillRetryAfter is the Retry-After for an entry being filled. Waiting in
 // place would hold an instance for each of a monorepo's many packages.
 const fillRetryAfter = 10 * time.Second
@@ -169,6 +173,10 @@ func (s *Server) HandleGet(rw http.ResponseWriter, httpReq *http.Request) {
 					respondFilling(rw)
 				case ctx.Err() != nil:
 					// The request ended, which says nothing of the repository.
+				case errors.Is(err, gitx.ErrRateLimited):
+					// A rate limit says nothing of the repository, so it is not counted.
+					rw.Header().Set("Retry-After", strconv.Itoa(int(rateLimitRetryAfter.Seconds())))
+					http.Error(rw, err.Error(), http.StatusTooManyRequests)
 				case errors.Is(err, transport.ErrRepositoryNotFound), errors.Is(err, git.ErrBranchNotFound):
 					// Cheap to repeat, and the repository or ref may yet appear.
 					http.Error(rw, "Fill failed: "+err.Error(), 500)
@@ -202,9 +210,9 @@ func (s *Server) fill(ctx context.Context, repo, ref, cachePath string, exists b
 	// A single-ref entry is a single-branch clone, cheap to redo.
 	if exists && ref == "" {
 		err := s.refreshCache(ctx, repo, cachePath)
-		// A clone fails the same way once the budget is spent.
+		// A clone fails the same way after a spent budget or a rate limit.
 		var tooLarge *gitx.RepoTooLargeError
-		if err == nil || ctx.Err() != nil || errors.As(err, &tooLarge) {
+		if err == nil || ctx.Err() != nil || errors.As(err, &tooLarge) || errors.Is(err, gitx.ErrRateLimited) {
 			return err
 		}
 		log.Printf("Refreshing %s by fetch failed, cloning instead: %v\n", cachePath, err)
@@ -314,6 +322,9 @@ func (s *Server) refreshCache(ctx context.Context, repo, cachePath string) (err 
 		}, "git", append([]string{"--git-dir=" + tmpDir, "-c", "gc.auto=0", "-c", "fetch.unpackLimit=1"}, args...)...)
 		if err != nil {
 			err = errors.Errorf("git %s: %v: %s", args[0], err, bytes.TrimSpace(stderr.Bytes()))
+			if gitx.RateLimited(stderr.String()) {
+				err = errors.Wrap(gitx.ErrRateLimited, err.Error())
+			}
 		}
 		return out.String(), err
 	}

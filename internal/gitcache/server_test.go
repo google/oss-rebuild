@@ -990,6 +990,58 @@ func TestFillFailuresNotCounted(t *testing.T) {
 	}
 }
 
+func TestRateLimitedFillsAreNotCounted(t *testing.T) {
+	if !gitx.NativeGitAvailable() {
+		t.Skip("native git not available")
+	}
+	limited := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		http.Error(w, "rate-limited", http.StatusTooManyRequests)
+	}))
+	defer limited.Close()
+	cacheDir := t.TempDir()
+	p := filepath.Join(cacheDir, "github.com/org/repo/repo.tgz")
+	var clones int
+	s := &Server{backend: &localBackend{baseDir: cacheDir}, remote: func(string) string { return limited.URL + "/org/repo" }}
+	s.cloneFunc = func(ctx context.Context, st storage.Storer, fs billy.Filesystem, o *git.CloneOptions) (*gitx.Repo, error) {
+		clones++
+		return gitx.Clone(ctx, st, fs, o)
+	}
+	get := func() *httptest.ResponseRecorder {
+		rr := httptest.NewRecorder()
+		s.HandleGet(rr, httptest.NewRequest("GET", "/get?uri=github.com/org/repo&contains="+time.Now().UTC().Add(-time.Hour).Format(time.RFC3339), nil))
+		return rr
+	}
+	for i := range failLimit + 1 {
+		if rr := get(); rr.Code != http.StatusTooManyRequests || rr.Header().Get("Retry-After") == "" {
+			t.Errorf("request %d: HandleGet() = %d %q, want 429 with Retry-After", i, rr.Code, rr.Body.String())
+		}
+	}
+	if _, err := os.Stat(p + failuresSuffix); !os.IsNotExist(err) {
+		t.Errorf("rate-limited fills were recorded as failures: %v", err)
+	}
+	// A rate-limited refresh skips the clone, which the remote would refuse too.
+	up := newUpstream(t)
+	dir := filepath.Join(t.TempDir(), "entry.git")
+	gitRun(t, up, "clone", "-q", "--bare", up, dir)
+	gitRun(t, dir, "config", "remote.origin.url", limited.URL+"/org/repo")
+	f, err := os.Create(p)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := createTarball(dir, f); err != nil {
+		t.Fatal(err)
+	}
+	f.Close()
+	stale := time.Now().Add(-48 * time.Hour)
+	if err := os.Chtimes(p, stale, stale); err != nil {
+		t.Fatal(err)
+	}
+	clones = 0
+	if rr := get(); rr.Code != http.StatusTooManyRequests || clones != 0 {
+		t.Errorf("HandleGet() on a stale entry = %d %q after %d clones, want 429 without a clone", rr.Code, rr.Body.String(), clones)
+	}
+}
+
 func TestFailedFillKeepsEntry(t *testing.T) {
 	cacheDir := t.TempDir()
 	p := filepath.Join(cacheDir, "github.com/org/repo/repo.tgz")
