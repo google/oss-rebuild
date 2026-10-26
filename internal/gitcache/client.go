@@ -93,9 +93,7 @@ func (c Client) GetLinkWithRef(repo string, contains time.Time, ref string) (uri
 	var errs []byte
 	switch resp.StatusCode {
 	case http.StatusFound:
-		uri = resp.Header.Get("Location")
-		// FIXME: Figure out why this URL parsing artifact is being reintroduced.
-		return strings.ReplaceAll(uri, "%252F", "%2F"), nil
+		return resp.Header.Get("Location"), nil
 	case http.StatusOK:
 		return u.String(), nil
 	case http.StatusBadRequest:
