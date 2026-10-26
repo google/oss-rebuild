@@ -397,10 +397,14 @@ func splitPacks(ctx context.Context, dir string) error {
 // createTarball creates a gzipped tar archive of the given directory.
 func createTarball(srcDir string, w io.Writer) error {
 	m := osfs.New(srcDir)
-	gw := gzip.NewWriter(w)
+	// Packs are already compressed, so compressing them again costs most of a
+	// large fill and saves little. The stream stays gzip for existing readers.
+	gw, err := gzip.NewWriterLevel(w, gzip.NoCompression)
+	if err != nil {
+		return err
+	}
 	tw := tar.NewWriter(gw)
-	var bytesWritten int64
-	err := util.Walk(m, "/", func(path string, info fs.FileInfo, err error) error {
+	err = util.Walk(m, "/", func(path string, info fs.FileInfo, err error) error {
 		if err != nil {
 			// Fail on any path handling issue (see filepath.WalkFunc docs).
 			return err
@@ -431,17 +435,10 @@ func createTarball(srcDir string, w io.Writer) error {
 			if err != nil {
 				return err
 			}
-			if written, err := io.Copy(tw, f); err != nil {
+			_, err = io.Copy(tw, f)
+			f.Close()
+			if err != nil {
 				return err
-			} else {
-				bytesWritten += written
-			}
-			// Periodically flush to limit memory usage.
-			if bytesWritten > 1_000_000 {
-				bytesWritten = 0
-				if err := gw.Flush(); err != nil {
-					return err
-				}
 			}
 			// Remove completed file from filesystem.
 			if err := m.Remove(path); err != nil {

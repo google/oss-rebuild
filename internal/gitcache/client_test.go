@@ -96,6 +96,8 @@ func setupCloneTestServer(t *testing.T, yamlSpec string) Client {
 	mux.HandleFunc("/tarball", func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/gzip")
 		w.Header().Set("Last-Modified", entryFetchTime.Format(http.TimeFormat))
+		// Storage declares the length, else a large body goes out chunked.
+		w.Header().Set("Content-Length", strconv.Itoa(len(tarballBytes)))
 		w.Write(tarballBytes)
 	})
 	u, err := url.Parse(ts.URL)
