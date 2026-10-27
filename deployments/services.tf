@@ -226,14 +226,14 @@ resource "google_cloud_run_v2_service" "crates-registry" {
       image = data.google_artifact_registry_docker_image.crates-registry.self_link
       args = [
         "--cache-dir=/cache",
-        "--max-snapshots=16",
+        "--max-snapshots=40",
         "--current-update-interval-mins=30",
         "--git-cache-url=${google_cloud_run_v2_service.git-cache.uri}",
       ]
       resources {
         limits = {
-          cpu    = "4000m"
-          memory = "16G"
+          cpu    = "8000m"
+          memory = "32G"
         }
       }
       volume_mounts {
@@ -250,13 +250,19 @@ resource "google_cloud_run_v2_service" "crates-registry" {
         failure_threshold = 90
       }
     }
-    // At their current size, this should be enough to host the current index (1.5G) as well as ~16 snapshots (~.5G)
+    // Intended to hold the current index (1.5G) and every snapshot, so a resolve
+    // never waits on a snapshot it evicted. As of 2026-10 the 35 archived
+    // snapshots total about 16G, and recent ones add 0.5-0.9G each.
     volumes {
       name = "cache"
       empty_dir {
         medium     = "MEMORY"
-        size_limit = "12Gi"
+        size_limit = "26Gi"
       }
+    }
+    // A few warm instances resolve faster than many cold ones.
+    scaling {
+      max_instance_count = 4
     }
     dynamic "vpc_access" {
       for_each = var.enable_internal_ingress ? [1] : []
