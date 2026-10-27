@@ -6,8 +6,11 @@ package execx
 import (
 	"context"
 	"errors"
+	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
+	"syscall"
 	"testing"
 	"time"
 )
@@ -110,6 +113,71 @@ func TestMockStart(t *testing.T) {
 	}
 	if cmds := mock.GetCommands(); cmds[len(cmds)-1].Error == nil || cmds[len(cmds)-1].Handle != nil {
 		t.Errorf("failed start recorded as %+v; want the error and no handle", cmds[len(cmds)-1])
+	}
+}
+
+func TestRealStart_KillGroup(t *testing.T) {
+	for _, tc := range []struct {
+		name   string
+		script string // starts a child that ignores TERM and writes its pid to $1
+		grace  time.Duration
+	}{
+		// The child inherits sh's output, so killing sh alone leaves it running
+		// and holding Wait open.
+		{"HoldsOutput", `trap '' TERM; sleep 30 & echo $! > "$1"; wait`, 0},
+		{"HoldsOutputWithGrace", `trap '' TERM; sleep 30 & echo $! > "$1"; wait`, 100 * time.Millisecond},
+		// sh exits on TERM, and the child, holding none of its output, would run
+		// on past Wait.
+		{"DetachedWithGrace", `(trap '' TERM; exec sleep 30) >/dev/null 2>&1 & echo $! > "$1"; wait`, 100 * time.Millisecond},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			pidFile := filepath.Join(t.TempDir(), "pid")
+			ctx, cancel := context.WithCancel(context.Background())
+			var out strings.Builder
+			h, err := NewRealCommandExecutor().Start(ctx, CommandOptions{Output: &out, StopGrace: tc.grace, KillGroup: true}, "sh", "-c", tc.script, "sh", pidFile)
+			if err != nil {
+				t.Fatalf("Start: %v", err)
+			}
+			// Cancel once the child runs, however long sh takes to start it.
+			var pid int
+			deadline := time.Now().Add(10 * time.Second)
+			for pid == 0 {
+				if time.Now().After(deadline) {
+					t.Fatal("the command never started its child")
+				}
+				time.Sleep(10 * time.Millisecond)
+				b, _ := os.ReadFile(pidFile)
+				pid, _ = strconv.Atoi(strings.TrimSpace(string(b)))
+			}
+			cancel()
+			err, took := waitFor(t, h)
+			if err == nil {
+				t.Error("Wait() = nil, want the command killed")
+			}
+			if took > 3*time.Second {
+				t.Errorf("Wait() returned after %v, want its child stopped with it", took)
+			}
+			deadline = time.Now().Add(2 * time.Second)
+			for syscall.Kill(pid, 0) == nil {
+				if time.Now().After(deadline) {
+					syscall.Kill(pid, syscall.SIGKILL)
+					t.Error("the command's child outlived it")
+					break
+				}
+				time.Sleep(10 * time.Millisecond)
+			}
+		})
+	}
+}
+
+func TestCommand_KillGroupCancelAfterExit(t *testing.T) {
+	cmd, _ := command(context.Background(), CommandOptions{KillGroup: true}, "true")
+	if err := cmd.Run(); err != nil {
+		t.Fatalf("Run: %v", err)
+	}
+	// A cancel that races the exit must not turn the success into an error.
+	if err := cmd.Cancel(); !errors.Is(err, os.ErrProcessDone) {
+		t.Errorf("Cancel() after exit = %v, want os.ErrProcessDone", err)
 	}
 }
 
