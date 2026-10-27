@@ -406,3 +406,87 @@ func TestParsePackageManagerCommands(t *testing.T) {
 		})
 	}
 }
+
+func TestUsesCibuildwheel(t *testing.T) {
+	tests := []struct {
+		name      string
+		searchDir string
+		files     gitxtest.FileContent
+		want      bool
+	}{
+		{
+			name: "PyprojectTableWithoutHooks",
+			files: gitxtest.FileContent{
+				"pyproject.toml": "[project]\nname = \"pkg\"\n[tool.cibuildwheel]\nbuild = \"cp310-*\"\n",
+			},
+			want: true,
+		},
+		{
+			name:      "RootPyprojectTableFromSubdir",
+			searchDir: "python",
+			files: gitxtest.FileContent{
+				"pyproject.toml":        "[tool.cibuildwheel]\nbuild = \"cp310-*\"\n",
+				"python/pyproject.toml": "[project]\nname = \"pkg\"\n",
+			},
+			want: true,
+		},
+		{
+			name: "StandaloneCibuildwheelToml",
+			files: gitxtest.FileContent{
+				"cibuildwheel.toml": "build = \"cp310-*\"\n",
+			},
+			want: true,
+		},
+		{
+			name: "UnpinnedWorkflowAction",
+			files: gitxtest.FileContent{
+				".github/workflows/wheels.yml": textwrap.Dedent(`
+					jobs:
+					  wheels:
+					    steps:
+					      - uses: pypa/cibuildwheel@main`),
+			},
+			want: true,
+		},
+		{
+			name: "UnpinnedWorkflowCommand",
+			files: gitxtest.FileContent{
+				".github/workflows/wheels.yml": textwrap.Dedent(`
+					jobs:
+					  wheels:
+					    steps:
+					      - run: pipx run "CIBuildWheel!=2.16.0; python_version>='3.8'" --output-dir wheelhouse`),
+			},
+			want: true,
+		},
+		{
+			name: "IgnoresCommentsEchoAndMaturinAction",
+			files: gitxtest.FileContent{
+				"pyproject.toml": "[project]\nname = \"pkg\"\n[tool.maturin]\nbindings = \"pyo3\"\n",
+				".github/workflows/wheels.yml": textwrap.Dedent(`
+					jobs:
+					  wheels:
+					    steps:
+					      - uses: PyO3/maturin-action@v1
+					      - run: |
+					          # formerly used cibuildwheel
+					          echo Skipping cibuildwheel`),
+			},
+			want: false,
+		},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			repo := must(gitxtest.CreateRepo([]gitxtest.Commit{{ID: "initial-commit", Files: tc.files}}, nil))
+			defer repo.Close()
+			commit := must(repo.Repository.CommitObject(git2.Hash(repo.Commits["initial-commit"])))
+			got, err := usesCibuildwheel(must(commit.Tree()), tc.searchDir)
+			if err != nil {
+				t.Fatalf("usesCibuildwheel() unexpected error: %v", err)
+			}
+			if got != tc.want {
+				t.Errorf("usesCibuildwheel() = %v, want %v", got, tc.want)
+			}
+		})
+	}
+}

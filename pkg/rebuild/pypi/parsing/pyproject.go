@@ -39,6 +39,12 @@ type CibuildwheelConfig struct {
 	Overrides []CibuildwheelOverride `toml:"overrides"`
 }
 
+// MaturinConfig represents the [tool.maturin] table in pyproject.toml.
+type MaturinConfig struct {
+	ManifestPath string `toml:"manifest-path"`
+	Features     any    `toml:"features"`
+}
+
 // PyProject represents the structure of a pyproject.toml file.
 type PyProject struct {
 	Project     ProjectMetadata `toml:"project"`
@@ -46,8 +52,9 @@ type PyProject struct {
 		Requires []string `toml:"requires"`
 	} `toml:"build-system"`
 	Tool struct {
-		Poetry       ProjectMetadata    `toml:"poetry"`
-		Cibuildwheel CibuildwheelConfig `toml:"cibuildwheel"`
+		Poetry       ProjectMetadata     `toml:"poetry"`
+		Cibuildwheel *CibuildwheelConfig `toml:"cibuildwheel"`
+		Maturin      MaturinConfig       `toml:"maturin"`
 	} `toml:"tool"`
 }
 

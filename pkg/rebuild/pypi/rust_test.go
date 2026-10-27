@@ -518,3 +518,385 @@ func TestInferStrategyUninferableRustToolchain(t *testing.T) {
 		t.Errorf("InferenceError.Detail diff (-want +got):\n%s", diff)
 	}
 }
+
+func TestInferMaturinFeatures(t *testing.T) {
+	tests := []struct {
+		name      string
+		repo      string
+		dir       string
+		pythonTag string
+		abiTag    string
+		want      []string
+	}{
+		{
+			name: "NonDefaultABI3FeatureInSubcrateViaPyprojectManifestPath",
+			repo: `commits:
+  - id: initial
+    files:
+      hypothesis-python/pyproject.toml: |
+        [tool.maturin]
+        manifest-path = "../conjecture-rust/Cargo.toml"
+      conjecture-rust/Cargo.toml: |
+        [package]
+        name = "conjecture_rust"
+        version = "0.1.0"
+        [features]
+        default = ["extension-module"]
+        extension-module = ["pyo3/extension-module"]
+        abi3 = ["pyo3/abi3-py310"]
+`,
+			dir:       "hypothesis-python",
+			pythonTag: "cp310",
+			abiTag:    "abi3",
+			want:      []string{"abi3"},
+		},
+		{
+			name: "ABI3AlreadyInDefaultFeatures",
+			repo: `commits:
+  - id: initial
+    files:
+      Cargo.toml: |
+        [package]
+        name = "datefinder"
+        version = "1.0.0"
+        [features]
+        default = ["abi3"]
+        abi3 = ["pyo3/abi3-py39"]
+`,
+			dir:       "",
+			pythonTag: "cp39",
+			abiTag:    "abi3",
+			want:      nil,
+		},
+		{
+			name: "NonABI3WheelSkipsABI3Feature",
+			repo: `commits:
+  - id: initial
+    files:
+      Cargo.toml: |
+        [package]
+        name = "conjecture_rust"
+        version = "0.1.0"
+        [features]
+        default = ["extension-module"]
+        abi3 = ["pyo3/abi3-py310"]
+`,
+			dir:       "",
+			pythonTag: "cp312",
+			abiTag:    "cp312",
+			want:      nil,
+		},
+		{
+			name: "ABI3tWheelSelectsABI3tFeature",
+			repo: `commits:
+  - id: initial
+    files:
+      Cargo.toml: |
+        [package]
+        name = "conjecture_rust"
+        version = "0.1.0"
+        [features]
+        default = ["extension-module"]
+        abi3 = ["pyo3/abi3-py310"]
+        abi3t = ["pyo3/abi3t-py315"]
+`,
+			dir:       "",
+			pythonTag: "cp315",
+			abiTag:    "abi3.abi3t",
+			want:      []string{"abi3t"},
+		},
+		{
+			name: "MultiplePerVersionFeaturesSelectsMatchingPythonTag",
+			repo: `commits:
+  - id: initial
+    files:
+      Cargo.toml: |
+        [package]
+        name = "pkg"
+        version = "0.1.0"
+        [features]
+        default = ["extension-module"]
+        abi3-py38 = ["pyo3/abi3-py38"]
+        abi3-py310 = ["pyo3/abi3-py310"]
+`,
+			dir:       "",
+			pythonTag: "cp310",
+			abiTag:    "abi3",
+			want:      []string{"abi3-py310"},
+		},
+		{
+			name: "MultiplePerVersionFeaturesWithoutTargetMatchReturnsNil",
+			repo: `commits:
+  - id: initial
+    files:
+      Cargo.toml: |
+        [package]
+        name = "pkg"
+        version = "0.1.0"
+        [features]
+        default = ["extension-module"]
+        abi3-py38 = ["pyo3/abi3-py38"]
+        abi3-py310 = ["pyo3/abi3-py310"]
+`,
+			dir:       "",
+			pythonTag: "cp312",
+			abiTag:    "abi3",
+			want:      nil,
+		},
+		{
+			name: "WeakDependencySyntaxMatched",
+			repo: `commits:
+  - id: initial
+    files:
+      Cargo.toml: |
+        [package]
+        name = "pkg"
+        version = "0.1.0"
+        [features]
+        default = []
+        abi3 = ["pyo3?/abi3-py310"]
+`,
+			dir:       "",
+			pythonTag: "cp310",
+			abiTag:    "abi3",
+			want:      []string{"abi3"},
+		},
+		{
+			name: "SingleNestedCargoManifestFallback",
+			repo: `commits:
+  - id: initial
+    files:
+      crates/core/Cargo.toml: |
+        [package]
+        name = "pkg"
+        version = "0.1.0"
+        [features]
+        default = []
+        abi3 = ["pyo3/abi3-py310"]
+`,
+			dir:       "",
+			pythonTag: "cp310",
+			abiTag:    "abi3",
+			want:      []string{"abi3"},
+		},
+		{
+			name: "AmbiguousMultipleNestedCargoManifestsReturnsNil",
+			repo: `commits:
+  - id: initial
+    files:
+      crates/a/Cargo.toml: |
+        [package]
+        name = "a"
+        version = "0.1.0"
+        [features]
+        abi3 = ["pyo3/abi3-py310"]
+      crates/b/Cargo.toml: |
+        [package]
+        name = "b"
+        version = "0.1.0"
+        [features]
+        abi3 = ["pyo3/abi3-py310"]
+`,
+			dir:       "",
+			pythonTag: "cp310",
+			abiTag:    "abi3",
+			want:      nil,
+		},
+		{
+			name: "MissingExplicitManifestPathDoesNotFallThrough",
+			repo: `commits:
+  - id: initial
+    files:
+      pyproject.toml: |
+        [tool.maturin]
+        manifest-path = "missing/Cargo.toml"
+      Cargo.toml: |
+        [package]
+        name = "root"
+        version = "0.1.0"
+        [features]
+        abi3 = ["pyo3/abi3-py310"]
+`,
+			dir:       "",
+			pythonTag: "cp310",
+			abiTag:    "abi3",
+			want:      nil,
+		},
+		{
+			name: "PyprojectMaturinFeaturesPreservedWithInferredABI3",
+			repo: `commits:
+  - id: initial
+    files:
+      pyproject.toml: |
+        [tool.maturin]
+        features = ["pyo3/extension-module"]
+      Cargo.toml: |
+        [package]
+        name = "pkg"
+        version = "0.1.0"
+        [features]
+        abi3 = ["pyo3/abi3-py310"]
+`,
+			dir:       "",
+			pythonTag: "cp310",
+			abiTag:    "abi3",
+			want:      []string{"pyo3/extension-module", "abi3"},
+		},
+		{
+			name: "ABI3AlreadyInPyprojectMaturinFeatures",
+			repo: `commits:
+  - id: initial
+    files:
+      pyproject.toml: |
+        [tool.maturin]
+        features = ["pyo3/extension-module", "pyo3/abi3-py38"]
+      Cargo.toml: |
+        [package]
+        name = "pkg"
+        version = "0.1.0"
+        [features]
+        abi3 = ["pyo3/abi3-py310"]
+`,
+			dir:       "",
+			pythonTag: "cp310",
+			abiTag:    "abi3",
+			want:      nil,
+		},
+		{
+			name: "ConditionalPyprojectMaturinFeaturesRejected",
+			repo: `commits:
+  - id: initial
+    files:
+      pyproject.toml: |
+        [tool.maturin]
+        features = [{ feature = "pyo3/extension-module", python-version = ">=3.10" }]
+      Cargo.toml: |
+        [package]
+        name = "pkg"
+        version = "0.1.0"
+        [features]
+        abi3 = ["pyo3/abi3-py310"]
+`,
+			dir:       "",
+			pythonTag: "cp310",
+			abiTag:    "abi3",
+			want:      nil,
+		},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			r := must(gitxtest.CreateRepoFromYAML(tc.repo, nil))
+			defer r.Close()
+			commit := must(r.Repository.CommitObject(git2.Hash(r.Commits["initial"])))
+			tree := must(commit.Tree())
+			got, err := inferMaturinFeatures(tree, tc.dir, WheelTags{Python: tc.pythonTag, ABI: tc.abiTag})
+			if err != nil {
+				t.Fatalf("inferMaturinFeatures() error = %v", err)
+			}
+			if diff := cmp.Diff(tc.want, got); diff != "" {
+				t.Errorf("inferMaturinFeatures() diff (-want +got):\n%s", diff)
+			}
+		})
+	}
+}
+
+func TestInferStrategyMaturinWheel(t *testing.T) {
+	cargoWithABI3 := "[package]\nname = \"rustpkg\"\nversion = \"1.0.0\"\n[features]\ndefault = [\"extension-module\"]\nextension-module = [\"pyo3/extension-module\"]\nabi3 = [\"pyo3/abi3-py310\"]\n"
+	basePyproject := "[project]\nname = \"rustpkg\"\nversion = \"1.0.0\"\n[build-system]\nrequires = [\"maturin>=1.0,<2.0\"]\nbuild-backend = \"maturin\"\n"
+	tests := []struct {
+		name        string
+		filename    string
+		wheelTag    string
+		files       gitxtest.FileContent
+		wantMaturin *MaturinOptions
+	}{
+		{
+			name:     "DirectMaturinABI3SelectsFeature",
+			filename: "rustpkg-1.0.0-cp310-abi3-manylinux_2_28_x86_64.whl",
+			wheelTag: "cp310-abi3-manylinux_2_28_x86_64",
+			files: gitxtest.FileContent{
+				"pyproject.toml": basePyproject,
+				"Cargo.toml":     cargoWithABI3,
+			},
+			wantMaturin: &MaturinOptions{Features: []string{"abi3"}},
+		},
+		{
+			name:     "DirectMaturinNonABI3KeepsFeaturesEmpty",
+			filename: "rustpkg-1.0.0-cp312-cp312-manylinux_2_28_x86_64.whl",
+			wheelTag: "cp312-cp312-manylinux_2_28_x86_64",
+			files: gitxtest.FileContent{
+				"pyproject.toml": basePyproject,
+				"Cargo.toml":     cargoWithABI3,
+			},
+			wantMaturin: &MaturinOptions{},
+		},
+		{
+			name:     "PyprojectCibuildwheelUsesPlatformWheel",
+			filename: "rustpkg-1.0.0-cp310-abi3-manylinux_2_28_x86_64.whl",
+			wheelTag: "cp310-abi3-manylinux_2_28_x86_64",
+			files: gitxtest.FileContent{
+				"pyproject.toml": basePyproject + "[tool.cibuildwheel]\nbuild = \"cp310-*\"\n",
+				"Cargo.toml":     cargoWithABI3,
+			},
+			wantMaturin: nil,
+		},
+		{
+			name:     "UnpinnedWorkflowCibuildwheelUsesPlatformWheel",
+			filename: "rustpkg-1.0.0-cp310-abi3-manylinux_2_28_x86_64.whl",
+			wheelTag: "cp310-abi3-manylinux_2_28_x86_64",
+			files: gitxtest.FileContent{
+				"pyproject.toml":               basePyproject,
+				"Cargo.toml":                   cargoWithABI3,
+				".github/workflows/wheels.yml": "jobs:\n  wheels:\n    steps:\n      - uses: pypa/cibuildwheel@main\n",
+			},
+			wantMaturin: nil,
+		},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			wheelURL := "https://files.pythonhosted.org/" + tc.filename
+			wheelBuf := must(archivetest.ZipFile([]archive.ZipEntry{
+				{
+					FileHeader: &zip.FileHeader{Name: "rustpkg-1.0.0.dist-info/WHEEL"},
+					Body:       []byte("Wheel-Version: 1.0\nGenerator: maturin (1.13.1)\nRoot-Is-Purelib: false\nTag: " + tc.wheelTag + "\n"),
+				},
+				{
+					FileHeader: &zip.FileHeader{Name: "rustpkg-1.0.0.dist-info/METADATA"},
+					Body:       []byte("Metadata-Version: 2.1\nName: rustpkg\nVersion: 1.0.0\n"),
+				},
+				{
+					FileHeader: &zip.FileHeader{Name: "rustpkg/_native.abi3.so"},
+					Body:       elfWithComment("rustc version 1.97.1 (8bab26f4f 2026-07-14)"),
+				},
+			}))
+			releaseJSON := fmt.Sprintf(`{"info":{"name":"rustpkg","version":"1.0.0"},"urls":[{"filename":%q,"url":%q,"size":%d,"upload_time_iso_8601":"2026-08-01T00:00:00Z"}]}`, tc.filename, wheelURL, wheelBuf.Len())
+			repo := must(gitxtest.CreateRepo([]gitxtest.Commit{{
+				ID:    "release",
+				Tag:   "v1.0.0",
+				Files: tc.files,
+			}}, nil))
+			defer repo.Close()
+			mux := rebuild.RegistryMux{PyPI: pypireg.HTTPRegistry{Client: &httpxtest.MockClient{
+				Calls: []httpxtest.Call{
+					{URL: "https://pypi.org/pypi/rustpkg/1.0.0/json", Response: &http.Response{StatusCode: 200, Body: httpxtest.Body(releaseJSON)}},
+					{URL: "https://pypi.org/pypi/rustpkg/1.0.0/json", Response: &http.Response{StatusCode: 200, Body: httpxtest.Body(releaseJSON)}},
+					{URL: wheelURL, Response: &http.Response{StatusCode: 200, Body: io.NopCloser(bytes.NewReader(wheelBuf.Bytes()))}},
+				},
+				URLValidator: httpxtest.NewURLValidator(t),
+			}}}
+			rcfg := &rebuild.RepoConfig{Repo: gitx.Repo{Repository: repo.Repository, Storer: repo.Storer}, URI: "https://github.com/example/rustpkg"}
+			target := rebuild.Target{Ecosystem: rebuild.PyPI, Package: "rustpkg", Version: "1.0.0", Artifact: tc.filename}
+			strat, err := Rebuilder{}.InferStrategy(context.Background(), target, mux, rcfg, nil)
+			if err != nil {
+				t.Fatalf("InferStrategy() unexpected error: %v", err)
+			}
+			got, ok := strat.(*PlatformWheelBuild)
+			if !ok {
+				t.Fatalf("InferStrategy() returned %T, want *PlatformWheelBuild", strat)
+			}
+			if diff := cmp.Diff(tc.wantMaturin, got.Maturin); diff != "" {
+				t.Errorf("PlatformWheelBuild.Maturin diff (-want +got):\n%s", diff)
+			}
+		})
+	}
+}

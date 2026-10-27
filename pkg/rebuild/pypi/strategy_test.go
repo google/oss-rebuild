@@ -767,6 +767,115 @@ PYTHONPATH=/deps/wheel-cli /deps/bin/python3 -m wheel tags --remove --platform-t
 				OutputPath: "the_dir/dist/the_artifact",
 			},
 		},
+		{
+			"WithMaturinBuild",
+			&PlatformWheelBuild{
+				Location:     defaultLocation,
+				PythonTag:    "cp310",
+				ABITag:       "abi3",
+				PlatformTag:  "manylinux_2_17_x86_64.manylinux2014_x86_64",
+				Requirements: []string{"maturin==1.13.1"},
+				RustVersion:  "1.95.0",
+				Maturin:      &MaturinOptions{Features: []string{"abi3"}},
+			},
+			rebuild.Instructions{
+				Location: defaultLocation,
+				Source:   "git checkout --force 'the_ref'",
+				Deps: `for py in /opt/python/cp310-abi3/bin/python /opt/python/cp310-*/bin/python /opt/python/cp3*/bin/python; do [ -x "$py" ] && break; done
+"$py" -m venv /deps
+/deps/bin/pip install build wheel
+/deps/bin/pip install --target /deps/wheel-cli wheel
+/deps/bin/pip install 'maturin==1.13.1'
+wget -O rustup-init https://static.rust-lang.org/rustup/archive/1.29.3/x86_64-unknown-linux-gnu/rustup-init
+echo 'b1c8cb14e30889e7e2999e6b69e62d9e9b9ffc0f4df8180564d306d9680e6c55  rustup-init' | sha256sum -c -
+chmod +x rustup-init
+CARGO_HOME=/root/.cargo RUSTUP_HOME=/root/.rustup ./rustup-init -y --profile minimal --default-toolchain 1.95.0 --no-modify-path
+rm -f rustup-init`,
+				Build: `export CARGO_HOME=/root/.cargo RUSTUP_HOME=/root/.rustup RUSTUP_TOOLCHAIN=1.95.0 PATH=/root/.rustup/toolchains/1.95.0-x86_64-unknown-linux-gnu/bin:/root/.cargo/bin:$PATH
+cd the_dir
+/deps/bin/maturin build --release --out dist -i /deps/bin/python3 --compatibility manylinux_2_17 --features abi3`,
+				Requires: rebuild.RequiredEnv{
+					BaseImage:  "quay.io/pypa/manylinux2014_x86_64",
+					SystemDeps: []string{"git", "wget"},
+				},
+				OutputPath: "the_dir/dist/the_artifact",
+			},
+		},
+		{
+			"WithMaturinBuildCompoundABITag",
+			&PlatformWheelBuild{
+				Location:     defaultLocation,
+				PythonTag:    "cp315",
+				ABITag:       "abi3.abi3t",
+				PlatformTag:  "manylinux_2_17_x86_64.manylinux2014_x86_64",
+				Requirements: []string{"maturin==1.13.1"},
+				RustVersion:  "1.95.0",
+				Maturin:      &MaturinOptions{Features: []string{"abi3t"}},
+			},
+			rebuild.Instructions{
+				Location: defaultLocation,
+				Source:   "git checkout --force 'the_ref'",
+				Deps: `for py in /opt/python/cp315-abi3.abi3t/bin/python /opt/python/cp315-*/bin/python; do [ -x "$py" ] && break; done
+"$py" -m venv /deps
+/deps/bin/pip install build wheel
+/deps/bin/pip install --target /deps/wheel-cli wheel
+/deps/bin/pip install 'maturin==1.13.1'
+wget -O rustup-init https://static.rust-lang.org/rustup/archive/1.29.3/x86_64-unknown-linux-gnu/rustup-init
+echo 'b1c8cb14e30889e7e2999e6b69e62d9e9b9ffc0f4df8180564d306d9680e6c55  rustup-init' | sha256sum -c -
+chmod +x rustup-init
+CARGO_HOME=/root/.cargo RUSTUP_HOME=/root/.rustup ./rustup-init -y --profile minimal --default-toolchain 1.95.0 --no-modify-path
+rm -f rustup-init`,
+				Build: `export CARGO_HOME=/root/.cargo RUSTUP_HOME=/root/.rustup RUSTUP_TOOLCHAIN=1.95.0 PATH=/root/.rustup/toolchains/1.95.0-x86_64-unknown-linux-gnu/bin:/root/.cargo/bin:$PATH
+cd the_dir
+/deps/bin/maturin build --release --out dist -i /deps/bin/python3 --compatibility manylinux_2_17 --features abi3t
+PYTHONPATH=/deps/wheel-cli /deps/bin/python3 -m wheel tags --remove --abi-tag abi3.abi3t --platform-tag manylinux_2_17_x86_64.manylinux2014_x86_64 dist/*.whl
+mv dist/*.whl dist/the_artifact`,
+				Requires: rebuild.RequiredEnv{
+					BaseImage:  "quay.io/pypa/manylinux2014_x86_64",
+					SystemDeps: []string{"git", "wget"},
+				},
+				OutputPath: "the_dir/dist/the_artifact",
+			},
+		},
+		{
+			"WithMaturinBuildAndBuildRoot",
+			&PlatformWheelBuild{
+				Location:     defaultLocation,
+				PythonTag:    "cp310",
+				ABITag:       "abi3",
+				PlatformTag:  "manylinux_2_17_x86_64.manylinux2014_x86_64",
+				BuildRoot:    "/project",
+				Requirements: []string{"maturin==1.13.1"},
+				RustVersion:  "1.95.0",
+				Maturin:      &MaturinOptions{Features: []string{"abi3"}},
+			},
+			rebuild.Instructions{
+				Location: defaultLocation,
+				Source:   "git checkout --force 'the_ref'",
+				Deps: `for py in /opt/python/cp310-abi3/bin/python /opt/python/cp310-*/bin/python /opt/python/cp3*/bin/python; do [ -x "$py" ] && break; done
+"$py" -m venv /deps
+/deps/bin/pip install build wheel
+/deps/bin/pip install --target /deps/wheel-cli wheel
+/deps/bin/pip install 'maturin==1.13.1'
+wget -O rustup-init https://static.rust-lang.org/rustup/archive/1.29.3/x86_64-unknown-linux-gnu/rustup-init
+echo 'b1c8cb14e30889e7e2999e6b69e62d9e9b9ffc0f4df8180564d306d9680e6c55  rustup-init' | sha256sum -c -
+chmod +x rustup-init
+CARGO_HOME=/root/.cargo RUSTUP_HOME=/root/.rustup ./rustup-init -y --profile minimal --default-toolchain 1.95.0 --no-modify-path
+rm -f rustup-init`,
+				Build: `export CARGO_HOME=/root/.cargo RUSTUP_HOME=/root/.rustup RUSTUP_TOOLCHAIN=1.95.0 PATH=/root/.rustup/toolchains/1.95.0-x86_64-unknown-linux-gnu/bin:/root/.cargo/bin:$PATH
+mkdir -p $(dirname /project)
+mkdir /project
+cp -a . /project
+cd /project
+cd the_dir
+/deps/bin/maturin build --release --out /src/the_dir/dist -i /deps/bin/python3 --compatibility manylinux_2_17 --features abi3`,
+				Requires: rebuild.RequiredEnv{
+					BaseImage:  "quay.io/pypa/manylinux2014_x86_64",
+					SystemDeps: []string{"git", "wget"},
+				},
+				OutputPath: "the_dir/dist/the_artifact",
+			},
+		},
 	}
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
@@ -982,6 +1091,32 @@ func TestPlatformWheelBuildRustValidation(t *testing.T) {
 				RustVersion: "1.97.1",
 			},
 			wantErr: true,
+		},
+		{
+			name: "MaturinBuildWithoutRustVersion",
+			strategy: &PlatformWheelBuild{
+				PlatformTag: "manylinux_2_17_x86_64",
+				Maturin:     &MaturinOptions{},
+			},
+			wantErr: true,
+		},
+		{
+			name: "InvalidMaturinFeature",
+			strategy: &PlatformWheelBuild{
+				PlatformTag: "manylinux_2_17_x86_64",
+				RustVersion: "1.95.0",
+				Maturin:     &MaturinOptions{Features: []string{"abi3; rm -rf /"}},
+			},
+			wantErr: true,
+		},
+		{
+			name: "ValidMaturinFeatureWithSlash",
+			strategy: &PlatformWheelBuild{
+				PlatformTag: "manylinux_2_17_x86_64",
+				RustVersion: "1.95.0",
+				Maturin:     &MaturinOptions{Features: []string{"pyo3/abi3-py310"}},
+			},
+			wantErr: false,
 		},
 	}
 	for _, tc := range tests {

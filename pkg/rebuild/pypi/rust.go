@@ -11,10 +11,12 @@ import (
 	"io"
 	"path"
 	re "regexp"
+	"slices"
 	"strings"
 	"time"
 
 	"github.com/google/oss-rebuild/internal/semver"
+	pypiresolver "github.com/google/oss-rebuild/pkg/rebuild/pypi/parsing"
 	"github.com/google/oss-rebuild/pkg/rebuild/pypi/platform"
 	"github.com/google/oss-rebuild/pkg/registry/cratesio"
 	"github.com/msuozzo/go-git2"
@@ -53,6 +55,8 @@ var (
 	// validRustVersionPat requires a fully pinned 3-component release before shell
 	// interpolation. A major.minor channel would let rustup pick the newest patch at build time.
 	validRustVersionPat = re.MustCompile(`^\d+\.\d+\.\d+$`)
+	// validMaturinFeaturePat validates a Cargo feature identifier before shell interpolation.
+	validMaturinFeaturePat = re.MustCompile(`^[A-Za-z0-9_+-]+(/[A-Za-z0-9_+-]+)?$`)
 )
 
 // usesRust reports whether the wheel build requires a Rust toolchain.
@@ -80,6 +84,219 @@ func hasSetuptoolsRustSetupPy(tree *git2.Tree, dir string) (bool, error) {
 		return false, errors.Wrapf(err, "reading %s", setupPath)
 	}
 	return strings.Contains(content, "setuptools_rust"), nil
+}
+
+// usesMaturin reports whether the wheel was built with maturin.
+func usesMaturin(reqs []string) bool {
+	return hasRequirement(reqs, "maturin")
+}
+
+// inferMaturinFeatures inspects pyproject.toml and Cargo.toml when building an
+// abi3 wheel with maturin and selects a single non-default Cargo feature that
+// enables pyo3's abi3 mode. Because passing "--features" on the CLI overrides
+// "[tool.maturin] features" in pyproject.toml, any features configured there are
+// preserved ahead of the inferred abi3 feature.
+func inferMaturinFeatures(tree *git2.Tree, dir string, tags WheelTags) ([]string, error) {
+	if !strings.Contains(tags.ABI, "abi3") {
+		return nil, nil
+	}
+	maturinCfg, err := readMaturinConfig(tree, dir)
+	if err != nil {
+		return nil, err
+	}
+	pyprojFeatures, ok := maturinPyprojectFeatures(maturinCfg.Features)
+	if !ok {
+		// NOTE: Non-string entries such as conditional feature tables in
+		// [tool.maturin] features are dropped by maturin when --features is
+		// passed on the CLI, so leave pyproject.toml in control.
+		return nil, nil
+	}
+	cf, err := findCargoManifest(tree, dir, strings.TrimSpace(maturinCfg.ManifestPath))
+	if err != nil || cf == nil {
+		return nil, err
+	}
+	content, err := cf.Contents()
+	if err != nil {
+		return nil, errors.Wrapf(err, "reading %s", cf.Name)
+	}
+	cargoToml, err := cratesio.ParseCargoTOML(content)
+	if err != nil {
+		// NOTE: Malformed syntax rejects this candidate rather than aborting inference.
+		return nil, nil
+	}
+	for _, dep := range slices.Concat(cargoToml.Features["default"], pyprojFeatures) {
+		if isPyO3ABI3FeatureDep(dep, tags.ABI) {
+			return nil, nil
+		}
+		for _, subDep := range cargoToml.Features[dep] {
+			if isPyO3ABI3FeatureDep(subDep, tags.ABI) {
+				return nil, nil
+			}
+		}
+	}
+	targetPySuffix := targetPyO3VersionSuffix(tags.Python)
+	var exactMatches, unversionedMatches, allMatches []string
+	for feat, deps := range cargoToml.Features {
+		if feat == "default" || !validMaturinFeaturePat.MatchString(feat) {
+			continue
+		}
+		var matched, exact, unversioned bool
+		for _, dep := range deps {
+			suffix, ok := parsePyO3ABI3FeatureDep(dep, tags.ABI)
+			if !ok {
+				continue
+			}
+			matched = true
+			if targetPySuffix != "" && suffix == targetPySuffix {
+				exact = true
+			} else if suffix == "" {
+				unversioned = true
+			}
+		}
+		if matched {
+			allMatches = append(allMatches, feat)
+		}
+		if exact {
+			exactMatches = append(exactMatches, feat)
+		} else if unversioned {
+			unversionedMatches = append(unversionedMatches, feat)
+		}
+	}
+	for _, candidates := range [][]string{exactMatches, unversionedMatches, allMatches} {
+		if len(candidates) == 1 {
+			return append(slices.Clip(pyprojFeatures), candidates[0]), nil
+		}
+	}
+	return nil, nil
+}
+
+func readMaturinConfig(tree *git2.Tree, dir string) (pypiresolver.MaturinConfig, error) {
+	if tree == nil {
+		return pypiresolver.MaturinConfig{}, nil
+	}
+	pyprojPath := path.Join(dir, "pyproject.toml")
+	pyf, err := tree.File(pyprojPath)
+	if errors.Is(err, git2.ErrFileNotFound) {
+		return pypiresolver.MaturinConfig{}, nil
+	}
+	if err != nil {
+		return pypiresolver.MaturinConfig{}, errors.Wrapf(err, "looking up %s", pyprojPath)
+	}
+	pyProject, err := pypiresolver.ReadPyProject(pyf)
+	if err != nil {
+		// NOTE: Malformed syntax rejects this candidate rather than aborting inference.
+		var decodeErr *toml.DecodeError
+		if errors.As(err, &decodeErr) {
+			return pypiresolver.MaturinConfig{}, nil
+		}
+		return pypiresolver.MaturinConfig{}, err
+	}
+	return pyProject.Tool.Maturin, nil
+}
+
+func maturinPyprojectFeatures(raw any) ([]string, bool) {
+	if raw == nil {
+		return nil, true
+	}
+	items, ok := raw.([]any)
+	if !ok {
+		return nil, false
+	}
+	var features []string
+	for _, item := range items {
+		s, ok := item.(string)
+		if !ok {
+			return nil, false
+		}
+		trimmed := strings.TrimSpace(s)
+		if trimmed == "" || !validMaturinFeaturePat.MatchString(trimmed) {
+			return nil, false
+		}
+		features = append(features, trimmed)
+	}
+	return features, true
+}
+
+// findCargoManifest locates the Cargo.toml file for a Python package in tree at dir.
+// It checks manifestPath (from [tool.maturin] manifest-path in pyproject.toml) first,
+// then Cargo.toml in dir, and finally searches for a single Cargo.toml in the subtree under dir.
+func findCargoManifest(tree *git2.Tree, dir, manifestPath string) (*git2.File, error) {
+	if tree == nil {
+		return nil, nil
+	}
+	if manifestPath != "" {
+		fullPath := path.Join(dir, manifestPath)
+		cf, err := tree.File(fullPath)
+		if errors.Is(err, git2.ErrFileNotFound) {
+			return nil, nil
+		}
+		if err != nil {
+			return nil, errors.Wrapf(err, "looking up %s", fullPath)
+		}
+		return cf, nil
+	}
+	cargoPath := path.Join(dir, "Cargo.toml")
+	cf, err := tree.File(cargoPath)
+	if err == nil {
+		return cf, nil
+	}
+	if !errors.Is(err, git2.ErrFileNotFound) {
+		return nil, errors.Wrapf(err, "looking up %s", cargoPath)
+	}
+	var prefix string
+	if cleanDir := path.Clean(dir); cleanDir != "." {
+		prefix = cleanDir + "/"
+	}
+	var matches []*git2.File
+	if err := tree.Files().ForEach(func(f *git2.File) error {
+		if prefix != "" && !strings.HasPrefix(f.Name, prefix) {
+			return nil
+		}
+		if path.Base(f.Name) == "Cargo.toml" {
+			matches = append(matches, f)
+		}
+		return nil
+	}); err != nil {
+		return nil, errors.Wrap(err, "iterating tree files")
+	}
+	if len(matches) == 1 {
+		return matches[0], nil
+	}
+	return nil, nil
+}
+
+func targetPyO3VersionSuffix(pythonTag string) string {
+	digits := strings.TrimPrefix(strings.TrimPrefix(pythonTag, "cp"), "py")
+	if digits == "" {
+		return ""
+	}
+	return "py" + digits
+}
+
+func isPyO3ABI3FeatureDep(dep, abiTag string) bool {
+	_, ok := parsePyO3ABI3FeatureDep(dep, abiTag)
+	return ok
+}
+
+func parsePyO3ABI3FeatureDep(dep, abiTag string) (string, bool) {
+	rest, ok := strings.CutPrefix(dep, "pyo3/")
+	if !ok {
+		rest, ok = strings.CutPrefix(dep, "pyo3?/")
+	}
+	if !ok {
+		return "", false
+	}
+	abiPrefix := "abi3"
+	if strings.Contains(abiTag, "abi3t") {
+		abiPrefix = "abi3t"
+	}
+	if rest == abiPrefix {
+		return "", true
+	}
+	if suffix, ok := strings.CutPrefix(rest, abiPrefix+"-"); ok && suffix != "" {
+		return suffix, true
+	}
+	return "", false
 }
 
 // inferRustVersion determines the Rust toolchain version for a Rust-backed wheel
