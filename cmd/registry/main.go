@@ -17,6 +17,7 @@ import (
 	"github.com/google/oss-rebuild/internal/api/cratesregistryservice"
 	"github.com/google/oss-rebuild/internal/gitcache"
 	"github.com/google/oss-rebuild/internal/gitx"
+	"github.com/google/oss-rebuild/internal/httpegress"
 	"github.com/google/oss-rebuild/pkg/act/api"
 	"github.com/google/oss-rebuild/pkg/registry/cratesio/index"
 	"github.com/pkg/errors"
@@ -86,6 +87,7 @@ func FindRegistryCommitInit(ctx context.Context) (*cratesregistryservice.FindReg
 func main() {
 	// Register the handler
 	http.HandleFunc("/resolve", api.Handler(FindRegistryCommitInit, cratesregistryservice.FindRegistryCommit))
+	http.Handle("/readyz", httpegress.ReadyHandler(http.DefaultClient))
 	log.Printf("Registry service listening on :%d\n", *port)
 	if err := http.ListenAndServe(fmt.Sprintf(":%d", *port), nil); err != nil {
 		log.Fatalf("Server failed: %v", err)

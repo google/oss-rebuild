@@ -117,6 +117,7 @@ func main() {
 	}
 	http.HandleFunc("/infer", api.Handler(func(context.Context) (*inferenceservice.InferDeps, error) { return deps, nil }, inferenceservice.Infer))
 	http.HandleFunc("/version", api.Handler(api.NoDepsInit, inferenceservice.Version))
+	http.Handle("/readyz", httpegress.ReadyHandler(http.DefaultClient))
 	if err := http.ListenAndServe(fmt.Sprintf(":%d", *port), nil); err != nil {
 		log.Fatalln(err)
 	}

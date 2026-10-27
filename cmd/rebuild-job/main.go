@@ -7,10 +7,12 @@ import (
 	"context"
 	"encoding/json"
 	"log"
+	"net/http"
 	"os"
 
 	"github.com/google/oss-rebuild/internal/api/apiservice"
 	"github.com/google/oss-rebuild/internal/buildinfo"
+	"github.com/google/oss-rebuild/internal/httpegress"
 	"github.com/google/oss-rebuild/internal/serviceid"
 	"github.com/google/oss-rebuild/pkg/rebuild/schema"
 )
@@ -41,6 +43,7 @@ func main() {
 	}
 
 	// Reconstruct deps for RebuildPackage.
+	httpegress.AwaitReady(ctx, http.DefaultClient)
 	deps, err := apiservice.MakeRebuildPackageDeps(ctx, cfg)
 	if err != nil {
 		log.Fatalf("failed to make rebuild package deps: %v", err)
