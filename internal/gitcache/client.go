@@ -88,11 +88,13 @@ func (c Client) getLink(repo string, contains time.Time, ref string) (uri string
 		q.Add("ref", ref)
 	}
 	u.RawQuery = q.Encode()
-	c.IDClient.CheckRedirect = func(*http.Request, []*http.Request) error {
+	// Copy the client since requests share it.
+	idc := *c.IDClient
+	idc.CheckRedirect = func(*http.Request, []*http.Request) error {
 		// Never follow redirect.
 		return http.ErrUseLastResponse
 	}
-	resp, err := c.IDClient.Get(u.String())
+	resp, err := idc.Get(u.String())
 	if err != nil {
 		return "", 0, err
 	}

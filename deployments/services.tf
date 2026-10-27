@@ -181,12 +181,12 @@ resource "google_cloud_run_v2_service" "inference" {
         "--host=${var.host}",
         "--git-cache-url=${google_cloud_run_v2_service.git-cache.uri}",
         "--crates-registry-service-url=${google_cloud_run_v2_service.crates-registry.uri}",
-        "--max-repo-bytes=${4 * 1024 * 1024 * 1024}", // 4 GiB, under the 4.7 GiB the 16G instance has held
+        "--max-repo-bytes=${4 * 1024 * 1024 * 1024}", // 4 GiB, under the 4.7 GiB a 16G instance has held
       ]
       resources {
         limits = {
-          cpu    = "4000m"
-          memory = "16G"
+          cpu    = "8000m"
+          memory = "32G"
         }
       }
     }
@@ -200,8 +200,8 @@ resource "google_cloud_run_v2_service" "inference" {
         egress = "ALL_TRAFFIC"
       }
     }
-    scaling { max_instance_count = 160 }
-    max_instance_request_concurrency = 1
+    scaling { max_instance_count = 60 }
+    max_instance_request_concurrency = 8
   }
   depends_on = [google_project_service.run]
 }
