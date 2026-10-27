@@ -615,9 +615,9 @@ func TestGCBPlannerGeneratePlan(t *testing.T) {
 				foundExtractStep = true
 			} else if step.Script != "" && strings.Contains(step.Script, "docker save") {
 				foundSaveStep = true
+			} else if strings.Contains(step.Script, "gsutil_writeonly") {
+				foundUploadStep = true
 			}
-		} else if step.Name == baseImageConfig.Default {
-			foundUploadStep = true
 		}
 	}
 
@@ -861,7 +861,7 @@ func TestGCBPlannerBuildScriptWithSysgraph(t *testing.T) {
 					export TID=$(docker run --name=tetragon --detach --pid=host --cgroupns=host --privileged -v=/workspace/tetragon/:/workspace/tetragon/ -v=/sys/kernel/btf/vmlinux:/var/lib/tetragon/btf quay.io/cilium/tetragon:v1.4.1 /usr/bin/tetragon --tracing-policy-dir=/workspace/tetragon/ --server-address=unix:///workspace/tetragon/tetragon.sock --rb-size=10M --rb-queue-size=10M --event-queue-size=10000000)
 					grep -q "Listening for events..." <(docker logs --follow $TID 2>&1) || (docker logs $TID && exit 1)
 					TETRAGON_PID=$(docker inspect -f '{{.State.Pid}}' tetragon)
-					apt install -y jq && curl -H Metadata-Flavor:Google http://metadata.google.internal/computeMetadata/v1/instance/service-accounts/test@test.iam.gserviceaccount.com/token | jq .access_token > /tmp/token
+					curl -H Metadata-Flavor:Google http://metadata.google.internal/computeMetadata/v1/instance/service-accounts/test@test.iam.gserviceaccount.com/token | sed -nE 's/.*"access_token": *"([^"]+)".*/\1/p' > /tmp/token
 					(printf "Authorization: Bearer "; cat /tmp/token) > /tmp/auth_header
 					curl -f -H @/tmp/auth_header https://storage.googleapis.com/bucket/tetragon_sysgraph > tetragon_sysgraph
 					chmod +x tetragon_sysgraph
@@ -1066,9 +1066,9 @@ func TestGCBPlannerSavePostBuildContainer(t *testing.T) {
 			Script: "docker commit container container-postbuild && docker save container-postbuild | gzip > /workspace/image_postbuild.tgz && docker rmi container-postbuild",
 		},
 		{
-			Name: "docker.io/library/alpine:3.19",
+			Name: "gcr.io/cloud-builders/docker",
 			Script: `set -eux
-wget -O gsutil_writeonly https://storage.googleapis.com/test-bucket/gsutil_writeonly
+curl -f https://storage.googleapis.com/test-bucket/gsutil_writeonly > gsutil_writeonly
 chmod +x gsutil_writeonly
 ./gsutil_writeonly cp /workspace/test-package-1.0.0.tgz file:///npm/test-package/1.0.0/test-package-1.0.0.tgz/test-package-1.0.0.tgz
 ./gsutil_writeonly cp /workspace/image_postbuild.tgz file:///npm/test-package/1.0.0/test-package-1.0.0.tgz/image_postbuild.tgz

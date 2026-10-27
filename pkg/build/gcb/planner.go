@@ -330,7 +330,7 @@ var gcbStandardBuildTpl = template.Must(
 			TETRAGON_PID=$(docker inspect -f '{{printf "%s" "{{.State.Pid}}"}}' tetragon)
 			{{- end}}
 			{{- if or .TimewarpAuth .TetragonSysgraphAuth}}
-			apt install -y jq && curl -H Metadata-Flavor:Google http://metadata.google.internal/computeMetadata/v1/instance/service-accounts/{{.ServiceAccountEmail}}/token | jq .access_token > /tmp/token
+			curl -H Metadata-Flavor:Google http://metadata.google.internal/computeMetadata/v1/instance/service-accounts/{{.ServiceAccountEmail}}/token | sed -nE 's/.*"access_token": *"([^"]+)".*/\1/p' > /tmp/token
 			(printf "Authorization: Bearer "; cat /tmp/token) > /tmp/auth_header
 			{{- end}}
 			{{- if .UseSyscallMonitor}}
@@ -422,7 +422,7 @@ var gcbProxyBuildTpl = template.Must(
 			set -eux
 			echo 'Starting rebuild for {{.TargetStr}}'
 			{{- if or .ProxyAuth .TetragonSysgraphAuth}}
-			apt install -y jq && curl -H Metadata-Flavor:Google http://metadata.google.internal/computeMetadata/v1/instance/service-accounts/{{.ServiceAccountEmail}}/token | jq .access_token > /tmp/token
+			curl -H Metadata-Flavor:Google http://metadata.google.internal/computeMetadata/v1/instance/service-accounts/{{.ServiceAccountEmail}}/token | sed -nE 's/.*"access_token": *"([^"]+)".*/\1/p' > /tmp/token
 			(printf "Authorization: Bearer "; cat /tmp/token) > /tmp/auth_header
 			{{- end}}
 			curl -f {{if .ProxyAuth}}-H @/tmp/auth_header {{end -}} {{.ProxyURL}} > proxy
@@ -714,7 +714,7 @@ func (p *Planner) generateSteps(target rebuild.Target, dockerfile string, reqs r
 		return nil, errors.Wrap(err, "failed to generate asset upload script")
 	}
 	uploadStep := &cloudbuild.BuildStep{
-		Name:   opts.Resources.BaseImageConfig.Default,
+		Name:   "gcr.io/cloud-builders/docker",
 		Script: uploadScript,
 	}
 	steps = append(steps, uploadStep)
@@ -902,12 +902,10 @@ var gcbAssetUploadTpl = template.Must(
 		textwrap.Dedent(`
 			set -eux
 			{{- if .GSUtilAuth}}
-			apk add curl jq && curl -H Metadata-Flavor:Google http://metadata.google.internal/computeMetadata/v1/instance/service-accounts/{{.ServiceAccountEmail}}/token | jq .access_token > /tmp/token
+			curl -H Metadata-Flavor:Google http://metadata.google.internal/computeMetadata/v1/instance/service-accounts/{{.ServiceAccountEmail}}/token | sed -nE 's/.*"access_token": *"([^"]+)".*/\1/p' > /tmp/token
 			(printf "Authorization: Bearer "; cat /tmp/token) > /tmp/auth_header
-			curl -f -H @/tmp/auth_header {{.GSUtilURL}} > gsutil_writeonly
-			{{- else}}
-			wget -O gsutil_writeonly {{.GSUtilURL}}
 			{{- end}}
+			curl -f {{if .GSUtilAuth}}-H @/tmp/auth_header {{end}}{{.GSUtilURL}} > gsutil_writeonly
 			chmod +x gsutil_writeonly
 			{{- range .Uploads}}
 			./gsutil_writeonly cp {{.From}} {{.To}}
