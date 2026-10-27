@@ -48,6 +48,7 @@ const (
 	OutcomeTransient Outcome = "TRANSIENT" // throttle or infra flake, retry same stage
 	OutcomeFailure   Outcome = "FAILURE"   // ran and failed, escalate
 	OutcomeOversize  Outcome = "OVERSIZE"  // the repository exceeds the stage's size limit, triage
+	OutcomeGaveUp    Outcome = "GAVE_UP"   // agent stopped at its closest build, triage
 )
 
 // State tracks where a campaign sits in the dispatch workflow.
