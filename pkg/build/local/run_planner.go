@@ -57,11 +57,11 @@ var dockerRunPhaseTpls = template.Must(
 			{{.PackageManager.InstallCommand (list "curl" "netcat-openbsd")}}
 			{{- end}}
 			{{- if .TimewarpAuth}}
-			curl -K - {{.TimewarpURL}} > /timewarp <<EOF
+			curl -f -K - {{.TimewarpURL}} > /timewarp <<EOF
 			header = "$AUTH_HEADER"
 			EOF
 			{{- else}}
-			curl {{.TimewarpURL}} > /timewarp
+			curl -f {{.TimewarpURL}} > /timewarp
 			{{- end}}
 			chmod +x /timewarp
 			{{- end}}
