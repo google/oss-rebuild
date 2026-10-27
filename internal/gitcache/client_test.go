@@ -11,6 +11,7 @@ import (
 	"net/url"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"testing"
 	"time"
@@ -89,6 +90,7 @@ func setupCloneTestServer(t *testing.T, yamlSpec string) Client {
 	ts := httptest.NewServer(mux)
 	t.Cleanup(ts.Close)
 	mux.HandleFunc("/get", func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set(sizeHeader, strconv.Itoa(len(tarballBytes)))
 		http.Redirect(w, r, ts.URL+"/tarball", http.StatusFound)
 	})
 	mux.HandleFunc("/tarball", func(w http.ResponseWriter, r *http.Request) {
@@ -208,5 +210,29 @@ func TestClientCloneRefusesOversize(t *testing.T) {
 	}
 	if tooLarge.URL != "https://github.com/org/repo" || tooLarge.Limit != 64 {
 		t.Errorf("RepoTooLargeError = %+v, want the clone URL and the 64-byte budget", *tooLarge)
+	}
+}
+
+func TestClientSize(t *testing.T) {
+	const repo = "https://github.com/org/repo"
+	client := setupCloneTestServer(t, testRepoYAML)
+	link, err := client.GetLink(repo, time.Time{})
+	if err != nil {
+		t.Fatalf("GetLink() error = %v", err)
+	}
+	resp, err := client.APIClient.Get(link)
+	if err != nil {
+		t.Fatalf("fetching the archive: %v", err)
+	}
+	resp.Body.Close()
+	want := resp.ContentLength
+	if got, err := client.Size(context.Background(), repo); err != nil || got != want {
+		t.Fatalf("Size() = %d, %v, want %d", got, err, want)
+	}
+	client.MaxBytes = want - 1
+	_, err = client.Size(context.Background(), repo)
+	var tooLarge *gitx.RepoTooLargeError
+	if !errors.As(err, &tooLarge) || *tooLarge != (gitx.RepoTooLargeError{URL: repo, Limit: want - 1}) {
+		t.Errorf("Size() over MaxBytes: err = %v, want a RepoTooLargeError at %d", err, want-1)
 	}
 }

@@ -9,6 +9,7 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
+	"strconv"
 	"time"
 
 	"log"
@@ -63,6 +64,7 @@ func (g *gcsBackend) serve(rw http.ResponseWriter, req *http.Request, path strin
 		http.Error(rw, "Internal Error", 500)
 		return
 	}
+	rw.Header().Set(sizeHeader, strconv.FormatInt(a.Size, 10))
 	http.Redirect(rw, req, gcsx.MediaURL(g.bucket, path, a.Generation), http.StatusFound)
 }
 

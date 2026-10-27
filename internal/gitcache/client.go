@@ -10,6 +10,7 @@ import (
 	"io"
 	"net/http"
 	"net/url"
+	"strconv"
 	"strings"
 	"time"
 
@@ -66,9 +67,15 @@ func (c Client) GetLink(repo string, contains time.Time) (uri string, err error)
 
 // GetLinkWithRef returns a GCS link to the cached repo resource for a specific ref.
 func (c Client) GetLinkWithRef(repo string, contains time.Time, ref string) (uri string, err error) {
+	uri, _, err = c.getLink(repo, contains, ref)
+	return uri, err
+}
+
+// getLink returns the link and the bytes of the archive it serves, or 0 when missing.
+func (c Client) getLink(repo string, contains time.Time, ref string) (uri string, size int64, err error) {
 	u, err := c.URL.Parse("/get")
 	if err != nil {
-		return "", err
+		return "", 0, err
 	}
 	q := u.Query()
 	q.Add("uri", repo)
@@ -87,27 +94,41 @@ func (c Client) GetLinkWithRef(repo string, contains time.Time, ref string) (uri
 	}
 	resp, err := c.IDClient.Get(u.String())
 	if err != nil {
-		return "", err
+		return "", 0, err
 	}
 	defer resp.Body.Close()
 	var errs []byte
 	switch resp.StatusCode {
 	case http.StatusFound:
-		return resp.Header.Get("Location"), nil
+		size, _ = strconv.ParseInt(resp.Header.Get(sizeHeader), 10, 64)
+		return resp.Header.Get("Location"), size, nil
 	case http.StatusOK:
-		return u.String(), nil
+		return u.String(), max(resp.ContentLength, 0), nil
 	case http.StatusBadRequest:
 		errs, err = io.ReadAll(resp.Body)
 		if err != nil {
-			return uri, err
+			return uri, 0, err
 		}
 		if strings.Contains(string(errs), transport.ErrAuthenticationRequired.Error()) {
-			return uri, transport.ErrAuthenticationRequired
+			return uri, 0, transport.ErrAuthenticationRequired
 		}
-		return uri, errors.New(string(errs))
+		return uri, 0, errors.New(string(errs))
 	default:
-		return uri, errors.Wrap(errors.New(resp.Status), "making cache request")
+		return uri, 0, errors.Wrap(errors.New(resp.Status), "making cache request")
 	}
+}
+
+// Size returns the bytes of the archive Clone would fetch for repo, or 0 when
+// the cache reports none. Like Clone, it refuses an archive over MaxBytes.
+func (c Client) Size(ctx context.Context, repo string) (int64, error) {
+	_, size, err := c.getLink(repo, c.DefaultFreshness, "")
+	if err != nil {
+		return 0, errors.Wrap(err, "querying git cache")
+	}
+	if c.MaxBytes > 0 && size > c.MaxBytes {
+		return 0, &gitx.RepoTooLargeError{URL: repo, Limit: c.MaxBytes}
+	}
+	return size, nil
 }
 
 // Clone provides an interface to clone a git repo using the GitCache.
