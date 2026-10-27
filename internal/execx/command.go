@@ -19,6 +19,10 @@ type CommandOptions struct {
 	Input io.Reader
 	// Output streams stdout/stderr to the writer (if nil, output is discarded)
 	Output io.Writer
+	// Stderr, when set, takes stderr from Output.
+	Stderr io.Writer
+	// Env, when set, is the command's whole environment.
+	Env []string
 	// Dir is the directory in which the command is run
 	Dir string
 	// StopGrace makes cancellation signal termination and wait before killing.
@@ -64,6 +68,10 @@ func command(ctx context.Context, opts CommandOptions, name string, args ...stri
 		cmd.Stdout = opts.Output
 		cmd.Stderr = opts.Output
 	}
+	if opts.Stderr != nil {
+		cmd.Stderr = opts.Stderr
+	}
+	cmd.Env = opts.Env
 	cmd.Dir = opts.Dir
 	if opts.StopGrace > 0 {
 		cmd.Cancel = func() error { return cmd.Process.Signal(syscall.SIGTERM) }
