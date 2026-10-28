@@ -181,18 +181,21 @@ func (b *DebootsnapSbuild) ToWorkflow() *rebuild.WorkflowStrategy {
 				},
 			},
 		},
-		Deps: []flow.Step{
-			{
-				Uses: "debian/deps/debootsnap",
-				With: map[string]string{
-					"buildinfo": path.Base(b.BuildInfo.URL),
-				},
-			},
-		},
 		Build: []flow.Step{
 			{
 				// Removes noisy "cannot bind moun /dev/console" errors
 				Uses: "debian/build/make-dev-console",
+			},
+			{
+				Uses: "debian/build/setup-subuid",
+			},
+			{
+				// Needs to be in the build to have privileges during debootsnap to use unshare
+				// TODO: Move this back into Deps section.
+				Uses: "debian/deps/debootsnap",
+				With: map[string]string{
+					"buildinfo": path.Base(b.BuildInfo.URL),
+				},
 			},
 			{
 				Uses: "debian/build/sbuild",
@@ -348,6 +351,19 @@ var toolkit = []*flow.Tool{
 		}},
 	},
 	{
+		Name: "debian/build/setup-subuid",
+		Steps: []flow.Step{{
+			// The subuid and subgid mappings are needed for unshare to create a new namespace for the build.
+			// This setup assumes:
+			//	1. You're running the build as root
+			//	2. This mapping doesn't yet exist
+			// Both those things are true when executing in a standard debian container, but might not be true in other environments.
+			Runs: textwrap.Dedent(`
+			echo "root:100000:65536" > /etc/subuid
+			echo "root:100000:65536" > /etc/subgid`)[1:],
+		}},
+	},
+	{
 		Name: "debian/build/sbuild",
 		Steps: []flow.Step{{
 			Runs: textwrap.Dedent(`
@@ -356,8 +372,6 @@ $apt_get = '/bin/true';
 $apt_cache = '/bin/true';
 $build_as_root_when_needed = 1;
 EOF
-echo "root:100000:65536" > /etc/subuid
-echo "root:100000:65536" > /etc/subgid
 env --chdir=/src {{.With.env}} SBUILD_CONFIG=/tmp/sbuild.config\
     sbuild \
     --build={{ .With.buildArch }} \
@@ -393,15 +407,10 @@ env --chdir=/src {{.With.env}} SBUILD_CONFIG=/tmp/sbuild.config\
 		Name: "debian/build/debrebuild",
 		Steps: []flow.Step{
 			{
-				// The subuid and subgid mappings are needed for unshare to create a new namespace for the build.
-				// This setup assumes:
-				//	1. You're running the build as root
-				//  2. This mapping doesn't yet exist
-				// Both those things are true when executing in a standard debian container, but might not be true in other environments.
-				Runs: textwrap.Dedent(`
-				echo "root:100000:65536" > /etc/subuid
-				echo "root:100000:65536" > /etc/subgid
-				debrebuild --buildresult=./out --builder=sbuild+unshare {{ .With.buildinfo }}`[1:]),
+				Uses: "debian/build/setup-subuid",
+			},
+			{
+				Runs: `debrebuild --buildresult=./out --builder=sbuild+unshare {{ .With.buildinfo }}`,
 			},
 		},
 	}}
