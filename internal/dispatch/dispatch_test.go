@@ -198,8 +198,8 @@ func TestPass(t *testing.T) {
 				t.Errorf("stored campaign mismatch (-want +got):\n%s", diff)
 			}
 			for _, r := range tc.api.creates {
-				if r.ID != testRunID || r.ExecutionHint != schema.ExtendedExecution {
-					t.Errorf("create request = %+v, want run id %q with extended execution", r, testRunID)
+				if r.ID != testRunID || r.ExecutionHint != schema.ExtendedExecution || r.BuildTimeout != inferBuildTimeout {
+					t.Errorf("create request = %+v, want run id %q with extended execution and build timeout %v", r, testRunID, inferBuildTimeout)
 				}
 			}
 			for _, r := range tc.api.agents {
