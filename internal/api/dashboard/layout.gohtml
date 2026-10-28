@@ -9,16 +9,35 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>OSS Rebuild Dashboard</title>
+    <link rel="icon" href="/favicon.svg" type="image/svg+xml">
 {{template "webfonts"}}    <link rel="stylesheet" href="/theme.css">
     <link rel="stylesheet" href="/dashboard.css">
 </head>
 <body>
+    <header class="site">
+    <h1><a href="/"><img class="mark" src="/favicon.svg" alt="" width="26" height="26">OSS Rebuild Dashboard</a></h1>
     <nav>
         <a href="/">Home</a>
         <a href="/coverage">Coverage</a>
         <a href="/resources">Resources</a>
         <a href="/packages">Packages</a>
     </nav>
-    <h1>OSS Rebuild Dashboard</h1>
+    </header>
+    <script>
+        for (const a of document.querySelectorAll('header.site nav a')) {
+            const p = a.getAttribute('href');
+            if (location.pathname === p || (p !== '/' && location.pathname.startsWith(p + '/'))) a.setAttribute('aria-current', 'page');
+        }
+        // Pages render server-side and can take seconds, so a same-origin
+        // link click shows a progress bar until the next page replaces this
+        // one. pageshow clears it when the back-forward cache restores a page.
+        addEventListener('click', e => {
+            const a = e.target.closest('a[href]');
+            if (!a || e.defaultPrevented || e.button || e.metaKey || e.ctrlKey || e.shiftKey || e.altKey || a.target || a.origin !== location.origin) return;
+            if (a.hash && a.pathname === location.pathname && a.search === location.search) return;
+            document.documentElement.classList.add('navigating');
+        });
+        addEventListener('pageshow', () => document.documentElement.classList.remove('navigating'));
+    </script>
 {{block "content" .}}{{end}}</body>
 </html>
