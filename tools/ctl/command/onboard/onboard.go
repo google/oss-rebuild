@@ -13,6 +13,8 @@ import (
 	"github.com/go-git/go-billy/v5"
 	"github.com/google/oss-rebuild/internal/billyx"
 	"github.com/google/oss-rebuild/pkg/act/cli"
+	"github.com/google/oss-rebuild/pkg/rebuild/meta"
+	"github.com/google/oss-rebuild/pkg/rebuild/rebuild"
 	"github.com/spf13/cobra"
 	"google.golang.org/genai"
 )
@@ -23,6 +25,7 @@ import (
 type Deps struct {
 	IO        cli.IO
 	FSFor     func(ctx context.Context, uri string) (billy.Filesystem, string, error)
+	Registry  rebuild.RegistryMux
 	BigQuery  func(ctx context.Context, project string) (queryClient, error)
 	Firestore func(ctx context.Context, project string) (*firestore.Client, error)
 	GenAI     func(ctx context.Context, project, location string) (*genai.Client, error)
@@ -35,6 +38,7 @@ func (d *Deps) SetIO(cio cli.IO) { d.IO = cio }
 func InitDeps(ctx context.Context) (*Deps, error) {
 	return &Deps{
 		FSFor:    billyx.NewResolver().FS,
+		Registry: meta.NewRegistryMux(http.DefaultClient),
 		BigQuery: newBigQuery,
 		Firestore: func(ctx context.Context, project string) (*firestore.Client, error) {
 			return firestore.NewClient(ctx, project)
@@ -50,6 +54,6 @@ func Command() *cobra.Command {
 		Use:   "onboard",
 		Short: "Bring packages into rebuild coverage",
 	}
-	cmd.AddCommand(priorityCommand(), enqueueCommand(), dispatchCommand(), statusCommand())
+	cmd.AddCommand(priorityCommand(), enqueueCommand(), feedCommand(), dispatchCommand(), statusCommand())
 	return cmd
 }
