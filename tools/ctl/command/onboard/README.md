@@ -111,6 +111,10 @@ not fail the first attempt.
 ctl onboard feed --project my-project --signals-db gs://my-analytics/priority --events releases.jsonl
 ```
 
+The same pass runs inside the API at `POST /onboard/feed` with the batch in an
+`events` form field, so a producer of release events needs no Firestore
+access of its own.
+
 ## Dispatch
 
 `dispatch` drains the queue in passes:
