@@ -43,6 +43,7 @@ func TestSummarizeArtifacts(t *testing.T) {
 			{FileHeader: &zip.FileHeader{Name: "foo-0.0.1.dist-info/REBUILD"}, Body: []byte("data")},
 		}))
 		must(io.MultiWriter(w, origHash).Write(origZip.Bytes()))
+		orDie(w.Close())
 		upstreamURI := "https://example.com/foo-1.0.0.whl"
 		upstreamHash := hashext.NewMultiHash(crypto.SHA256)
 		upstreamZip := must(archivetest.ZipFile([]archive.ZipEntry{

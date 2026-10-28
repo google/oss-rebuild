@@ -5,6 +5,7 @@ package localfiles
 
 import (
 	"context"
+	"io"
 
 	"github.com/google/oss-rebuild/pkg/rebuild/rebuild"
 	"github.com/google/oss-rebuild/tools/ctl/assetlocator"
@@ -40,10 +41,13 @@ func (b *butler) Fetch(ctx context.Context, runID string, want rebuild.Asset) (p
 		return "", err
 	}
 	if r, err := dest.Reader(ctx, want); err == nil {
+		n, readErr := r.Read(make([]byte, 1))
 		if err := r.Close(); err != nil {
 			return "", err
 		}
-		return dest.URL(want).Path, nil
+		if n > 0 && (readErr == nil || errors.Is(readErr, io.EOF)) {
+			return dest.URL(want).Path, nil
+		}
 	}
 	switch want.Type {
 	case difftool.DiffoscopeAsset:
@@ -66,9 +70,14 @@ func (b *butler) Fetch(ctx context.Context, runID string, want rebuild.Asset) (p
 		if err != nil {
 			return "", err
 		}
-		defer w.Close()
-		_, err = w.Write([]byte(contents))
-		if err != nil {
+		if _, err = w.Write([]byte(contents)); err != nil {
+			if aw, ok := w.(interface{ Abort() }); ok {
+				aw.Abort()
+			}
+			w.Close()
+			return "", err
+		}
+		if err := w.Close(); err != nil {
 			return "", err
 		}
 	case difftool.DiffrAsset:
@@ -91,9 +100,14 @@ func (b *butler) Fetch(ctx context.Context, runID string, want rebuild.Asset) (p
 		if err != nil {
 			return "", err
 		}
-		defer w.Close()
-		_, err = w.Write(contents)
-		if err != nil {
+		if _, err = w.Write(contents); err != nil {
+			if aw, ok := w.(interface{ Abort() }); ok {
+				aw.Abort()
+			}
+			w.Close()
+			return "", err
+		}
+		if err := w.Close(); err != nil {
 			return "", err
 		}
 	default:

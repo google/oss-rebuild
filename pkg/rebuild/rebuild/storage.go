@@ -5,8 +5,10 @@ package rebuild
 
 import (
 	"context"
+	"fmt"
 	"io"
 	"io/fs"
+	"math/rand/v2"
 	"net/url"
 	"os"
 	"path"
@@ -135,8 +137,11 @@ func AssetCopy(ctx context.Context, to AssetStore, from ReadOnlyAssetStore, a As
 	if err != nil {
 		return errors.Wrap(err, "to.Writer failed")
 	}
-	defer w.Close()
 	if _, err := io.Copy(w, r); err != nil {
+		if aw, ok := w.(interface{ Abort() }); ok {
+			aw.Abort()
+		}
+		w.Close()
 		return errors.Wrap(err, "copy failed")
 	}
 	return w.Close()
@@ -280,14 +285,54 @@ func (s *FilesystemAssetStore) Reader(ctx context.Context, a Asset) (io.ReadClos
 	return f, nil
 }
 
+type atomicFileWriter struct {
+	fs       billy.Filesystem
+	tempFile billy.File
+	tempPath string
+	destPath string
+	closed   bool
+	aborted  bool
+}
+
+func (w *atomicFileWriter) Write(p []byte) (int, error) {
+	return w.tempFile.Write(p)
+}
+
+func (w *atomicFileWriter) Abort() {
+	w.aborted = true
+}
+
+func (w *atomicFileWriter) Close() error {
+	if w.closed {
+		return nil
+	}
+	w.closed = true
+	closeErr := w.tempFile.Close()
+	if w.aborted || closeErr != nil {
+		_ = w.fs.Remove(w.tempPath)
+		return closeErr
+	}
+	if err := w.fs.Rename(w.tempPath, w.destPath); err != nil {
+		_ = w.fs.Remove(w.tempPath)
+		return err
+	}
+	return nil
+}
+
 // Writer returns a writer for the given asset.
 func (s *FilesystemAssetStore) Writer(ctx context.Context, a Asset) (io.WriteCloser, error) {
 	path := s.resourcePath(a)
-	f, err := s.fs.Create(path)
+	tempPath := fmt.Sprintf("%s.tmp.%d", path, rand.Uint64())
+	f, err := s.fs.Create(tempPath)
 	if err != nil {
 		return nil, errors.Wrapf(err, "creating writer for %v", a)
 	}
-	return f, nil
+	return &atomicFileWriter{
+		fs:       s.fs,
+		tempFile: f,
+		tempPath: tempPath,
+		destPath: path,
+	}, nil
 }
 
 // Stat describes the stored asset without reading its content.
@@ -325,17 +370,25 @@ func NewCachedAssetStore(frontline LocatableAssetStore, backline AssetStore) *Ca
 
 type cachedReader struct {
 	tee        io.Reader
+	writeAbort func()
 	writeClose func() error
 	readClose  func() error
 }
 
 func (cr *cachedReader) Read(p []byte) (int, error) {
-	return cr.tee.Read(p)
+	n, err := cr.tee.Read(p)
+	if err != nil && err != io.EOF && cr.writeAbort != nil {
+		cr.writeAbort()
+	}
+	return n, err
 }
 
 func (cr *cachedReader) Close() error {
 	// Read the remaining tee, otherwise the frontline might be only partially populated.
 	_, flushErr := io.ReadAll(cr.tee)
+	if flushErr != nil && flushErr != io.EOF && cr.writeAbort != nil {
+		cr.writeAbort()
+	}
 	writeErr := cr.writeClose()
 	readErr := cr.readClose()
 	if flushErr != nil && flushErr != io.EOF {
@@ -361,8 +414,13 @@ func (s *CachedAssetStore) Reader(ctx context.Context, a Asset) (io.ReadCloser, 
 	if err != nil {
 		return nil, err
 	}
+	var writeAbort func()
+	if aw, ok := fw.(interface{ Abort() }); ok {
+		writeAbort = aw.Abort
+	}
 	return &cachedReader{
 		tee:        io.TeeReader(br, fw),
+		writeAbort: writeAbort,
 		writeClose: fw.Close,
 		readClose:  br.Close,
 	}, nil
