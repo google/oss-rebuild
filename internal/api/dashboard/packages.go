@@ -47,6 +47,21 @@ type PackageRow struct {
 	EncodedEcosystem, EncodedPackage string
 }
 
+// StreakBucket counts the failing packages whose streak falls in one range.
+type StreakBucket struct {
+	Label string
+	Count int64
+}
+
+// streakRange is a failing-streak bucket by its inclusive upper bound. The
+// last range is open, with a negative bound.
+type streakRange struct {
+	label string
+	upTo  int64
+}
+
+var streakRanges = []streakRange{{"1", 1}, {"2-3", 3}, {"4-7", 7}, {"8-15", 15}, {"16+", -1}}
+
 type PackagesData struct {
 	Loaded     bool
 	AsOf       string
@@ -58,6 +73,7 @@ type PackagesData struct {
 	Failing    int64 // packages whose latest attempts failed
 	Listed     int64 // rows shown, at most packagesLimit
 	Packages   []PackageRow
+	Streaks    []StreakBucket // failing packages in the scope
 }
 
 // encodePackagePath fills the URL-encoded ecosystem and package fields.
@@ -98,6 +114,22 @@ func PackagesPage(ctx context.Context, req PackagesRequest, deps *Deps) (*Packag
 		})
 	if err != nil {
 		return nil, errors.Wrap(err, "counting packages")
+	}
+	for _, r := range streakRanges {
+		data.Streaks = append(data.Streaks, StreakBucket{Label: r.label})
+	}
+	err = forEachRow(deps.Analytics, `SELECT consecutive_failures, count(*) FROM package_stats`+where+` GROUP BY 1`,
+		func(stmt *sqlite3.Stmt) error {
+			n := stmt.ColumnInt64(0)
+			if n == 0 {
+				return nil
+			}
+			i := slices.IndexFunc(streakRanges, func(r streakRange) bool { return r.upTo < 0 || n <= r.upTo })
+			data.Streaks[i].Count += stmt.ColumnInt64(1)
+			return nil
+		})
+	if err != nil {
+		return nil, errors.Wrap(err, "counting failing streaks")
 	}
 	listed := `FROM package_stats` + where + `
 		ORDER BY consecutive_failures DESC, attempt_count DESC, ecosystem, package

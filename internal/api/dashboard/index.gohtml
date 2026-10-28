@@ -4,6 +4,30 @@
  SPDX-License-Identifier: Apache-2.0
 -->
 
+    {{with .Overview}}
+    <section class="card hero">
+        <div class="hero-main">
+            <div class="eyebrow">Packages reproduced</div>
+            <div class="hero-figure">{{num .Reproduced}}</div>
+            <div class="hero-sub"><b>{{.Total.Pct}}%</b> of {{num .InScope}} in scope across {{len .Ecos}} ecosystems, {{num .Started}} started</div>
+            {{template "standing" .Total}}
+            {{template "standing-legend"}}
+        </div>
+        <div class="hero-side">
+            <div class="chart-title">Builds per day</div>
+            <div class="chart" data-chart="columns" data-src="overview-activity" data-h="150" data-label="Completed builds per day, succeeded and failed"></div>
+            <div class="legend">
+                <span class="legend-item"><i class="swatch ok"></i>Succeeded</span>
+                <span class="legend-item"><i class="swatch bad"></i>Failed</span>
+            </div>
+        </div>
+    </section>
+    {{template "ecocards" .Ecos}}
+    <p class="asof">Snapshot as of {{.AsOf}}</p>
+    <script type="application/json" id="overview">{{.}}</script>
+    <script type="application/json" id="overview-activity">{{.Activity}}</script>
+    {{end}}
+
     {{if .BenchmarkTargets}}
         <h2>{{if .BenchmarkTitle}}{{.BenchmarkTitle}}{{else}}Tracked Packages{{end}}</h2>
         <p>Total: {{.BenchmarkStats.Total}} | Success: {{.BenchmarkStats.Success}} | Failed: {{.BenchmarkStats.Failed}}</p>

@@ -21,12 +21,27 @@
     {{range .Ecosystems}}<a class="tab{{if eq . $sel}} active{{end}}" href="/packages?eco={{.}}">{{.}}</a>
     {{end}}
 </div>
-<div class="cards">
-    <div class="card"><div class="card-value">{{num .Total}}</div><div class="card-label">packages{{template "def" "Packages with at least one completed attempt."}}</div></div>
-    <div class="card"><div class="card-value">{{num .EverBuilt}}</div><div class="card-label">ever built{{template "def" "Reproduced at least one version."}}</div></div>
-    <div class="card"><div class="card-value">{{num .NeverBuilt}}</div><div class="card-label">never built</div></div>
-    <div class="card"><div class="card-value">{{num .Failing}}</div><div class="card-label">failing{{template "def" "Every attempt since the last success failed, or no attempt ever succeeded."}}</div></div>
+<div class="band">
+    <section class="card band-main">
+        <div class="eyebrow">Ever built{{template "def" "Reproduced at least one version."}}</div>
+        <div class="hero-figure">{{num .EverBuilt}}</div>
+        <div class="hero-sub">of {{num .Total}} packages attempted{{template "def" "Packages with at least one completed attempt."}}, <b>{{num .NeverBuilt}}</b> never built</div>
+        <div class="segbar" data-title="{{if .Eco}}{{.Eco}}{{else}}All ecosystems{{end}}">
+            {{- if .EverBuilt}}<span class="seg ok" style="flex-grow: {{.EverBuilt}}" data-c="ok" data-v="{{num .EverBuilt}}" data-k="ever built"></span>{{end}}
+            {{- if .NeverBuilt}}<span class="seg bad" style="flex-grow: {{.NeverBuilt}}" data-c="bad" data-v="{{num .NeverBuilt}}" data-k="never built"></span>{{end -}}
+        </div>
+        <div class="legend">
+            <span class="legend-item"><i class="swatch ok"></i>Ever built</span>
+            <span class="legend-item"><i class="swatch bad"></i>Never built</span>
+        </div>
+    </section>
+    <section class="card">
+        <div class="chart-title">Failing streak{{template "def" "Completed builds since the last success on any version, or every build when none succeeded."}}</div>
+        <div class="chart-sub"><b>{{num .Failing}}</b> packages whose latest builds failed, by how many in a row</div>
+        <div class="chart" data-chart="hist" data-src="streaks" data-h="150" data-unit="failed builds in a row" data-label="packages"></div>
+    </section>
 </div>
+<script type="application/json" id="streaks">{{.Streaks}}</script>
 {{if not .Packages}}
 <p>No packages recorded in the snapshot.</p>
 {{else}}

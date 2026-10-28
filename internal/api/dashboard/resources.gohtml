@@ -15,13 +15,14 @@
 {{else}}
 <p class="asof">Snapshot as of {{.AsOf}} &middot; last {{.WindowDays}} days</p>
 
-<div class="cards">
-    <div class="card"><div class="card-value">{{num .TotalAttempts}}</div><div class="card-label">attempts</div></div>
-    <div class="card"><div class="card-value">{{num .TotalSuccesses}}</div><div class="card-label">successes</div></div>
-    <div class="card"><div class="card-value">{{.TotalTokens}}</div><div class="card-label">LLM tokens</div></div>
-    <div class="card"><div class="card-value">{{printf "%.1f" .TotalBuilderHours}}</div><div class="card-label">builder hours</div></div>
-    <div class="card"><div class="card-value">{{printf "%.1f" .TotalVMHours}}</div><div class="card-label">scratch VM hours</div></div>
+<div class="tiles">
+    <section class="card tile"><div class="eyebrow">Attempts</div><div class="tile-value">{{num .TotalAttempts}}</div><div class="chart" data-chart="spark" data-src="window" data-field="Attempts" data-label="attempts"></div></section>
+    <section class="card tile"><div class="eyebrow">Successes</div><div class="tile-value">{{num .TotalSuccesses}}</div><div class="chart" data-chart="spark" data-src="window" data-field="Succeeded" data-label="successes"></div></section>
+    <section class="card tile"><div class="eyebrow">LLM tokens</div><div class="tile-value">{{.TotalTokens}}</div><div class="chart" data-chart="spark" data-src="window" data-field="Tokens" data-fmt="compact" data-label="tokens"></div></section>
+    <section class="card tile"><div class="eyebrow">Builder hours</div><div class="tile-value">{{printf "%.1f" .TotalBuilderHours}}</div><div class="chart" data-chart="spark" data-src="window" data-field="BuilderHours" data-fmt="hours" data-label="builder time"></div></section>
+    <section class="card tile"><div class="eyebrow">Scratch VM hours</div><div class="tile-value">{{printf "%.1f" .TotalVMHours}}</div><div class="chart" data-chart="spark" data-src="window" data-field="VMHours" data-fmt="hours" data-label="scratch VM time"></div></section>
 </div>
+<script type="application/json" id="window">{{.Window}}</script>
 
 <h3>Daily activity</h3>
 <div class="tabs">
@@ -33,11 +34,18 @@
 {{if not .Days}}
 <p>No attempts recorded in the window.</p>
 {{else}}
+<section class="card chart-card">
+    <div class="chart" data-chart="columns" data-src="activity" data-h="180" data-label="Completed builds per day, succeeded and failed"></div>
+    <div class="legend">
+        <span class="legend-item"><i class="swatch ok"></i>Succeeded</span>
+        <span class="legend-item"><i class="swatch bad"></i>Failed</span>
+    </div>
+</section>
+<script type="application/json" id="activity">{{.Activity}}</script>
 <table>
     <tr>
         <th>Day</th>
         <th>Attempts</th>
-        <th class="barcell"></th>
         <th>Successes</th>
         <th>Success %</th>
         <th>Builder min</th>
@@ -48,7 +56,6 @@
     <tr>
         <td>{{.Day}}</td>
         <td>{{num .Attempts}}</td>
-        <td class="barcell"><div class="bar" style="width: {{.AttemptsBarPct}}%"></div></td>
         <td>{{num .Successes}}</td>
         <td>{{.SuccessPct}}%</td>
         <td>{{printf "%.1f" .BuilderMinutes}}</td>

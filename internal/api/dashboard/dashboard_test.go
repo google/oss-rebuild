@@ -26,6 +26,7 @@ func TestRegisterAssets(t *testing.T) {
 		{ThemeCSSPath, "text/css; charset=utf-8", "--accent:"},
 		{CSSPath, "text/css; charset=utf-8", ".benchmark-grid"},
 		{FaviconPath, "image/svg+xml", "<svg"},
+		{ChartsJSPath, "text/javascript; charset=utf-8", "data-chart"},
 	} {
 		req := httptest.NewRequest(http.MethodGet, tc.path, nil)
 		rec := httptest.NewRecorder()

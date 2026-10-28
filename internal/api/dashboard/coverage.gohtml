@@ -22,6 +22,37 @@
     {{range .Ecos}}<a class="tab{{if eq .Ecosystem $sel}} active{{end}}" href="/coverage?eco={{.Ecosystem}}">{{.Ecosystem}}</a>
     {{end}}
 </div>
+{{with .Overview}}
+{{template "ecocards" (.Only $.Eco)}}
+{{template "standing-legend"}}
+<script type="application/json" id="overview">{{.}}</script>
+{{end}}
+{{$campaigns := false}}{{range .Ecos}}{{if and .HasQueue (or (not $.Eco) (eq .Ecosystem $.Eco))}}{{$campaigns = true}}{{end}}{{end}}
+{{if $campaigns}}
+<section class="card outcomes">
+    <div class="chart-title">Campaign outcomes{{template "def" "One campaign per package version. Attested campaigns are split by the stage that attested them."}}</div>
+    {{range .Ecos}}{{if and .HasQueue (or (not $.Eco) (eq .Ecosystem $.Eco))}}
+    <div class="outcome-row">
+        <div class="outcome-name">{{.Ecosystem}}</div>
+        <div class="segbar" data-title="{{.Ecosystem}} campaigns">
+            {{- range .DoneByStage}}{{if .Done}}<span class="seg stage-{{.Stage}}" style="flex-grow: {{.Done}}" data-c="stage-{{.Stage}}" data-v="{{num .Done}}" data-k="attested at {{.Stage}}"></span>{{end}}{{end}}
+            {{- if .NeedsTriage}}<span class="seg warn" style="flex-grow: {{.NeedsTriage}}" data-c="warn" data-v="{{num .NeedsTriage}}" data-k="needs triage"></span>{{end}}
+            {{- if .InFlight}}<span class="seg live" style="flex-grow: {{.InFlight}}" data-c="live" data-v="{{num .InFlight}}" data-k="in flight"></span>{{end}}
+            {{- if .Queued}}<span class="seg none" style="flex-grow: {{.Queued}}" data-c="none" data-v="{{num .Queued}}" data-k="queued"></span>{{end -}}
+        </div>
+        <div class="outcome-total">{{num .Campaigns}}</div>
+    </div>
+    {{end}}{{end}}
+    <div class="legend">
+        <span class="legend-item"><i class="swatch stage-replay"></i>Attested at replay</span>
+        <span class="legend-item"><i class="swatch stage-infer"></i>Attested at infer</span>
+        <span class="legend-item"><i class="swatch stage-agent"></i>Attested at agent</span>
+        <span class="legend-item"><i class="swatch warn"></i>Needs triage</span>
+        <span class="legend-item"><i class="swatch live"></i>In flight</span>
+        <span class="legend-item"><i class="swatch none"></i>Queued</span>
+    </div>
+</section>
+{{end}}
 {{if not .Detail}}
 {{if not .Ecos}}
 <p>No attempts, signals, or campaigns in the snapshot.</p>
