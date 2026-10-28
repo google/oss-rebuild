@@ -52,7 +52,8 @@ type FindRegistryCommitResponse struct {
 
 // FindRegistryCommitDeps holds dependencies for the registry commit resolution service
 type FindRegistryCommitDeps struct {
-	IndexManager *index.IndexManager
+	IndexManager  *index.IndexManager
+	ListSnapshots func(context.Context) ([]string, error)
 }
 
 // FindRegistryCommit finds a registry commit hash based on a Cargo.lock file and publish time
@@ -76,7 +77,7 @@ func FindRegistryCommit(ctx context.Context, req FindRegistryCommitRequest, deps
 		return &FindRegistryCommitResponse{}, nil
 	}
 	// Determine which snapshots should be searched based on publish date
-	snapshots, err := index.ListAvailableSnapshots(ctx)
+	snapshots, err := deps.ListSnapshots(ctx)
 	if err != nil {
 		return nil, api.AsStatus(codes.Internal, errors.Wrap(err, "failed to get available snapshots"))
 	}
