@@ -354,6 +354,16 @@ func TestGetLinkReportsRefusals(t *testing.T) {
 				}
 			},
 		},
+		{
+			name:   "fills keep failing",
+			status: http.StatusUnprocessableEntity,
+			body:   "fills of github.com/org/repo failed 3 times in a row",
+			check: func(t *testing.T, err error) {
+				if err == nil || !strings.Contains(err.Error(), "failed 3 times in a row") {
+					t.Errorf("GetLink() error = %v, want the server's reason", err)
+				}
+			},
+		},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {

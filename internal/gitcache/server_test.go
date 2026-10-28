@@ -26,6 +26,7 @@ import (
 	"github.com/go-git/go-billy/v5/osfs"
 	"github.com/go-git/go-git/v5"
 	"github.com/go-git/go-git/v5/plumbing/cache"
+	"github.com/go-git/go-git/v5/plumbing/transport"
 	"github.com/go-git/go-git/v5/storage"
 	"github.com/go-git/go-git/v5/storage/filesystem"
 	"github.com/google/go-cmp/cmp"
@@ -881,11 +882,23 @@ func stagingClone(n int) gitx.CloneFunc {
 func TestFillStopsAtSizeBudget(t *testing.T) {
 	defer func(d time.Duration) { sizePollInterval = d }(sizePollInterval)
 	sizePollInterval = 10 * time.Millisecond
-	s := &Server{backend: &localBackend{baseDir: t.TempDir()}, fillBytes: 1 << 20, cloneFunc: stagingClone(2 << 20)}
-	rr := httptest.NewRecorder()
-	s.HandleGet(rr, httptest.NewRequest("GET", "/get?uri=github.com/org/repo", nil))
-	if rr.Code != http.StatusRequestEntityTooLarge || rr.Header().Get(sizeLimitHeader) != strconv.Itoa(1<<20) || !strings.Contains(rr.Body.String(), "repository exceeds the size limit") {
-		t.Errorf("HandleGet() = %d, limit %q, body %q, want 413 naming the 1 MiB budget", rr.Code, rr.Header().Get(sizeLimitHeader), rr.Body.String())
+	cacheDir := t.TempDir()
+	var fills int
+	clone := stagingClone(2 << 20)
+	s := &Server{backend: &localBackend{baseDir: cacheDir}, fillBytes: 1 << 20, cloneFunc: func(ctx context.Context, st storage.Storer, fs billy.Filesystem, o *git.CloneOptions) (*gitx.Repo, error) {
+		fills++
+		return clone(ctx, st, fs, o)
+	}}
+	for i := range 2 {
+		rr := httptest.NewRecorder()
+		s.HandleGet(rr, httptest.NewRequest("GET", "/get?uri=github.com/org/repo", nil))
+		if rr.Code != http.StatusRequestEntityTooLarge || rr.Header().Get(sizeLimitHeader) != strconv.Itoa(1<<20) || !strings.Contains(rr.Body.String(), "repository exceeds the size limit") {
+			t.Errorf("request %d: HandleGet() = %d, limit %q, body %q, want 413 naming the 1 MiB budget", i, rr.Code, rr.Header().Get(sizeLimitHeader), rr.Body.String())
+		}
+	}
+	// A repository over budget stays over it, so the second request fails fast.
+	if fills != 1 {
+		t.Errorf("fills = %d, want 1", fills)
 	}
 }
 
@@ -897,6 +910,83 @@ func TestFillStopsAtTimeBudget(t *testing.T) {
 	s.HandleGet(rr, httptest.NewRequest("GET", "/get?uri=github.com/org/repo", nil))
 	if rr.Code != http.StatusInternalServerError || !strings.Contains(rr.Body.String(), errFillTimeout.Error()) {
 		t.Errorf("HandleGet() = %d %q, want 500 naming the time budget", rr.Code, rr.Body.String())
+	}
+}
+
+func TestRepeatedFailedFillsFailFast(t *testing.T) {
+	if !gitx.NativeGitAvailable() {
+		t.Skip("native git not available")
+	}
+	cacheDir := t.TempDir()
+	up := newUpstream(t)
+	var fills int
+	failing := true
+	s := &Server{backend: &localBackend{baseDir: cacheDir}, remote: func(string) string { return "file://" + up }}
+	s.cloneFunc = func(ctx context.Context, st storage.Storer, fs billy.Filesystem, o *git.CloneOptions) (*gitx.Repo, error) {
+		fills++
+		if failing {
+			return nil, errors.New("upstream unreachable")
+		}
+		return gitx.Clone(ctx, st, fs, o)
+	}
+	get := func() *httptest.ResponseRecorder {
+		rr := httptest.NewRecorder()
+		s.HandleGet(rr, httptest.NewRequest("GET", "/get?uri=github.com/org/repo", nil))
+		return rr
+	}
+	for i, want := range []int{500, 500, http.StatusUnprocessableEntity, http.StatusUnprocessableEntity} {
+		if rr := get(); rr.Code != want {
+			t.Errorf("request %d: HandleGet() = %d %q, want %d", i, rr.Code, rr.Body.String(), want)
+		}
+	}
+	if fills != failLimit {
+		t.Errorf("fills = %d, want %d: the request after the limit must not fill", fills, failLimit)
+	}
+	// Once the record expires, the entry fills again, and success clears it.
+	marker := filepath.Join(cacheDir, "github.com/org/repo/repo.tgz"+failuresSuffix)
+	expired := time.Now().Add(-failExpiry - time.Minute)
+	if err := os.Chtimes(marker, expired, expired); err != nil {
+		t.Fatal(err)
+	}
+	failing = false
+	if rr := get(); rr.Code != http.StatusOK {
+		t.Fatalf("HandleGet() after expiry = %d %q, want 200", rr.Code, rr.Body.String())
+	}
+	if _, err := os.Stat(marker); !os.IsNotExist(err) {
+		t.Errorf("failure record survived a successful fill: %v", err)
+	}
+}
+
+func TestFillFailuresNotCounted(t *testing.T) {
+	for _, tc := range []struct {
+		name string
+		fail func(cancel context.CancelFunc) error
+	}{
+		{"request ended", func(cancel context.CancelFunc) error { cancel(); return context.Canceled }},
+		{"repository not found", func(context.CancelFunc) error { return errors.Wrap(transport.ErrRepositoryNotFound, "gone") }},
+		{"ref not found", func(context.CancelFunc) error { return errors.Wrap(git.ErrBranchNotFound, "not yet pushed") }},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			cacheDir := t.TempDir()
+			var fills int
+			var cancel context.CancelFunc
+			s := &Server{backend: &localBackend{baseDir: cacheDir}, cloneFunc: func(context.Context, storage.Storer, billy.Filesystem, *git.CloneOptions) (*gitx.Repo, error) {
+				fills++
+				return nil, tc.fail(cancel)
+			}}
+			for range failLimit + 1 {
+				var ctx context.Context
+				ctx, cancel = context.WithCancel(context.Background())
+				s.HandleGet(httptest.NewRecorder(), httptest.NewRequest("GET", "/get?uri=github.com/org/repo", nil).WithContext(ctx))
+				cancel()
+			}
+			if fills != failLimit+1 {
+				t.Errorf("fills = %d, want %d: these failures must not block refills", fills, failLimit+1)
+			}
+			if _, err := os.Stat(filepath.Join(cacheDir, "github.com/org/repo/repo.tgz"+failuresSuffix)); !os.IsNotExist(err) {
+				t.Errorf("failure record exists: %v", err)
+			}
+		})
 	}
 }
 
