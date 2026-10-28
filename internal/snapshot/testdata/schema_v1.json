@@ -152,6 +152,8 @@
     "ecosystem": "TEXT pk=1",
     "package": "TEXT pk=2",
     "prevalence": "REAL",
+    "prominence": "REAL",
+    "rating": "REAL",
     "raw": "TEXT",
     "score": "REAL"
   },

@@ -50,3 +50,29 @@ func TestPercentile(t *testing.T) {
 		})
 	}
 }
+
+func TestScore(t *testing.T) {
+	for _, tc := range []struct {
+		name         string
+		qPrev, qProm float64
+		want         float64
+	}{
+		{"BothSignals", 0.8, 0.6, 0.7},
+		// One signal alone scores at most half.
+		{"PrevalenceOnly", 0.8, 0, 0.4},
+		{"ProminenceOnly", 0, 0.8, 0.4},
+		{"NoSignals", 0, 0, 0},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			if diff := cmp.Diff(tc.want, Score(tc.qPrev, tc.qProm)); diff != "" {
+				t.Errorf("Score mismatch (-want +got):\n%s", diff)
+			}
+		})
+	}
+	t.Run("LeafAppOutranksObscureLibrary", func(t *testing.T) {
+		// A leaf application must outrank a library with a few dependents.
+		if leafApp, obscureLibrary := Score(0, 1.0), Score(0.2, 0); leafApp <= obscureLibrary {
+			t.Errorf("leaf app (%v) should outrank an obscure library (%v)", leafApp, obscureLibrary)
+		}
+	})
+}

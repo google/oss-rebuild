@@ -13,9 +13,10 @@ signals of importance, each computed by its own offline job and each
 normalized per ecosystem into (0,1] so heavy tails and incomparable registry
 scales stay out of the arithmetic.
 
-| Signal     | What it measures                                            | Source                    |
-| ---------- | ----------------------------------------------------------- | ------------------------- |
-| prevalence | distinct packages depending on this one, transitively too   | deps.dev dependency graph |
+| Signal     | What it measures                                          | Source                      |
+| ---------- | --------------------------------------------------------- | --------------------------- |
+| prevalence | distinct packages depending on this one, transitively too | deps.dev dependency graph   |
+| prominence | how well known the package is by name                     | one Gemini call per package |
 
 Prevalence is computed at two granularities. The package number measures total
 use and is a coarse estimation of overall value. The per-version number allows
@@ -36,10 +37,26 @@ Each job writes its ranked signal as a JSONL export, to a local path or a
 gs:// object:
 
 ```sh
-# Read-only against public BigQuery data.
+# Prevalence: read-only against public BigQuery data.
 ctl onboard priority prevalence --project my-project --out prevalence.jsonl
 ctl onboard priority prevalence --project my-project --out gs://my-analytics/priority/prevalence.jsonl
+
+# Prominence: one cached model call per package. The corpus can be the export above.
+ctl onboard priority prominence --project my-project --corpus prevalence.jsonl \
+    --cache prom-cache.json --horizon 2025-06-01 --out gs://my-analytics/priority/prominence.jsonl
 ```
+
+The two signals rank different things, and each fills the other's blind spot.
+Prevalence sees blast radius, including plumbing nobody has heard of, and it
+correctly downranks deprecated names that are still well-known. Prominence
+represents public awareness, including the leaf applications not
+well-represented in the dependency graph: an application like ripgrep has no
+dependents in spite of having many installations and executions. The score
+weights the two equally because there is no data yet to tune the weights, so a
+package with only one of the signals scores at most 0.5.
+
+> [!NOTE]
+> Prevalence is not the OSSF Criticality Score, which scores repository activity.
 
 ## The queue
 
@@ -69,11 +86,13 @@ drained by, so a version that would never reach the front never enters in the
 first place.
 
 Each campaign stores a score and a publication time rather than a precomputed
-order. `Score` is the version's own prevalence from the export. `DispatchOrder`
-multiplies it by a freshness boost derived from the publication time at read
-time, so a recent release spikes and then decays into the backlog while it
-waits, letting a fresh release of a mid-tier package outrank a stale version of
-a critical one while keeping a fresh version of a critical package above both.
+order. `Score` combines the exported scores, specialized to that version: the
+version's own prevalence plus the package's prominence, which is identical
+across versions. `DispatchOrder` multiplies it by a freshness boost derived
+from the publication time at read time, so a recent release spikes and then
+decays into the backlog while it waits, letting a fresh release of a mid-tier
+package outrank a stale version of a critical one while keeping a fresh
+version of a critical package above both.
 
 State lives in Firestore so a run is resumable and mutable.
 

@@ -24,6 +24,11 @@ var testPrevs = []PrevalenceRecord{
 	{Ecosystem: "npm", Package: "pkgB", Dependents: 10, Prevalence: 0.4},
 }
 
+var testProms = []ProminenceRecord{
+	{Ecosystem: "pypi", Package: "pkgA", Model: "m", Rating: 0.9, Prominence: 0.6},
+	{Ecosystem: "pypi", Package: "pkgC", Model: "m", Rating: 0.5, Prominence: 0.2},
+}
+
 func queryText(t *testing.T, db *sqlite3.Conn, sql string) string {
 	t.Helper()
 	stmt, _, err := db.Prepare(sql)
@@ -37,12 +42,12 @@ func queryText(t *testing.T, db *sqlite3.Conn, sql string) string {
 	return stmt.ColumnText(0)
 }
 
-// publish builds a signal database from prevs at version and publishes it
-// under Object in a fresh in-memory destination.
-func publish(t *testing.T, prevs []PrevalenceRecord, version int) billy.Filesystem {
+// publish builds a signal database from the exports at version and
+// publishes it under Object in a fresh in-memory destination.
+func publish(t *testing.T, prevs []PrevalenceRecord, proms []ProminenceRecord, version int) billy.Filesystem {
 	t.Helper()
 	path := filepath.Join(t.TempDir(), "built.db")
-	if _, err := Build(path, prevs, Meta{}); err != nil {
+	if _, err := Build(path, prevs, proms, Meta{}); err != nil {
 		t.Fatalf("Build: %v", err)
 	}
 	db, err := sqlite3.Open(path)
@@ -65,12 +70,12 @@ func publish(t *testing.T, prevs []PrevalenceRecord, version int) billy.Filesyst
 func TestBuildAndReadBack(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "signals.db")
 	built := time.Date(2026, 8, 1, 0, 0, 0, 0, time.UTC)
-	counts, err := Build(path, testPrevs, Meta{BuiltAt: built, ToolVersion: "v-test"})
+	counts, err := Build(path, testPrevs, testProms, Meta{BuiltAt: built, ToolVersion: "v-test"})
 	if err != nil {
 		t.Fatalf("Build: %v", err)
 	}
-	if counts[TablePackageSignals] != 2 || counts[TableVersionSignals] != 2 {
-		t.Errorf("counts = %v, want 2 packages and 2 versions", counts)
+	if counts[TablePackageSignals] != 3 || counts[TableVersionSignals] != 2 {
+		t.Errorf("counts = %v, want 3 packages and 2 versions", counts)
 	}
 	db, err := sqlite3.Open(path)
 	if err != nil {
@@ -82,8 +87,9 @@ func TestBuildAndReadBack(t *testing.T) {
 		t.Fatalf("PackageSignals: %v", err)
 	}
 	want := []PackageSignal{
-		{Ecosystem: "npm", Package: "pkgB", Dependents: 10, Prevalence: 0.4, Score: 0.4},
-		{Ecosystem: "pypi", Package: "pkgA", Dependents: 100, Prevalence: 0.8, Score: 0.8},
+		{Ecosystem: "npm", Package: "pkgB", Dependents: 10, Prevalence: 0.4, Score: 0.2},
+		{Ecosystem: "pypi", Package: "pkgA", Dependents: 100, Prevalence: 0.8, Model: "m", Rating: 0.9, Prominence: 0.6, Score: 0.7},
+		{Ecosystem: "pypi", Package: "pkgC", Model: "m", Rating: 0.5, Prominence: 0.2, Score: 0.1},
 	}
 	if diff := cmp.Diff(want, got); diff != "" {
 		t.Errorf("package rows mismatch (-want +got):\n%s", diff)
@@ -112,7 +118,7 @@ func TestBuildAndReadBack(t *testing.T) {
 }
 
 func TestFetchRoundTrip(t *testing.T) {
-	dest := publish(t, testPrevs, SchemaVersion)
+	dest := publish(t, testPrevs, testProms, SchemaVersion)
 	path, err := Fetch(dest, t.TempDir())
 	if err != nil {
 		t.Fatalf("Fetch: %v", err)
@@ -126,13 +132,13 @@ func TestFetchRoundTrip(t *testing.T) {
 	if err != nil {
 		t.Fatalf("PackageSignals: %v", err)
 	}
-	if len(got) != 2 {
-		t.Errorf("fetched %d package rows, want 2", len(got))
+	if len(got) != 3 {
+		t.Errorf("fetched %d package rows, want 3", len(got))
 	}
 }
 
 func TestFetchRefusesOtherEra(t *testing.T) {
-	dest := publish(t, nil, SchemaVersion+1)
+	dest := publish(t, nil, nil, SchemaVersion+1)
 	if _, err := Fetch(dest, t.TempDir()); err == nil {
 		t.Error("Fetch accepted a database from a different schema era")
 	}
@@ -140,7 +146,7 @@ func TestFetchRefusesOtherEra(t *testing.T) {
 
 func TestVersionSignals(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "signals.db")
-	if _, err := Build(path, testPrevs, Meta{}); err != nil {
+	if _, err := Build(path, testPrevs, nil, Meta{}); err != nil {
 		t.Fatalf("Build: %v", err)
 	}
 	db, err := sqlite3.Open(path)
@@ -172,7 +178,7 @@ func TestTopPackages(t *testing.T) {
 		{Ecosystem: "pypi", Package: "pkgC", Dependents: 2, Prevalence: 0.2},
 		{Ecosystem: "npm", Package: "pkgB", Dependents: 10, Prevalence: 0.4},
 	}
-	if _, err := Build(path, prevs, Meta{}); err != nil {
+	if _, err := Build(path, prevs, nil, Meta{}); err != nil {
 		t.Fatalf("Build: %v", err)
 	}
 	db, err := sqlite3.Open(path)

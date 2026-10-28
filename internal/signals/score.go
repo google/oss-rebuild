@@ -5,6 +5,12 @@ package signals
 
 import "math"
 
+// Score combines a package's signals, each normalized per ecosystem to [0,1],
+// into one rebuild priority. Scoring a version uses its own prevalence. The
+// two signals are weighted equally because there is no data yet to tune the
+// weights, so a package with only one of them scores at most 0.5.
+func Score(prevalence, prominence float64) float64 { return 0.5*prevalence + 0.5*prominence }
+
 // LogScale maps a dependent count onto (0,1] by its order of magnitude
 // relative to max, the ecosystem's most depended-on package:
 // ln(1+count)/ln(1+max). Dependent counts are tail heavy, so a rank quantile

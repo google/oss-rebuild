@@ -37,13 +37,17 @@ func TestPublish(t *testing.T) {
 	ctx := context.Background()
 	dir := t.TempDir()
 	prev := filepath.Join(dir, "prevalence.jsonl")
+	prom := filepath.Join(dir, "prom.jsonl")
 	writeJSONLFile(t, prev, []signals.PrevalenceRecord{
 		{Ecosystem: "pypi", Package: "pkgA", Dependents: 100, Prevalence: 0.8},
 		{Ecosystem: "pypi", Package: "pkgA", Version: "1.0", Dependents: 60, Prevalence: 0.75},
 	})
+	writeJSONLFile(t, prom, []signals.ProminenceRecord{
+		{Ecosystem: "pypi", Package: "pkgA", Rating: 0.9, Prominence: 0.6},
+	})
 	dest := t.TempDir()
 	var out bytes.Buffer
-	_, err := publishHandler(ctx, publishConfig{Prevalence: prev, Dest: "file://" + dest},
+	_, err := publishHandler(ctx, publishConfig{Prevalence: prev, Prominence: prom, Dest: "file://" + dest},
 		&Deps{IO: cli.IO{Out: &out, Err: &out}})
 	if err != nil {
 		t.Fatalf("publishHandler: %v", err)
@@ -64,7 +68,7 @@ func TestPublish(t *testing.T) {
 	if err != nil {
 		t.Fatalf("PackageSignals: %v", err)
 	}
-	if len(rows) != 1 || rows[0].Score != 0.8 {
-		t.Errorf("published rows = %+v, want one pkgA row scored 0.8", rows)
+	if len(rows) != 1 || rows[0].Score != 0.7 {
+		t.Errorf("published rows = %+v, want one pkgA row scored 0.7", rows)
 	}
 }

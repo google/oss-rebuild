@@ -34,7 +34,8 @@ const (
 const schema = `
 CREATE TABLE package_signals(
 	ecosystem TEXT NOT NULL, package TEXT NOT NULL,
-	dependents INTEGER NOT NULL, prevalence REAL NOT NULL, score REAL NOT NULL,
+	dependents INTEGER NOT NULL, prevalence REAL NOT NULL,
+	model TEXT NOT NULL, rating REAL NOT NULL, prominence REAL NOT NULL, score REAL NOT NULL,
 	PRIMARY KEY(ecosystem, package)) WITHOUT ROWID;
 CREATE TABLE version_signals(
 	ecosystem TEXT NOT NULL, package TEXT NOT NULL, version TEXT NOT NULL,
@@ -81,7 +82,7 @@ func ReadMeta(db *sqlite3.Conn) (Meta, error) {
 // version_signals row per version-level prevalence record, carrying its
 // publication date and artifact name when the export provides them.
 // Returns per-table row counts.
-func Build(path string, prevs []PrevalenceRecord, meta Meta) (map[string]int, error) {
+func Build(path string, prevs []PrevalenceRecord, proms []ProminenceRecord, meta Meta) (map[string]int, error) {
 	db, err := sqlite3.Open(path)
 	if err != nil {
 		return nil, errors.Wrap(err, "creating database")
@@ -96,8 +97,8 @@ func Build(path string, prevs []PrevalenceRecord, meta Meta) (map[string]int, er
 	if err := db.Exec("BEGIN"); err != nil {
 		return nil, err
 	}
-	pkgs := JoinSignals(prevs)
-	pstmt, _, err := db.Prepare("INSERT INTO package_signals VALUES(?,?,?,?,?)")
+	pkgs := JoinSignals(prevs, proms)
+	pstmt, _, err := db.Prepare("INSERT INTO package_signals VALUES(?,?,?,?,?,?,?,?)")
 	if err != nil {
 		return nil, err
 	}
@@ -107,7 +108,10 @@ func Build(path string, prevs []PrevalenceRecord, meta Meta) (map[string]int, er
 		pstmt.BindText(2, s.Package)
 		pstmt.BindInt64(3, s.Dependents)
 		pstmt.BindFloat(4, s.Prevalence)
-		pstmt.BindFloat(5, s.Score)
+		pstmt.BindText(5, s.Model)
+		pstmt.BindFloat(6, s.Rating)
+		pstmt.BindFloat(7, s.Prominence)
+		pstmt.BindFloat(8, s.Score)
 		if err := pstmt.Exec(); err != nil {
 			return nil, errors.Wrap(err, "inserting package signal")
 		}
@@ -167,7 +171,7 @@ func Build(path string, prevs []PrevalenceRecord, meta Meta) (map[string]int, er
 // database in (ecosystem, package) order, one row in hand at a time.
 func PackageSignals(db *sqlite3.Conn) iter.Seq2[PackageSignal, error] {
 	return func(yield func(PackageSignal, error) bool) {
-		stmt, _, err := db.Prepare(`SELECT ecosystem, package, dependents, prevalence, score
+		stmt, _, err := db.Prepare(`SELECT ecosystem, package, dependents, prevalence, model, rating, prominence, score
 			FROM package_signals ORDER BY ecosystem, package`)
 		if err != nil {
 			yield(PackageSignal{}, err)
@@ -180,7 +184,10 @@ func PackageSignals(db *sqlite3.Conn) iter.Seq2[PackageSignal, error] {
 				Package:    stmt.ColumnText(1),
 				Dependents: stmt.ColumnInt64(2),
 				Prevalence: stmt.ColumnFloat(3),
-				Score:      stmt.ColumnFloat(4),
+				Model:      stmt.ColumnText(4),
+				Rating:     stmt.ColumnFloat(5),
+				Prominence: stmt.ColumnFloat(6),
+				Score:      stmt.ColumnFloat(7),
 			}
 			if !yield(s, nil) {
 				return
@@ -243,10 +250,36 @@ func Fetch(dest billy.Basic, dir string) (string, error) {
 	return path, nil
 }
 
+// PackageSignalAt reads one package's signal row. ok is false when the
+// package is outside the ranked head the exports cover.
+func PackageSignalAt(db *sqlite3.Conn, ecosystem, pkg string) (_ PackageSignal, ok bool, _ error) {
+	stmt, _, err := db.Prepare(`SELECT dependents, prevalence, model, rating, prominence, score
+		FROM package_signals WHERE ecosystem = ? AND package = ?`)
+	if err != nil {
+		return PackageSignal{}, false, err
+	}
+	defer stmt.Close()
+	stmt.BindText(1, ecosystem)
+	stmt.BindText(2, pkg)
+	if !stmt.Step() {
+		return PackageSignal{}, false, stmt.Err()
+	}
+	return PackageSignal{
+		Ecosystem:  ecosystem,
+		Package:    pkg,
+		Dependents: stmt.ColumnInt64(0),
+		Prevalence: stmt.ColumnFloat(1),
+		Model:      stmt.ColumnText(2),
+		Rating:     stmt.ColumnFloat(3),
+		Prominence: stmt.ColumnFloat(4),
+		Score:      stmt.ColumnFloat(5),
+	}, true, nil
+}
+
 // TopPackages reads an ecosystem's n highest-scored packages in descending
 // score order, or all of them when n <= 0.
 func TopPackages(db *sqlite3.Conn, ecosystem string, n int) ([]PackageSignal, error) {
-	stmt, _, err := db.Prepare(`SELECT package, dependents, prevalence, score
+	stmt, _, err := db.Prepare(`SELECT package, dependents, prevalence, model, rating, prominence, score
 		FROM package_signals WHERE ecosystem = ? ORDER BY score DESC, package LIMIT ?`)
 	if err != nil {
 		return nil, err
@@ -265,7 +298,10 @@ func TopPackages(db *sqlite3.Conn, ecosystem string, n int) ([]PackageSignal, er
 			Package:    stmt.ColumnText(0),
 			Dependents: stmt.ColumnInt64(1),
 			Prevalence: stmt.ColumnFloat(2),
-			Score:      stmt.ColumnFloat(3),
+			Model:      stmt.ColumnText(3),
+			Rating:     stmt.ColumnFloat(4),
+			Prominence: stmt.ColumnFloat(5),
+			Score:      stmt.ColumnFloat(6),
 		})
 	}
 	return out, stmt.Err()

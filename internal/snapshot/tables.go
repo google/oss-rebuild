@@ -615,6 +615,8 @@ func Tables() []docdb.TableDef {
 			GenCols: []docdb.GenCol{
 				{Name: "dependents", Type: "INTEGER", Expr: docdb.Raw("$.Dependents")},
 				{Name: "prevalence", Type: "REAL", Expr: docdb.Raw("$.Prevalence")},
+				{Name: "rating", Type: "REAL", Expr: docdb.Raw("$.Rating")},
+				{Name: "prominence", Type: "REAL", Expr: docdb.Raw("$.Prominence")},
 				{Name: "score", Type: "REAL", Expr: docdb.Raw("$.Score"), Stored: true},
 			},
 		},
