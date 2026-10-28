@@ -128,6 +128,10 @@ func (c Client) getLink(ctx context.Context, repo string, contains time.Time, re
 		return uri, 0, &gitx.RepoTooLargeError{URL: repo, Limit: limit}
 	}
 	body, _ := io.ReadAll(io.LimitReader(resp.Body, 1<<10))
+	// Waiting out a remote's rate limit would only ask it again.
+	if resp.StatusCode == http.StatusTooManyRequests {
+		return uri, 0, errors.Wrap(gitx.ErrRateLimited, strings.TrimSpace(string(body)))
+	}
 	return uri, 0, errors.Errorf("making cache request: %s: %s", resp.Status, strings.TrimSpace(string(body)))
 }
 

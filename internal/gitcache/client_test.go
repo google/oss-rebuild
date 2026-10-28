@@ -345,6 +345,17 @@ func TestGetLinkReportsRefusals(t *testing.T) {
 			},
 		},
 		{
+			name:   "rate-limited",
+			status: http.StatusTooManyRequests,
+			header: http.Header{"Retry-After": {"60"}},
+			body:   "The requested URL returned error: 429",
+			check: func(t *testing.T, err error) {
+				if !errors.Is(err, gitx.ErrRateLimited) {
+					t.Errorf("GetLink() error = %v, want ErrRateLimited", err)
+				}
+			},
+		},
+		{
 			name:   "fill failed",
 			status: http.StatusInternalServerError,
 			body:   "Fill failed: fill ran past its time budget",

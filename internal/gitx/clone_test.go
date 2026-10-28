@@ -724,6 +724,11 @@ func TestClassifyCloneError(t *testing.T) {
 			wantErrIs: transport.ErrAuthenticationRequired,
 		},
 		{
+			name:      "rate-limited (https 429)",
+			output:    "remote: This request was rate-limited due to too many requests.\nfatal: unable to access 'https://github.com/org/repo/': The requested URL returned error: 429\n",
+			wantErrIs: ErrRateLimited,
+		},
+		{
 			name:      "ref not found with --branch",
 			output:    "fatal: Remote branch nonsense not found in upstream origin\n",
 			wantErrIs: git.ErrBranchNotFound,
