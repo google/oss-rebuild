@@ -9,6 +9,7 @@ import (
 	"context"
 	"fmt"
 	"io"
+	"strings"
 	"sync"
 	"time"
 
@@ -31,6 +32,7 @@ type Config struct {
 	MaxAgent            int
 	AgentIterations     int
 	AgentModel          string
+	EvalModels          string // comma-separated, overrides AgentModel. Launches rotate through it, so repeat a model to weight it
 	Workers             int
 	BuildRate           int           // build launches per minute, or 0 for as fast as the workers allow
 	Window              time.Duration // stop launching this long after the pass starts, or 0 to launch everything approved
@@ -76,6 +78,7 @@ type Request struct {
 	MaxAgent            int     `form:"max_agent"`
 	AgentIterations     int     `form:"agent_iterations"`
 	AgentModel          string  `form:"agent_model"`
+	EvalModels          string  `form:"eval_models"`
 	Workers             int     `form:"workers"`
 	BuildRate           int     `form:"build_rate"`
 	Window              string  `form:"window"`
@@ -117,6 +120,7 @@ func (r Request) Config() (Config, error) {
 	num(&c.MaxInflightSessions, r.MaxInflightSessions)
 	num(&c.MaxRetries, r.MaxRetries)
 	c.AgentModel = r.AgentModel
+	c.EvalModels = r.EvalModels
 	if r.FreshnessK != 0 {
 		c.FreshnessK = r.FreshnessK
 	}
@@ -160,6 +164,7 @@ type Dispatcher struct {
 	Config    Config
 	Now       time.Time
 
+	agents    int        // agent launches this run, counted across refills so EvalModels rotate evenly
 	mu        sync.Mutex // guards state the pass's workers share
 	agentHeld bool       // an agent launch failed for capacity this run, and every later one would repeat its zone sweep
 	buildHeld bool       // an observed build was turned away for capacity this run. Rejected builds free their slots at once, so the caps alone would not slow launches.
@@ -405,19 +410,24 @@ launch:
 			}
 		}
 		pool.Go(func() error {
+			var model string
 			if c.Stage == scheduler.StageAgent {
 				// Scheduled while an earlier launch was still sweeping zones.
 				d.mu.Lock()
 				held := d.agentHeld
 				if held {
 					sum.Held++
+				} else {
+					// Only a launch that goes ahead takes a turn in the rotation.
+					model = d.agentModel(d.agents)
+					d.agents++
 				}
 				d.mu.Unlock()
 				if held {
 					return nil
 				}
 			}
-			if err := d.launch(lctx, c); err != nil {
+			if err := d.launch(lctx, c, model); err != nil {
 				if !errors.Is(err, errConflict) {
 					fmt.Fprintf(d.errw(), "dispatch %s (%s): %v\n", scheduler.TargetID(c.Target()), c.Stage, err)
 				}
@@ -442,6 +452,16 @@ launch:
 	sum.InflightBuilds = inflightBuilds + sum.Dispatched - sum.AgentDispatched
 	sum.InflightSessions = inflightSessions + sum.AgentDispatched
 	return sum
+}
+
+// agentModel is the model for a run's nth agent launch. Eval models
+// round-robin so neither A/B arm starves the other out of the shared pool.
+func (d *Dispatcher) agentModel(n int) string {
+	models := splitNonEmpty(d.Config.EvalModels)
+	if len(models) == 0 {
+		return d.Config.AgentModel
+	}
+	return models[n%len(models)]
 }
 
 // caps bounds one pass: the per-pass batch and agent caps, the room left
@@ -628,7 +648,7 @@ func (d *Dispatcher) charge(ctx context.Context, budget *scheduler.Budget, s sch
 // launch claims a queued campaign and starts its stage. The claim lands
 // before the API call, so of two overlapping passes exactly one starts the
 // work. A failed call restores the campaign as it was.
-func (d *Dispatcher) launch(ctx context.Context, c scheduler.Campaign) error {
+func (d *Dispatcher) launch(ctx context.Context, c scheduler.Campaign, model string) error {
 	runID := d.Now.Format(time.RFC3339Nano)
 	claimed, err := d.transition(ctx, c, scheduler.StateQueued, func(cur *scheduler.Campaign) {
 		cur.State = scheduler.StateInFlight
@@ -642,7 +662,7 @@ func (d *Dispatcher) launch(ctx context.Context, c scheduler.Campaign) error {
 	if err != nil {
 		return err
 	}
-	session, err := d.start(ctx, claimed)
+	session, err := d.start(ctx, claimed, model)
 	if err != nil {
 		if _, rerr := d.transition(ctx, claimed, scheduler.StateInFlight, func(cur *scheduler.Campaign) { *cur = c }); rerr != nil {
 			fmt.Fprintf(d.errw(), "returning claim on %s: %v\n", scheduler.TargetID(c.Target()), rerr)
@@ -657,9 +677,9 @@ func (d *Dispatcher) launch(ctx context.Context, c scheduler.Campaign) error {
 	return nil
 }
 
-// start calls the API for the campaign's stage. Agent dispatches return the
-// session id the outcome is later read from.
-func (d *Dispatcher) start(ctx context.Context, c scheduler.Campaign) (string, error) {
+// start calls the API for the campaign's stage. Agent dispatches run under
+// model and return the session id the outcome is later read from.
+func (d *Dispatcher) start(ctx context.Context, c scheduler.Campaign, model string) (string, error) {
 	switch c.Stage {
 	case scheduler.StageInfer:
 		_, err := d.Create(ctx, schema.RebuildPackageRequest{
@@ -676,7 +696,7 @@ func (d *Dispatcher) start(ctx context.Context, c scheduler.Campaign) (string, e
 			Target:        c.Target(),
 			RunID:         c.LastRunID,
 			MaxIterations: d.Config.AgentIterations,
-			Model:         d.Config.AgentModel,
+			Model:         model,
 		})
 		if err != nil {
 			return "", err
@@ -702,4 +722,14 @@ func (d *Dispatcher) transition(ctx context.Context, c scheduler.Campaign, fromS
 		return true, nil
 	})
 	return out, err
+}
+
+func splitNonEmpty(s string) []string {
+	var out []string
+	for p := range strings.SplitSeq(s, ",") {
+		if p = strings.TrimSpace(p); p != "" {
+			out = append(out, p)
+		}
+	}
+	return out
 }

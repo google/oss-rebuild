@@ -6,6 +6,7 @@ package dispatch
 import (
 	"context"
 	"errors"
+	"slices"
 	"sync"
 	"testing"
 	"time"
@@ -26,10 +27,11 @@ var (
 
 // fakeAPI records the launches a pass makes.
 type fakeAPI struct {
-	creates   []schema.RebuildPackageRequest
-	agents    []schema.AgentCreateRequest
-	createErr error
-	agentErr  error
+	creates    []schema.RebuildPackageRequest
+	agents     []schema.AgentCreateRequest
+	createErr  error
+	agentErr   error
+	agentDelay time.Duration // before each agent call answers
 }
 
 func newTestDispatcher(cfg Config, f *fakeAPI) *Dispatcher {
@@ -52,6 +54,7 @@ func newTestDispatcher(cfg Config, f *fakeAPI) *Dispatcher {
 			mu.Lock()
 			defer mu.Unlock()
 			f.agents = append(f.agents, r)
+			time.Sleep(f.agentDelay)
 			if f.agentErr != nil {
 				return nil, f.agentErr
 			}
@@ -220,6 +223,70 @@ func TestPass(t *testing.T) {
 		}
 		if len(f.agents) != 1 {
 			t.Errorf("agent launches = %d, want 1", len(f.agents))
+		}
+	})
+	t.Run("EvalModelsRoundRobin", func(t *testing.T) {
+		var f fakeAPI
+		d := newTestDispatcher(func() Config { c := cfg; c.MaxAgent = 2; return c }(), &f)
+		d.Config.EvalModels = "m-a, m-b"
+		active := []scheduler.Campaign{queued("a", scheduler.StageAgent), queued("b", scheduler.StageAgent)}
+		for _, c := range active {
+			if err := d.Campaigns.Upsert(ctx, c); err != nil {
+				t.Fatal(err)
+			}
+		}
+		d.Pass(ctx, active, new(scheduler.Budget))
+		var models []string
+		for _, r := range f.agents {
+			models = append(models, r.Model)
+		}
+		slices.Sort(models)
+		if diff := cmp.Diff([]string{"m-a", "m-b"}, models); diff != "" {
+			t.Errorf("agent models mismatch (-want +got):\n%s", diff)
+		}
+	})
+	t.Run("EvalModelsRotateAcrossPasses", func(t *testing.T) {
+		var f fakeAPI
+		d := newTestDispatcher(cfg, &f)
+		d.Config.EvalModels = "m-a, m-b"
+		for _, id := range []string{"a", "b"} {
+			c := queued(id, scheduler.StageAgent)
+			if err := d.Campaigns.Upsert(ctx, c); err != nil {
+				t.Fatal(err)
+			}
+			d.Pass(ctx, []scheduler.Campaign{c}, new(scheduler.Budget))
+		}
+		var models []string
+		for _, r := range f.agents {
+			models = append(models, r.Model)
+		}
+		if diff := cmp.Diff([]string{"m-a", "m-b"}, models); diff != "" {
+			t.Errorf("agent models mismatch (-want +got):\n%s", diff)
+		}
+	})
+	t.Run("EvalModelsSkipHeldLaunches", func(t *testing.T) {
+		// The second launch is scheduled while the first sweeps zones, and the
+		// first's capacity failure then holds it.
+		f := fakeAPI{agentErr: status.Error(codes.ResourceExhausted, "all zones exhausted"), agentDelay: 50 * time.Millisecond}
+		d := newTestDispatcher(func() Config { c := cfg; c.MaxAgent = 2; c.Workers = 1; return c }(), &f)
+		d.Config.EvalModels = "m-a, m-b"
+		active := []scheduler.Campaign{queued("a", scheduler.StageAgent), queued("b", scheduler.StageAgent)}
+		for _, c := range active {
+			if err := d.Campaigns.Upsert(ctx, c); err != nil {
+				t.Fatal(err)
+			}
+		}
+		if sum := d.Pass(ctx, active, new(scheduler.Budget)); sum.Held != 1 {
+			t.Fatalf("held %d launches, want the second held after the first failed", sum.Held)
+		}
+		f.agentErr, f.agentDelay, d.agentHeld = nil, 0, false // a new run
+		d.Pass(ctx, active[:1], new(scheduler.Budget))
+		var models []string
+		for _, r := range f.agents {
+			models = append(models, r.Model)
+		}
+		if diff := cmp.Diff([]string{"m-a", "m-b"}, models); diff != "" {
+			t.Errorf("attempted agent models mismatch (-want +got):\n%s", diff)
 		}
 	})
 	t.Run("PacedBuildsSpaceOut", func(t *testing.T) {
