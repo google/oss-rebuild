@@ -17,6 +17,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"testing"
 	"time"
@@ -27,9 +28,11 @@ import (
 	"github.com/go-git/go-git/v5/plumbing/cache"
 	"github.com/go-git/go-git/v5/storage"
 	"github.com/go-git/go-git/v5/storage/filesystem"
+	"github.com/google/go-cmp/cmp"
 	"github.com/google/oss-rebuild/internal/gitx"
 	"github.com/google/oss-rebuild/internal/gitx/gitxtest"
 	"github.com/google/oss-rebuild/pkg/act/api/form"
+	"github.com/google/oss-rebuild/pkg/archive"
 	"github.com/pkg/errors"
 )
 
@@ -614,4 +617,240 @@ func TestSplitPacks(t *testing.T) {
 		}
 	}
 	git("--git-dir="+bare, "fsck", "--strict", "--no-progress")
+}
+
+func gitRun(t *testing.T, dir string, args ...string) string {
+	t.Helper()
+	cmd := exec.Command("git", append([]string{"-C", dir}, args...)...)
+	cmd.Env = append(os.Environ(), "GIT_AUTHOR_NAME=t", "GIT_AUTHOR_EMAIL=t@example.com", "GIT_COMMITTER_NAME=t", "GIT_COMMITTER_EMAIL=t@example.com", "GIT_DEFAULT_REF_FORMAT=files")
+	out, err := cmd.CombinedOutput()
+	if err != nil {
+		t.Fatalf("git %v: %v\n%s", args, err, out)
+	}
+	return strings.TrimSpace(string(out))
+}
+
+// newUpstream makes a repository with branches main, dev and gone, a
+// lightweight tag, an annotated tag, and a tag only gone reaches.
+func newUpstream(t *testing.T) string {
+	t.Helper()
+	up := t.TempDir()
+	gitRun(t, up, "init", "-q", "-b", "main")
+	gitRun(t, up, "commit", "-q", "--allow-empty", "-m", "a")
+	gitRun(t, up, "tag", "v1")
+	gitRun(t, up, "checkout", "-q", "-b", "dev")
+	gitRun(t, up, "commit", "-q", "--allow-empty", "-m", "b")
+	gitRun(t, up, "tag", "-a", "v2", "-m", "annotated")
+	gitRun(t, up, "checkout", "-q", "-b", "gone", "main")
+	gitRun(t, up, "commit", "-q", "--allow-empty", "-m", "c")
+	gitRun(t, up, "commit", "-q", "--allow-empty", "-m", "d")
+	gitRun(t, up, "tag", "on-gone")
+	gitRun(t, up, "checkout", "-q", "main")
+	return up
+}
+
+// entryDir extracts the entry at path into a temporary directory.
+func entryDir(t *testing.T, path string) string {
+	t.Helper()
+	f, err := os.Open(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer f.Close()
+	gr, err := gzip.NewReader(f)
+	if err != nil {
+		t.Fatal(err)
+	}
+	dir := t.TempDir()
+	if err := archive.ExtractTar(tar.NewReader(gr), osfs.New(dir), archive.ExtractOptions{}); err != nil {
+		t.Fatal(err)
+	}
+	return dir
+}
+
+func entryState(t *testing.T, path string) (refs, head, objects string, loose int) {
+	t.Helper()
+	dir := entryDir(t, path)
+	refs = gitRun(t, dir, "for-each-ref", "--format=%(refname) %(objectname)")
+	head = gitRun(t, dir, "symbolic-ref", "HEAD")
+	objects = gitRun(t, dir, "cat-file", "--batch-all-objects", "--batch-check=%(objectname) %(objecttype)")
+	for _, line := range strings.Split(gitRun(t, dir, "count-objects", "-v"), "\n") {
+		if n, ok := strings.CutPrefix(line, "count: "); ok {
+			var err error
+			if loose, err = strconv.Atoi(n); err != nil {
+				t.Fatalf("count-objects: %v", err)
+			}
+		}
+	}
+	return refs, head, objects, loose
+}
+
+func TestRefreshCacheMatchesClone(t *testing.T) {
+	if !gitx.NativeGitAvailable() {
+		t.Skip("native git not available")
+	}
+	for _, tc := range []struct {
+		name   string
+		change func(t *testing.T, up string)
+		then   func(t *testing.T, up string) // changes upstream after one refresh
+	}{
+		{
+			name: "new commits, branch and tag",
+			change: func(t *testing.T, up string) {
+				gitRun(t, up, "commit", "-q", "--allow-empty", "-m", "e")
+				gitRun(t, up, "tag", "v3")
+				gitRun(t, up, "branch", "feature", "dev")
+			},
+		},
+		{
+			name: "deleted branch and tags, force-push, moved tag and new default branch",
+			change: func(t *testing.T, up string) {
+				// Strands dev's commit and v2's tag object, and gone's old tip.
+				gitRun(t, up, "branch", "-q", "-D", "dev")
+				gitRun(t, up, "tag", "-d", "v2")
+				gitRun(t, up, "tag", "-d", "on-gone")
+				gitRun(t, up, "checkout", "-q", "gone")
+				gitRun(t, up, "reset", "-q", "--hard", "HEAD~1")
+				gitRun(t, up, "commit", "-q", "--allow-empty", "-m", "rewritten")
+				gitRun(t, up, "tag", "-f", "v1", "gone")
+			},
+		},
+		{
+			// The rewrite strands the objects the first refresh fetched.
+			name: "refreshed commit later force-pushed away",
+			change: func(t *testing.T, up string) {
+				gitRun(t, up, "commit", "-q", "--allow-empty", "-m", "e")
+			},
+			then: func(t *testing.T, up string) {
+				gitRun(t, up, "reset", "-q", "--hard", "HEAD~1")
+				gitRun(t, up, "commit", "-q", "--allow-empty", "-m", "e2")
+			},
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			up := newUpstream(t)
+			cacheDir := t.TempDir()
+			s := &Server{backend: &localBackend{baseDir: cacheDir}, cloneFunc: gitx.Clone, remote: func(string) string { return "file://" + up }}
+			ctx := context.Background()
+			if err := s.populateCache(ctx, "github.com/org/repo", "", "stale/repo.tgz"); err != nil {
+				t.Fatalf("populateCache() error = %v", err)
+			}
+			tc.change(t, up)
+			if err := s.refreshCache(ctx, "github.com/org/repo", "stale/repo.tgz"); err != nil {
+				t.Fatalf("refreshCache() error = %v", err)
+			}
+			if tc.then != nil {
+				tc.then(t, up)
+				if err := s.refreshCache(ctx, "github.com/org/repo", "stale/repo.tgz"); err != nil {
+					t.Fatalf("second refreshCache() error = %v", err)
+				}
+			}
+			if err := s.populateCache(ctx, "github.com/org/repo", "", "fresh/repo.tgz"); err != nil {
+				t.Fatalf("populateCache() error = %v", err)
+			}
+			gotRefs, gotHead, gotObjects, gotLoose := entryState(t, filepath.Join(cacheDir, "stale/repo.tgz"))
+			wantRefs, wantHead, wantObjects, _ := entryState(t, filepath.Join(cacheDir, "fresh/repo.tgz"))
+			if diff := cmp.Diff(wantRefs, gotRefs); diff != "" {
+				t.Errorf("refreshed refs differ from a clone's (-clone +refreshed):\n%s", diff)
+			}
+			if gotHead != wantHead {
+				t.Errorf("refreshed HEAD = %s, want %s", gotHead, wantHead)
+			}
+			if diff := cmp.Diff(wantObjects, gotObjects); diff != "" {
+				t.Errorf("refreshed objects differ from a clone's (-clone +refreshed):\n%s", diff)
+			}
+			if gotLoose != 0 {
+				t.Errorf("refreshed entry holds %d loose objects, want all packed", gotLoose)
+			}
+		})
+	}
+}
+
+func TestRefreshCacheMergesPacks(t *testing.T) {
+	if !gitx.NativeGitAvailable() {
+		t.Skip("native git not available")
+	}
+	defer func(n int) { maxPacks = n }(maxPacks)
+	maxPacks = 2
+	up := newUpstream(t)
+	cacheDir := t.TempDir()
+	s := &Server{backend: &localBackend{baseDir: cacheDir}, cloneFunc: gitx.Clone, remote: func(string) string { return "file://" + up }}
+	ctx := context.Background()
+	if err := s.populateCache(ctx, "github.com/org/repo", "", "repo.tgz"); err != nil {
+		t.Fatalf("populateCache() error = %v", err)
+	}
+	for i := range 4 {
+		gitRun(t, up, "commit", "-q", "--allow-empty", "-m", fmt.Sprintf("r%d", i))
+		if err := s.refreshCache(ctx, "github.com/org/repo", "repo.tgz"); err != nil {
+			t.Fatalf("refreshCache() %d error = %v", i, err)
+		}
+		dir := entryDir(t, filepath.Join(cacheDir, "repo.tgz"))
+		packs, _ := filepath.Glob(filepath.Join(dir, "objects", "pack", "*.pack"))
+		if len(packs) > maxPacks {
+			t.Fatalf("after refresh %d the entry holds %d packs, want at most %d", i, len(packs), maxPacks)
+		}
+		// A fast-forward under the limit adds its pack beside the clone's.
+		if i == 0 && len(packs) != 2 {
+			t.Errorf("after the first refresh the entry holds %d packs, want 2 without a repack", len(packs))
+		}
+		if _, err := os.Stat(filepath.Join(dir, "FETCH_HEAD")); !os.IsNotExist(err) {
+			t.Errorf("refreshed entry holds FETCH_HEAD: %v", err)
+		}
+	}
+}
+
+func TestServerHandleGetRefreshesStaleEntryByFetch(t *testing.T) {
+	if !gitx.NativeGitAvailable() {
+		t.Skip("native git not available")
+	}
+	up := newUpstream(t)
+	cacheDir := t.TempDir()
+	s := &Server{backend: &localBackend{baseDir: cacheDir}, cloneFunc: gitx.Clone, remote: func(string) string { return "file://" + up }}
+	if err := s.populateCache(context.Background(), "github.com/org/repo", "", "github.com/org/repo/repo.tgz"); err != nil {
+		t.Fatalf("populateCache() error = %v", err)
+	}
+	stale := time.Now().Add(-48 * time.Hour)
+	if err := os.Chtimes(filepath.Join(cacheDir, "github.com/org/repo/repo.tgz"), stale, stale); err != nil {
+		t.Fatal(err)
+	}
+	gitRun(t, up, "tag", "v3")
+	s.cloneFunc = func(context.Context, storage.Storer, billy.Filesystem, *git.CloneOptions) (*gitx.Repo, error) {
+		t.Fatal("cloned a stale entry that a fetch could refresh")
+		return nil, nil
+	}
+	rr := httptest.NewRecorder()
+	s.HandleGet(rr, httptest.NewRequest("GET", "/get?uri=github.com/org/repo&contains="+time.Now().UTC().Add(-time.Hour).Format(time.RFC3339), nil))
+	if rr.Code != http.StatusOK {
+		t.Fatalf("HandleGet() = %d: %s", rr.Code, rr.Body.String())
+	}
+	if refs, _, _, _ := entryState(t, filepath.Join(cacheDir, "github.com/org/repo/repo.tgz")); !strings.Contains(refs, "refs/tags/v3 ") {
+		t.Errorf("refreshed entry lacks the new tag:\n%s", refs)
+	}
+}
+
+func TestServerHandleGetClonesWhenRefreshFails(t *testing.T) {
+	if !gitx.NativeGitAvailable() {
+		t.Skip("native git not available")
+	}
+	up := newUpstream(t)
+	cacheDir := t.TempDir()
+	p := filepath.Join(cacheDir, "github.com/org/repo/repo.tgz")
+	if err := os.MkdirAll(filepath.Dir(p), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	// An entry that is no repository at all cannot be fetched onto.
+	writeTarGz(t, p, "README", []byte("not a repository"))
+	stale := time.Now().Add(-48 * time.Hour)
+	if err := os.Chtimes(p, stale, stale); err != nil {
+		t.Fatal(err)
+	}
+	s := &Server{backend: &localBackend{baseDir: cacheDir}, cloneFunc: gitx.Clone, remote: func(string) string { return "file://" + up }}
+	rr := httptest.NewRecorder()
+	s.HandleGet(rr, httptest.NewRequest("GET", "/get?uri=github.com/org/repo&contains="+time.Now().UTC().Add(-time.Hour).Format(time.RFC3339), nil))
+	if rr.Code != http.StatusOK {
+		t.Fatalf("HandleGet() = %d: %s", rr.Code, rr.Body.String())
+	}
+	if _, head, _, _ := entryState(t, p); head != "refs/heads/main" {
+		t.Errorf("entry HEAD = %s after falling back to a clone, want refs/heads/main", head)
+	}
 }
