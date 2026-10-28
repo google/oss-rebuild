@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/go-git/go-git/v5/plumbing/transport"
+	"github.com/google/oss-rebuild/internal/gitcache"
 	"github.com/google/oss-rebuild/internal/httpx"
 	"github.com/google/oss-rebuild/pkg/rebuild/rebuild"
 	"github.com/pkg/errors"
@@ -68,8 +69,8 @@ func reserveMemory(ctx context.Context, deps *InferDeps, rebuilder rebuild.Rebui
 	}
 	var repoSize int64
 	// TODO: Without a git cache the repository goes unreserved. Size it from repo_metrics.
-	if deps.GitCache != nil {
-		repoSize, err = deps.GitCache.Size(ctx, repo)
+	if c, _ := ctx.Value(rebuild.RepoCacheClientID).(*gitcache.Client); c != nil {
+		repoSize, err = c.Size(ctx, repo)
 		// CloneRepo reports a repository the cache can't read.
 		if err != nil && !errors.Is(err, transport.ErrAuthenticationRequired) {
 			return func() {}, errors.Wrap(err, "sizing repository")

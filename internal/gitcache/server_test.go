@@ -1070,3 +1070,34 @@ func TestFailedFillKeepsEntry(t *testing.T) {
 		t.Errorf("entry after a failed fill: err %v, unchanged %v", err, bytes.Equal(got, want))
 	}
 }
+
+func TestServerHandleGetHonoursOlderBound(t *testing.T) {
+	cacheDir := t.TempDir()
+	p := filepath.Join(cacheDir, "github.com/org/repo/repo.tgz")
+	if err := os.MkdirAll(filepath.Dir(p), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	writeTarGz(t, p, "HEAD", []byte("ref: refs/heads/main\n"))
+	fetched := time.Now().Add(-48 * time.Hour)
+	if err := os.Chtimes(p, fetched, fetched); err != nil {
+		t.Fatal(err)
+	}
+	var fills int
+	s := &Server{backend: &localBackend{baseDir: cacheDir}, cloneFunc: func(context.Context, storage.Storer, billy.Filesystem, *git.CloneOptions) (*gitx.Repo, error) {
+		fills++
+		return nil, errors.New("fill")
+	}}
+	// The entry was fetched after the named bound, so it serves however old.
+	older := fetched.Add(-time.Hour).UTC().Format(time.RFC3339)
+	rr := httptest.NewRecorder()
+	s.HandleGet(rr, httptest.NewRequest("GET", "/get?uri=github.com/org/repo&contains="+older, nil))
+	if rr.Code != http.StatusOK || fills != 0 {
+		t.Errorf("HandleGet() with an older bound = %d after %d fills, want 200 without a fill", rr.Code, fills)
+	}
+	// Without a bound the entry serves however old.
+	rr = httptest.NewRecorder()
+	s.HandleGet(rr, httptest.NewRequest("GET", "/get?uri=github.com/org/repo", nil))
+	if rr.Code != http.StatusOK || fills != 0 {
+		t.Errorf("HandleGet() without a bound = %d after %d fills, want 200 without a fill", rr.Code, fills)
+	}
+}

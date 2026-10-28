@@ -131,12 +131,10 @@ func TestReserveMemorySizes(t *testing.T) {
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			m := NewMemory(baseMemory + 4<<30)
-			deps := &InferDeps{
-				HTTPClient: srv.Client(),
-				GitCache:   &gitcache.Client{IDClient: srv.Client(), APIClient: srv.Client(), URL: u, MaxBytes: tc.maxBytes},
-				Memory:     m,
-			}
-			release, err := reserveMemory(t.Context(), deps, upstreamAt{url: srv.URL + tc.artifactPath}, rebuild.Target{}, rebuild.RegistryMux{}, repo)
+			deps := &InferDeps{HTTPClient: srv.Client(), Memory: m}
+			cache := &gitcache.Client{IDClient: srv.Client(), APIClient: srv.Client(), URL: u, MaxBytes: tc.maxBytes}
+			ctx := context.WithValue(t.Context(), rebuild.RepoCacheClientID, cache)
+			release, err := reserveMemory(ctx, deps, upstreamAt{url: srv.URL + tc.artifactPath}, rebuild.Target{}, rebuild.RegistryMux{}, repo)
 			defer release()
 			var tooLarge *gitx.RepoTooLargeError
 			if err != nil && !errors.As(err, &tooLarge) {

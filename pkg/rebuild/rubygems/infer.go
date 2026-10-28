@@ -22,6 +22,15 @@ import (
 	"github.com/pkg/errors"
 )
 
+// Published returns when t's version was published to the registry.
+func (Rebuilder) Published(ctx context.Context, t rebuild.Target, mux rebuild.RegistryMux) (time.Time, error) {
+	vd, err := mux.RubyGems.Version(ctx, t.Package, t.Version)
+	if err != nil {
+		return time.Time{}, errors.Wrap(err, "fetching version detail")
+	}
+	return vd.CreatedAt, nil
+}
+
 func (Rebuilder) InferRepo(ctx context.Context, t rebuild.Target, mux rebuild.RegistryMux) (string, error) {
 	gem, err := mux.RubyGems.Gem(ctx, t.Package)
 	if err != nil {

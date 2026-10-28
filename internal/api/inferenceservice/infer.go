@@ -37,6 +37,7 @@ func doInfer(ctx context.Context, rebuilder rebuild.Rebuilder, t rebuild.Target,
 			return nil, rebuild.RepoConfig{}, err
 		}
 	}
+	ctx = boundCache(ctx, rebuilder, t, mux)
 	if *release, err = reserveMemory(ctx, deps, rebuilder, t, mux, repo); err != nil {
 		return nil, rebuild.RepoConfig{}, err
 	}
