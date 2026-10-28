@@ -154,10 +154,12 @@ resource "google_cloud_run_v2_service" "git-cache" {
       args = [
         "--cache=gs://${google_storage_bucket.git-cache.name}"
       ]
+      # A fill clones into memory, and splitting a large clone's packs holds
+      # it twice for a while.
       resources {
         limits = {
           cpu    = "4000m"
-          memory = "8G"
+          memory = "16G"
         }
       }
     }
