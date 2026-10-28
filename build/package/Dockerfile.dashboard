@@ -1,0 +1,9 @@
+FROM golang:1.26-alpine AS binary
+ARG DEBUG=false
+WORKDIR /src
+COPY . .
+RUN go generate ./internal/api/dashboard && \
+    CGO_ENABLED=0 go build -tags webfonts -ldflags="$([ ${DEBUG} = "true" ] || printf '-s -w')" -gcflags="-l=4" ./cmd/dashboard
+FROM alpine
+COPY --from=binary /src/dashboard /
+ENTRYPOINT ["/dashboard"]

@@ -171,3 +171,8 @@ variable "build_def_repo_dir" {
   description = "Directory within build_def_repo containing build definitions"
   default     = "definitions"
 }
+variable "enable_dashboard" {
+  type        = bool
+  description = "Whether to deploy the dashboard service. It serves the analytics snapshot and is reachable only through its load balancer."
+  default     = false
+}

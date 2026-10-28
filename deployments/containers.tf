@@ -75,7 +75,12 @@ locals {
       dockerfile = "build/package/Dockerfile.crates-registry"
       build_args = ["DEBUG=${terraform_data.debug.output}"]
     }
-    }, var.enable_network_analyzer ? {
+    }, var.enable_dashboard ? {
+    dashboard = {
+      dockerfile = "build/package/Dockerfile.dashboard"
+      build_args = ["DEBUG=${terraform_data.debug.output}"]
+    }
+    } : {}, var.enable_network_analyzer ? {
     network-analyzer = {
       dockerfile = "build/package/Dockerfile.networkanalyzer"
       build_args = [
@@ -234,6 +239,13 @@ data "google_artifact_registry_docker_image" "agent" {
   depends_on    = [module.service_images["agent"]]
 }
 
+data "google_artifact_registry_docker_image" "dashboard" {
+  count         = var.enable_dashboard ? 1 : 0
+  location      = google_artifact_registry_repository.registry.location
+  repository_id = google_artifact_registry_repository.registry.repository_id
+  image_name    = "dashboard:${module.service_images["dashboard"].image_version}"
+  depends_on    = [module.service_images["dashboard"]]
+}
 data "google_artifact_registry_docker_image" "network-analyzer" {
   count         = var.enable_network_analyzer ? 1 : 0
   location      = google_artifact_registry_repository.registry.location

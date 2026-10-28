@@ -69,6 +69,11 @@ resource "google_service_account" "cron" {
   account_id  = "cron-invoker" # NOTE: ID must be >=6 chars
   description = "Identity for Cloud Scheduler jobs triggering maintenance endpoints. Holds run.invoker only."
 }
+resource "google_service_account" "dashboard" {
+  count       = var.enable_dashboard ? 1 : 0
+  account_id  = "dashboard"
+  description = "Identity serving the dashboard. Reads the analytics snapshot, build logs, and session records."
+}
 data "google_storage_project_service_account" "attestation-pubsub-publisher" {
 }
 
@@ -489,6 +494,39 @@ resource "google_storage_bucket_iam_member" "builder-agent-writes-metadata" {
   bucket = google_storage_bucket.agent-metadata.name
   role   = "roles/storage.objectCreator"
   member = google_service_account.builder-agent.member
+}
+
+# Dashboard-specific IAM bindings
+resource "google_storage_bucket_iam_member" "dashboard-reads-analytics" {
+  count  = var.enable_dashboard ? 1 : 0
+  bucket = google_storage_bucket.analytics.name
+  role   = "roles/storage.objectViewer"
+  member = google_service_account.dashboard[0].member
+}
+resource "google_storage_bucket_iam_member" "dashboard-reads-logs" {
+  count  = var.enable_dashboard ? 1 : 0
+  bucket = google_storage_bucket.logs.name
+  role   = "roles/storage.objectViewer"
+  member = google_service_account.dashboard[0].member
+}
+resource "google_storage_bucket_iam_member" "dashboard-reads-agent-sessions" {
+  count  = var.enable_dashboard ? 1 : 0
+  bucket = google_storage_bucket.agent-sessions.name
+  role   = "roles/storage.objectViewer"
+  member = google_service_account.dashboard[0].member
+}
+# Session pages fetch tool output by the gs:// URI recorded on each exec.
+resource "google_storage_bucket_iam_member" "dashboard-reads-scratch-output" {
+  count  = var.enable_dashboard && var.enable_scratch ? 1 : 0
+  bucket = google_storage_bucket.scratch-output[0].name
+  role   = "roles/storage.objectViewer"
+  member = google_service_account.dashboard[0].member
+}
+resource "google_project_iam_member" "dashboard-views-datastore" {
+  count   = var.enable_dashboard ? 1 : 0
+  project = var.project
+  role    = "roles/datastore.viewer"
+  member  = google_service_account.dashboard[0].member
 }
 
 ## Public resources
