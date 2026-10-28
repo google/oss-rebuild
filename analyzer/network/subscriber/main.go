@@ -15,7 +15,6 @@ import (
 	"github.com/google/oss-rebuild/internal/urlx"
 	"github.com/google/oss-rebuild/pkg/act/api"
 	"github.com/google/oss-rebuild/pkg/analyzer"
-	"github.com/google/oss-rebuild/pkg/feed"
 	"github.com/google/oss-rebuild/pkg/rebuild/rebuild"
 	"github.com/google/oss-rebuild/pkg/rebuild/schema"
 	"github.com/pkg/errors"
@@ -35,7 +34,7 @@ func EnqueueInit(ctx context.Context) (*analyzerservice.EnqueueDeps, error) {
 	}
 	return &analyzerservice.EnqueueDeps{
 		// TODO: Many Debian builds are running into failures under netproxy setup.
-		Tracker:  feed.TrackerFromFunc(func(te schema.TargetEvent) (bool, error) { return te.Ecosystem != rebuild.Debian, nil }),
+		Skip:     func(te schema.TargetEvent) bool { return te.Ecosystem == rebuild.Debian },
 		Analyzer: urlx.MustParse(*analyzerURL),
 		Queue:    queue,
 	}, nil
