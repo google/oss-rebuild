@@ -180,7 +180,7 @@ func TestWaitForOperationRidesOutFailedPolls(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
-			c := &clientImpl{service: svc, pollInterval: time.Millisecond}
+			c := &clientImpl{service: svc, queuedPoll: time.Millisecond, runningPoll: time.Millisecond}
 			op, err := c.WaitForOperation(context.Background(), &cloudbuild.Operation{Name: "operations/op"})
 			if err != nil {
 				t.Fatalf("WaitForOperation: %v", err)
@@ -195,3 +195,25 @@ func TestWaitForOperationRidesOutFailedPolls(t *testing.T) {
 type roundTripFunc func(*http.Request) (*http.Response, error)
 
 func (f roundTripFunc) RoundTrip(r *http.Request) (*http.Response, error) { return f(r) }
+
+func TestPollIntervalFollowsBuildStatus(t *testing.T) {
+	c := &clientImpl{queuedPoll: time.Minute, runningPoll: time.Second}
+	op := func(md string) *cloudbuild.Operation {
+		return &cloudbuild.Operation{Metadata: googleapi.RawMessage(md)}
+	}
+	for _, tc := range []struct {
+		name string
+		op   *cloudbuild.Operation
+		want time.Duration
+	}{
+		{"Queued", op(`{"build":{"status":"QUEUED"}}`), time.Minute},
+		{"Pending", op(`{"build":{"status":"PENDING"}}`), time.Minute},
+		{"Working", op(`{"build":{"status":"WORKING"}}`), time.Second},
+		{"NoMetadata", &cloudbuild.Operation{}, time.Second},
+		{"NoBuild", op(`{}`), time.Second},
+	} {
+		if got := c.pollInterval(tc.op); got != tc.want {
+			t.Errorf("%s: pollInterval() = %v, want %v", tc.name, got, tc.want)
+		}
+	}
+}
