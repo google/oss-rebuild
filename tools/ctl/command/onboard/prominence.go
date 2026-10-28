@@ -10,15 +10,14 @@ import (
 	"flag"
 	"fmt"
 	"io"
+	"io/fs"
 	"maps"
 	"math"
-	"os"
 	"slices"
 	"sort"
 	"strings"
 
 	"github.com/go-git/go-billy/v5"
-	"github.com/google/oss-rebuild/internal/billyx"
 	"github.com/google/oss-rebuild/internal/jsonl"
 	"github.com/google/oss-rebuild/internal/signals"
 	"github.com/google/oss-rebuild/pkg/act"
@@ -216,30 +215,46 @@ func loadCorpus(fsys billy.Filesystem, name string) ([]pkgRef, map[pkgRef]string
 	return pairs, registered, nil
 }
 
-func loadCache(path string) (map[string]float64, error) {
+func loadCache(fsys billy.Filesystem, name string) (map[string]float64, error) {
 	m := map[string]float64{}
-	if path == "" {
+	if fsys == nil {
 		return m, nil
 	}
-	raw, err := os.ReadFile(path)
-	if os.IsNotExist(err) || len(raw) == 0 {
+	r, err := fsys.Open(name)
+	if errors.Is(err, fs.ErrNotExist) {
 		return m, nil
 	}
 	if err != nil {
 		return nil, errors.Wrap(err, "reading cache")
 	}
+	defer r.Close()
+	raw, err := io.ReadAll(r)
+	if err != nil {
+		return nil, errors.Wrap(err, "reading cache")
+	}
+	if len(raw) == 0 {
+		return m, nil
+	}
 	return m, errors.Wrap(json.Unmarshal(raw, &m), "parsing cache")
 }
 
-func saveCache(path string, m map[string]float64) error {
-	if path == "" {
+func saveCache(fsys billy.Filesystem, name string, m map[string]float64) error {
+	if fsys == nil {
 		return nil
 	}
 	b, err := json.Marshal(m)
 	if err != nil {
 		return errors.Wrap(err, "encoding cache")
 	}
-	return errors.Wrap(os.WriteFile(path, b, 0o644), "writing cache")
+	w, err := fsys.Create(name)
+	if err != nil {
+		return errors.Wrap(err, "writing cache")
+	}
+	if _, err := w.Write(b); err != nil {
+		w.Close()
+		return errors.Wrap(err, "writing cache")
+	}
+	return errors.Wrap(w.Close(), "writing cache")
 }
 
 type prominenceConfig struct {
@@ -271,13 +286,12 @@ func (c prominenceConfig) Validate() error {
 }
 
 func prominenceHandler(ctx context.Context, cfg prominenceConfig, deps *Deps) (*act.NoOutput, error) {
-	resolve := billyx.NewResolver()
-	recs, err := prominenceRecords(ctx, resolve, cfg, deps)
+	recs, err := prominenceRecords(ctx, cfg, deps)
 	if err != nil {
 		return nil, err
 	}
 	ranked := rankProminence(recs)
-	outFS, out, err := resolve.FS(ctx, cfg.Out)
+	outFS, out, err := deps.FSFor(ctx, cfg.Out)
 	if err != nil {
 		return nil, errors.Wrapf(err, "resolving %s", cfg.Out)
 	}
@@ -297,9 +311,9 @@ func prominenceHandler(ctx context.Context, cfg prominenceConfig, deps *Deps) (*
 }
 
 // prominenceRecords reads a scored export or scores the corpus.
-func prominenceRecords(ctx context.Context, resolve *billyx.Resolver, cfg prominenceConfig, deps *Deps) ([]signals.ProminenceRecord, error) {
+func prominenceRecords(ctx context.Context, cfg prominenceConfig, deps *Deps) ([]signals.ProminenceRecord, error) {
 	if cfg.File != "" {
-		fileFS, name, err := resolve.FS(ctx, cfg.File)
+		fileFS, name, err := deps.FSFor(ctx, cfg.File)
 		if err != nil {
 			return nil, errors.Wrap(err, "resolving prominence file")
 		}
@@ -311,7 +325,7 @@ func prominenceRecords(ctx context.Context, resolve *billyx.Resolver, cfg promin
 		recs, err := jsonl.DecodeAll[signals.ProminenceRecord](f)
 		return recs, errors.Wrap(err, "reading prominence file")
 	}
-	corpusFS, corpus, err := resolve.FS(ctx, cfg.Corpus)
+	corpusFS, corpus, err := deps.FSFor(ctx, cfg.Corpus)
 	if err != nil {
 		return nil, errors.Wrap(err, "resolving corpus")
 	}
@@ -334,7 +348,14 @@ func prominenceRecords(ctx context.Context, resolve *billyx.Resolver, cfg promin
 			}
 		}
 	}
-	cache, err := loadCache(cfg.Cache)
+	var cacheFS billy.Filesystem
+	var cacheName string
+	if cfg.Cache != "" {
+		if cacheFS, cacheName, err = deps.FSFor(ctx, cfg.Cache); err != nil {
+			return nil, errors.Wrap(err, "resolving cache")
+		}
+	}
+	cache, err := loadCache(cacheFS, cacheName)
 	if err != nil {
 		return nil, err
 	}
@@ -347,7 +368,7 @@ func prominenceRecords(ctx context.Context, resolve *billyx.Resolver, cfg promin
 	fmt.Fprintf(deps.IO.Err, "%d package(s), %d post-horizon (floored), %d to score with %s\n",
 		len(pairs), len(floored), len(todo), cfg.Model)
 	if len(todo) > 0 {
-		client, err := newGenAIClient(ctx, cfg.Project, cfg.Location)
+		client, err := deps.GenAI(ctx, cfg.Project, cfg.Location)
 		if err != nil {
 			return nil, err
 		}
@@ -358,7 +379,7 @@ func prominenceRecords(ctx context.Context, resolve *billyx.Resolver, cfg promin
 				cache[cacheKey(cfg.Model, r)] = ps[i]
 			}
 		}
-		if err := saveCache(cfg.Cache, cache); err != nil {
+		if err := saveCache(cacheFS, cacheName, cache); err != nil {
 			return nil, err
 		}
 	}

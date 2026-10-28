@@ -14,6 +14,7 @@ import (
 	"github.com/google/oss-rebuild/internal/billyx"
 	"github.com/google/oss-rebuild/pkg/act/cli"
 	"github.com/spf13/cobra"
+	"google.golang.org/genai"
 )
 
 // Deps carries the external clients shared by the onboard subcommands, so
@@ -24,6 +25,7 @@ type Deps struct {
 	FSFor     func(ctx context.Context, uri string) (billy.Filesystem, string, error)
 	BigQuery  func(ctx context.Context, project string) (queryClient, error)
 	Firestore func(ctx context.Context, project string) (*firestore.Client, error)
+	GenAI     func(ctx context.Context, project, location string) (*genai.Client, error)
 	APIClient func(ctx context.Context, endpoint string) (*http.Client, *url.URL, error)
 }
 
@@ -37,6 +39,7 @@ func InitDeps(ctx context.Context) (*Deps, error) {
 		Firestore: func(ctx context.Context, project string) (*firestore.Client, error) {
 			return firestore.NewClient(ctx, project)
 		},
+		GenAI:     newGenAIClient,
 		APIClient: apiClient,
 	}, nil
 }
