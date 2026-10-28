@@ -265,6 +265,22 @@ details.traj-body > summary { cursor: pointer; color: var(--secondary); font-siz
 .tabs a.tab:hover { text-decoration: none; }
 .tabs a.active { color: var(--heading); border-bottom-color: var(--accent); }
 
+/* Win-loss strip of recent builds: successes (.ok) rise above the midline and
+   failures, unmarked to keep the markup small, drop below it. A fixed width
+   right-aligns the newest build on every row. Sized for recentBuilds in
+   packages.go. */
+.beads {
+    display: inline-flex;
+    justify-content: flex-end;
+    gap: 2px;
+    width: 70px;
+    height: 15px;
+    vertical-align: middle;
+    background: linear-gradient(var(--border), var(--border)) center / 100% 1px no-repeat;
+}
+.beads i { flex: none; width: 4px; height: 7px; align-self: flex-end; background: var(--mismatch); border-radius: 0 0 2px 2px; }
+.beads .ok { align-self: flex-start; background: var(--accent); border-radius: 2px 2px 0 0; }
+
 /* Status badges in the by-version table. */
 .badge {
     display: inline-block;

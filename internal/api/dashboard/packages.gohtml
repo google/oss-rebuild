@@ -38,6 +38,7 @@
         <th>Built{{template "def" "Reproduced at least one version."}}</th>
         <th>Versions built{{template "def" "Versions reproduced over versions attempted."}}</th>
         <th>Attempts</th>
+        <th>Recent builds{{template "def" "Latest completed builds, oldest first. Successes rise above the line and failures drop below it."}}</th>
         <th>Failing streak{{template "def" "Completed attempts since the last success, on any version."}}</th>
         <th>Last success</th>
         <th>Last attempt</th>
@@ -49,6 +50,7 @@
         <td>{{if .EverBuilt}}<span class="status-success">yes</span>{{else}}<span class="muted">no</span>{{end}}</td>
         <td>{{.VersionsSucceeded}} / {{.VersionsAttempted}}</td>
         <td>{{num .Attempts}}</td>
+        <td><span class="beads">{{range .Recent}}<i{{if .}} class="ok"{{end}}></i>{{end}}</span></td>
         <td>{{if .FailingStreak}}<span class="streak">{{.FailingStreak}}</span>{{else}}<span class="muted">0</span>{{end}}</td>
         <td class="wrap">{{if .LastSucceededAt}}{{.LastSucceededAt}} <span class="muted">{{.LastSucceededVersion}}</span>{{else}}<span class="muted">&mdash;</span>{{end}}</td>
         <td class="wrap">{{.LastAttemptedAt}} <span class="muted">{{.LastAttemptedVersion}} {{.LastAttemptedStatus}}</span></td>

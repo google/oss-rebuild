@@ -6,6 +6,7 @@ package dashboard
 import (
 	"context"
 	"io"
+	"slices"
 	"testing"
 
 	"github.com/google/go-cmp/cmp"
@@ -19,13 +20,31 @@ func packagesFixture(t *testing.T) memAnalytics {
 			('npm', 'a', 1, 0, 2, 2, 2, '2026-08-30T10:00:00Z', '1.1', 'SUCCESS', '2026-08-30T10:00:00Z', '1.1'),
 			('npm', 'b', 0, 3, 3, 1, 0, '2026-08-31T10:00:00Z', '2.0', 'FAILURE', NULL, NULL),
 			('pypi', 'c', 1, 1, 4, 2, 1, '2026-08-29T10:00:00Z', '0.2', 'ERROR', '2026-08-28T10:00:00Z', '0.1')`,
+		`CREATE TABLE attempts (ecosystem TEXT, package TEXT, version TEXT, artifact TEXT, run_id TEXT, status TEXT, success INT, created TEXT, mechanism TEXT, executor_version TEXT, cost_builder_seconds REAL)`,
+		`CREATE TABLE agent_sessions (session_id TEXT, ecosystem TEXT, package TEXT, version TEXT, artifact TEXT, run_id TEXT)`,
+		`CREATE TABLE agent_iterations (session_id TEXT, status TEXT, created TEXT)`,
+		// a: a failure then 13 successes, so the strip holds only successes.
+		`INSERT INTO attempts SELECT 'npm', 'a', '1.1', 'a.tgz', 'r' || i, iif(i = 0, 'FAILURE', 'SUCCESS'), i > 0, printf('2026-08-30T10:%02d:00Z', i), '', '', NULL
+			FROM (WITH RECURSIVE n(i) AS (SELECT 0 UNION ALL SELECT i + 1 FROM n WHERE i < 13) SELECT i FROM n)`,
+		// b's running attempt is not a completed build.
+		`INSERT INTO attempts VALUES
+			('npm', 'b', '2.0', 'b.tgz', 'r1', 'FAILURE', 0, '2026-08-31T08:00:00Z', '', '', NULL),
+			('npm', 'b', '2.0', 'b.tgz', 'r2', 'FAILURE', 0, '2026-08-31T09:00:00Z', '', '', NULL),
+			('npm', 'b', '2.0', 'b.tgz', 'r3', 'FAILURE', 0, '2026-08-31T10:00:00Z', '', '', NULL),
+			('npm', 'b', '2.0', 'b.tgz', 'r4', 'RUNNING', 0, '2026-08-31T11:00:00Z', '', '', NULL),
+			('pypi', 'c', '0.1', 'c.whl', 'r1', 'SUCCESS', 1, '2026-08-27T10:00:00Z', '', '', NULL),
+			('pypi', 'c', '0.1', 'c.whl', 'r2', 'SUCCESS', 1, '2026-08-27T11:00:00Z', '', '', NULL),
+			('pypi', 'c', '0.2', 'c.whl', 'r3', 'ERROR', 0, '2026-08-29T10:00:00Z', '', '', NULL)`,
+		// c's agent success lands mid-strip. Failed iterations are not builds.
+		`INSERT INTO agent_sessions VALUES ('s1', 'pypi', 'c', '0.1', 'c.whl', 'r9')`,
+		`INSERT INTO agent_iterations VALUES ('s1', 'SUCCESS', '2026-08-28T10:00:00Z'), ('s1', 'FAILURE', '2026-08-28T09:00:00Z')`,
 	)
 }
 
 func TestPackagesPage(t *testing.T) {
-	a := PackageRow{Ecosystem: "npm", Package: "a", EverBuilt: true, Attempts: 2, VersionsAttempted: 2, VersionsSucceeded: 2, LastAttemptedAt: "2026-08-30", LastAttemptedVersion: "1.1", LastAttemptedStatus: "SUCCESS", LastSucceededAt: "2026-08-30", LastSucceededVersion: "1.1"}
-	b := PackageRow{Ecosystem: "npm", Package: "b", FailingStreak: 3, Attempts: 3, VersionsAttempted: 1, LastAttemptedAt: "2026-08-31", LastAttemptedVersion: "2.0", LastAttemptedStatus: "FAILURE"}
-	c := PackageRow{Ecosystem: "pypi", Package: "c", EverBuilt: true, FailingStreak: 1, Attempts: 4, VersionsAttempted: 2, VersionsSucceeded: 1, LastAttemptedAt: "2026-08-29", LastAttemptedVersion: "0.2", LastAttemptedStatus: "ERROR", LastSucceededAt: "2026-08-28", LastSucceededVersion: "0.1"}
+	a := PackageRow{Ecosystem: "npm", Package: "a", EverBuilt: true, Attempts: 2, VersionsAttempted: 2, VersionsSucceeded: 2, LastAttemptedAt: "2026-08-30", LastAttemptedVersion: "1.1", LastAttemptedStatus: "SUCCESS", LastSucceededAt: "2026-08-30", LastSucceededVersion: "1.1", Recent: slices.Repeat([]bool{true}, recentBuilds)}
+	b := PackageRow{Ecosystem: "npm", Package: "b", FailingStreak: 3, Attempts: 3, VersionsAttempted: 1, LastAttemptedAt: "2026-08-31", LastAttemptedVersion: "2.0", LastAttemptedStatus: "FAILURE", Recent: []bool{false, false, false}}
+	c := PackageRow{Ecosystem: "pypi", Package: "c", EverBuilt: true, FailingStreak: 1, Attempts: 4, VersionsAttempted: 2, VersionsSucceeded: 1, LastAttemptedAt: "2026-08-29", LastAttemptedVersion: "0.2", LastAttemptedStatus: "ERROR", LastSucceededAt: "2026-08-28", LastSucceededVersion: "0.1", Recent: []bool{true, true, true, false}}
 	for _, tc := range []struct {
 		name string
 		req  PackagesRequest

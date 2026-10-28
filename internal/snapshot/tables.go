@@ -54,13 +54,13 @@ const (
 // MechanismAgent marks agent builds, which carry no strategy provenance.
 const MechanismAgent = "agent"
 
-// completedBuilds unions the agent's confirmed builds into the completed
+// CompletedBuilds unions the agent's confirmed builds into the completed
 // attempts: the agent records an agent_iterations document rather than a
 // RebuildAttempt, so attempts alone show an attested target as never built.
 // Only successes join, since failed iterations are steps in the agent's
 // search rather than attempts of record.
 // TODO: Record a RebuildAttempt on the agent path.
-const completedBuilds = `
+const CompletedBuilds = `
 SELECT ecosystem, package, version, artifact, run_id, status, success, created,
 	mechanism, executor_version, cost_builder_seconds
 FROM attempts WHERE status != 'RUNNING'
@@ -103,7 +103,7 @@ SELECT s.ecosystem, s.package, s.version, s.artifact,
 FROM scratch_vms sc LEFT JOIN agent_sessions s ON s.scratch_id = sc.scratch_id
 WHERE sc.vm_seconds > 0`
 
-// ecosystemDailyQuery aggregates completedBuilds, agent-session tokens,
+// ecosystemDailyQuery aggregates CompletedBuilds, agent-session tokens,
 // and scratch VM-seconds into one row per (ecosystem, day). A row exists for
 // any day any measure contributes. Documents without a created stamp
 // aggregate under an empty day rather than vanishing on NULL join keys.
@@ -111,7 +111,7 @@ WHERE sc.vm_seconds > 0`
 // day. Scratch VM-seconds attribute to a target's ecosystem through the
 // linked session. Unlinked scratches are omitted (no ecosystem).
 const ecosystemDailyQuery = `
-WITH completed AS (` + completedBuilds + `),
+WITH completed AS (` + CompletedBuilds + `),
 days AS (
 	SELECT ecosystem, coalesce(substr(created, 1, 10), '') AS day, count(*) AS attempts,
 		sum(success) AS successes, sum(status = 'ERROR') AS errors,
@@ -155,7 +155,7 @@ const (
 // topGapsPerEcosystem caps the top_gaps table per ecosystem.
 const topGapsPerEcosystem = "100"
 
-// versionStatsQuery folds completedBuilds into one row per (ecosystem,
+// versionStatsQuery folds CompletedBuilds into one row per (ecosystem,
 // package, version). Builds are recorded per artifact: a version is
 // current when every attempted artifact has succeeded, and flaky when any
 // one artifact has both succeeded and failed in the build phase (an agent
@@ -163,7 +163,7 @@ const topGapsPerEcosystem = "100"
 // the earliest publish time recorded on the version's campaigns, NULL when
 // it was never enqueued.
 const versionStatsQuery = `
-WITH completed AS (` + completedBuilds + `),
+WITH completed AS (` + CompletedBuilds + `),
 camp AS (
 	SELECT ecosystem, package, version, min(published) AS published_at
 	FROM campaigns WHERE published IS NOT NULL GROUP BY 1, 2, 3),
@@ -354,13 +354,13 @@ LEFT JOIN fresh fr ON fr.ecosystem = f.ecosystem AND fr.week = f.week
 LEFT JOIN pct pc ON pc.ecosystem = f.ecosystem AND pc.week = f.week
 ORDER BY 1, 2`
 
-// packageStatsQuery folds completedBuilds into one row per (ecosystem,
+// packageStatsQuery folds CompletedBuilds into one row per (ecosystem,
 // package). consecutive_failures counts the completed builds recorded
 // after the last success on any version, or every completed build when
 // the package never succeeded. Ties on created break by run_id, newest
 // first.
 const packageStatsQuery = `
-WITH completed AS (` + completedBuilds + `),
+WITH completed AS (` + CompletedBuilds + `),
 grouped AS (
 	SELECT ecosystem, package, count(*) AS attempt_count,
 		count(DISTINCT nullif(version, '')) AS versions_attempted,
