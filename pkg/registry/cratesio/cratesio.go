@@ -18,7 +18,10 @@ import (
 	"github.com/pkg/errors"
 )
 
-var registryURL = urlx.MustParse("https://crates.io")
+var (
+	registryURL = urlx.MustParse("https://crates.io")
+	staticURL   = urlx.MustParse("https://static.crates.io/crates")
+)
 
 // Crate is the /api/v1/crates/<name> result.
 type Crate struct {
@@ -123,13 +126,10 @@ func (r HTTPRegistry) Version(ctx context.Context, pkg, version string) (*CrateV
 	return &v, nil
 }
 
-// Artifact provides the crate artifact associated with a specific crate version.
+// Artifact fetches a crate version's artifact from the CDN, outside the API's rate limit.
 func (r HTTPRegistry) Artifact(ctx context.Context, pkg string, version string) (io.ReadCloser, error) {
-	vmeta, err := r.Version(ctx, pkg, version)
-	if err != nil {
-		return nil, err
-	}
-	req, _ := http.NewRequestWithContext(ctx, http.MethodGet, vmeta.DownloadURL, nil)
+	u := staticURL.JoinPath(pkg, pkg+"-"+version+".crate")
+	req, _ := http.NewRequestWithContext(ctx, http.MethodGet, u.String(), nil)
 	resp, err := r.Client.Do(req)
 	if err != nil {
 		return nil, err
