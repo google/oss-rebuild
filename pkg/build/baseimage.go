@@ -24,7 +24,7 @@ func DefaultBaseImageConfig() BaseImageConfig {
 	return BaseImageConfig{
 		Default: "docker.io/library/alpine:3.21",
 		Ecosystems: map[rebuild.Ecosystem]string{
-			rebuild.Debian:   "docker.io/library/debian:stable-20251103-slim",
+			rebuild.Debian:   "docker.io/library/debian:testing-20260918-slim",
 			rebuild.Maven:    "docker.io/library/debian:stable-20251103-slim",
 			rebuild.OCI:      "docker.io/library/docker:29.5-dind-rootless",
 			rebuild.RubyGems: "docker.io/library/debian:stable-20251103-slim",

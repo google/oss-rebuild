@@ -173,7 +173,7 @@ func TestDebrebuild(t *testing.T) {
 			want: rebuild.Instructions{
 				Source: `wget https://buildinfos.debian.net/buildinfo-pool/a/acl/acl_2.3.2-2_amd64.buildinfo`,
 				Deps: `apt -o Acquire::Check-Valid-Until=false update
-apt install -y devscripts mmdebstrap sbuild`,
+apt install -y devscripts mmdebstrap sbuild equivs`,
 				Build: `echo "root:100000:65536" > /etc/subuid
 echo "root:100000:65536" > /etc/subgid
 debrebuild --buildresult=./out --builder=sbuild+unshare acl_2.3.2-2_amd64.buildinfo`,
@@ -210,7 +210,7 @@ else
     sed -i '/^Environment:/a \ '"$NEW_PROFILE_ENTRY"'' "$BUILDINFO_FILE"
 fi`,
 				Deps: `apt -o Acquire::Check-Valid-Until=false update
-apt install -y devscripts mmdebstrap sbuild`,
+apt install -y devscripts mmdebstrap sbuild equivs`,
 				Build: `echo "root:100000:65536" > /etc/subuid
 echo "root:100000:65536" > /etc/subgid
 debrebuild --buildresult=./out --builder=sbuild+unshare acl_2.3.2-2_amd64.buildinfo`,
@@ -325,20 +325,21 @@ func TestDebootsnapSbuild(t *testing.T) {
 			env: rebuild.BuildEnv{},
 			want: rebuild.Instructions{
 				Source: `apt update
-apt install -y devscripts mmdebstrap sbuild
+apt install -y devscripts mmdebstrap sbuild equivs
 wget http://example.com/pkg.buildinfo
 debsnap --force --verbose --destdir ./ pkg 1.0`,
-				Deps: `debootsnap --buildinfo="pkg.buildinfo" "/tmp/chroot.tar"`,
+				Deps: ``,
 				Build: `if [ ! -e /dev/console ]; then
 	mknod -m 666 /dev/console c 5 1
 fi
+echo "root:100000:65536" > /etc/subuid
+echo "root:100000:65536" > /etc/subgid
+debootsnap --buildinfo="pkg.buildinfo" "/tmp/chroot.tar"
 cat <<"EOF" > "/tmp/sbuild.config"
 $apt_get = '/bin/true';
 $apt_cache = '/bin/true';
 $build_as_root_when_needed = 1;
 EOF
-echo "root:100000:65536" > /etc/subuid
-echo "root:100000:65536" > /etc/subgid
 env --chdir=/src VAR=val SBUILD_CONFIG=/tmp/sbuild.config\
     sbuild \
     --build=amd64 \
