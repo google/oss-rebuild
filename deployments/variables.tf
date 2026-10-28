@@ -186,3 +186,14 @@ variable "dashboard_viewers" {
   description = "IAM members admitted to the dashboard by IAP, in user:, group:, or domain: form."
   default     = []
 }
+variable "dashboard_oauth_client_id" {
+  type        = string
+  description = "OAuth client ID for the dashboard's IAP. Empty uses IAP's Google-managed client, which admits only identities inside the project's organization. Create a Web application client with an External audience in the console to admit other viewers."
+  default     = ""
+}
+variable "dashboard_oauth_client_secret" {
+  type        = string
+  description = "Secret of dashboard_oauth_client_id."
+  default     = ""
+  sensitive   = true
+}

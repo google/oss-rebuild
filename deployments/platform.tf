@@ -696,9 +696,13 @@ resource "google_compute_backend_service" "dashboard" {
     group = google_compute_region_network_endpoint_group.dashboard[0].id
   }
   # Without a custom OAuth client, IAP's Google-managed client admits only the
-  # project's organization.
+  # project's organization. An External-audience client admits whoever the
+  # viewer grants allow. Add its redirect URI after creation:
+  # https://iap.googleapis.com/v1/oauth/clientIds/<id>:handleRedirect
   iap {
-    enabled = true
+    enabled              = true
+    oauth2_client_id     = var.dashboard_oauth_client_id != "" ? var.dashboard_oauth_client_id : null
+    oauth2_client_secret = var.dashboard_oauth_client_secret != "" ? var.dashboard_oauth_client_secret : null
   }
   depends_on = [google_project_service.iap]
 }
