@@ -174,13 +174,6 @@ func TestRebuildPackage(t *testing.T) {
 			target: rebuild.Target{Ecosystem: rebuild.CratesIO, Package: "serde", Version: "1.0.150", Artifact: "serde-1.0.150.crate"},
 			calls: []httpxtest.Call{
 				{
-					URL: "https://crates.io/api/v1/crates/serde/1.0.150",
-					Response: &http.Response{
-						StatusCode: 200,
-						Body:       httpxtest.Body(`{"version":{"num":"1.0.150", "dl_path":"/api/v1/crates/serde/1.0.150/download"}}`),
-					},
-				},
-				{
 					URL: "https://crates.io/api/v1/crates/serde/1.0.150/download",
 					Response: &http.Response{
 						StatusCode: 200,
@@ -463,13 +456,6 @@ RLpmHHG1JOVdOA==
 			target: rebuild.Target{Ecosystem: rebuild.CratesIO, Package: "serde", Version: "1.0.150", Artifact: "serde-1.0.150.crate"},
 			calls: []httpxtest.Call{
 				{
-					URL: "https://crates.io/api/v1/crates/serde/1.0.150",
-					Response: &http.Response{
-						StatusCode: 200,
-						Body:       httpxtest.Body(`{"version":{"num":"1.0.150", "dl_path":"/api/v1/crates/serde/1.0.150/download"}}`),
-					},
-				},
-				{
 					URL: "https://crates.io/api/v1/crates/serde/1.0.150/download",
 					Response: &http.Response{
 						StatusCode: 200,
@@ -496,13 +482,6 @@ RLpmHHG1JOVdOA==
 			name:   "manual build def with custom stabilizer success",
 			target: rebuild.Target{Ecosystem: rebuild.CratesIO, Package: "serde", Version: "1.0.150", Artifact: "serde-1.0.150.crate"},
 			calls: []httpxtest.Call{
-				{
-					URL: "https://crates.io/api/v1/crates/serde/1.0.150",
-					Response: &http.Response{
-						StatusCode: 200,
-						Body:       httpxtest.Body(`{"version":{"num":"1.0.150", "dl_path":"/api/v1/crates/serde/1.0.150/download"}}`),
-					},
-				},
 				{
 					URL: "https://crates.io/api/v1/crates/serde/1.0.150/download",
 					Response: &http.Response{
@@ -538,13 +517,6 @@ RLpmHHG1JOVdOA==
 			name:   "location hint build def uses inference",
 			target: rebuild.Target{Ecosystem: rebuild.CratesIO, Package: "serde", Version: "1.0.150", Artifact: "serde-1.0.150.crate"},
 			calls: []httpxtest.Call{
-				{
-					URL: "https://crates.io/api/v1/crates/serde/1.0.150",
-					Response: &http.Response{
-						StatusCode: 200,
-						Body:       httpxtest.Body(`{"version":{"num":"1.0.150", "dl_path":"/api/v1/crates/serde/1.0.150/download"}}`),
-					},
-				},
 				{
 					URL: "https://crates.io/api/v1/crates/serde/1.0.150/download",
 					Response: &http.Response{

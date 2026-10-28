@@ -126,6 +126,12 @@ func (r HTTPRegistry) Version(ctx context.Context, pkg, version string) (*CrateV
 	return &v, nil
 }
 
+// DownloadURL is the API URL a crate version downloads from.
+// NOTE: pkg must be the crate's canonical name (serde_json, not serde-json).
+func DownloadURL(pkg, version string) string {
+	return registryURL.JoinPath("api/v1/crates", pkg, version, "download").String()
+}
+
 // Artifact fetches a crate version's artifact from the CDN, outside the API's rate limit.
 func (r HTTPRegistry) Artifact(ctx context.Context, pkg string, version string) (io.ReadCloser, error) {
 	u := staticURL.JoinPath(pkg, pkg+"-"+version+".crate")

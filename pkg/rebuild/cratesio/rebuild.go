@@ -77,9 +77,5 @@ func (r Rebuilder) Upstream(ctx context.Context, t rebuild.Target, mux rebuild.R
 }
 
 func (r Rebuilder) UpstreamURL(ctx context.Context, t rebuild.Target, mux rebuild.RegistryMux) (string, error) {
-	crate, err := mux.CratesIO.Version(ctx, t.Package, t.Version)
-	if err != nil {
-		return "", errors.Wrap(err, "fetching crate")
-	}
-	return crate.DownloadURL, nil
+	return reg.DownloadURL(t.Package, t.Version), nil
 }
