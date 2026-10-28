@@ -14,7 +14,6 @@ import (
 	"log"
 	"net/http"
 	"os"
-	"os/exec"
 	"path/filepath"
 	"strconv"
 	"strings"
@@ -26,6 +25,7 @@ import (
 	"github.com/go-git/go-git/v5/plumbing"
 	"github.com/go-git/go-git/v5/plumbing/transport"
 	"github.com/go-git/go-git/v5/storage/filesystem"
+	"github.com/google/oss-rebuild/internal/execx"
 	"github.com/google/oss-rebuild/internal/gitx"
 	"github.com/google/oss-rebuild/internal/uri"
 	"github.com/google/oss-rebuild/pkg/act/api/form"
@@ -255,13 +255,17 @@ func (s *Server) refreshCache(ctx context.Context, repo, cachePath string) error
 	// A fetch below the unpack limit would land as loose objects, which readers
 	// load eagerly. Keep every fetch packed, as a clone is.
 	git := func(args ...string) (string, error) {
-		cmd := exec.CommandContext(ctx, "git", append([]string{"--git-dir=" + tmpDir, "-c", "gc.auto=0", "-c", "fetch.unpackLimit=1"}, args...)...)
-		cmd.Env = append(os.Environ(), "GIT_TERMINAL_PROMPT=0")
-		out, err := cmd.Output()
-		if ee := (*exec.ExitError)(nil); errors.As(err, &ee) {
-			err = errors.Errorf("git %s: %v: %s", args[0], err, bytes.TrimSpace(ee.Stderr))
+		var out, stderr bytes.Buffer
+		err := execx.NewRealCommandExecutor().Execute(ctx, execx.CommandOptions{
+			Output:    &out,
+			Stderr:    &stderr,
+			Env:       append(os.Environ(), "GIT_TERMINAL_PROMPT=0"),
+			KillGroup: true,
+		}, "git", append([]string{"--git-dir=" + tmpDir, "-c", "gc.auto=0", "-c", "fetch.unpackLimit=1"}, args...)...)
+		if err != nil {
+			err = errors.Errorf("git %s: %v: %s", args[0], err, bytes.TrimSpace(stderr.Bytes()))
 		}
-		return string(out), err
+		return out.String(), err
 	}
 	url := s.remoteURL(repo)
 	got, err := git("config", "remote.origin.url")
@@ -384,9 +388,11 @@ func splitPacks(ctx context.Context, dir string) error {
 	}
 	// Without -f, existing deltas are reused, so this mostly copies objects.
 	// -n skips the dumb-HTTP files a clone doesn't have.
-	cmd := exec.CommandContext(ctx, "git", "--git-dir="+dir, "repack", "-a", "-d", "-n", "-q", fmt.Sprintf("--max-pack-size=%d", maxPackBytes))
-	if out, err := cmd.CombinedOutput(); err != nil {
-		return errors.Wrapf(err, "repacking: %s", out)
+	var out bytes.Buffer
+	err = execx.NewRealCommandExecutor().Execute(ctx, execx.CommandOptions{Output: &out, KillGroup: true},
+		"git", "--git-dir="+dir, "repack", "-a", "-d", "-n", "-q", fmt.Sprintf("--max-pack-size=%d", maxPackBytes))
+	if err != nil {
+		return errors.Wrapf(err, "repacking: %s", out.Bytes())
 	}
 	return nil
 }
