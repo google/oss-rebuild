@@ -312,14 +312,44 @@ func TestParsePackageManagerCommands(t *testing.T) {
 		},
 		{
 			name:   "SkipsRedirectionsAndTolerantFlag",
-			script: "yum -t install -y foo >/dev/null 2>&1 && yum install -y bar > out.log",
+			script: "yum -t install -y 2>&1 foo >/dev/null && yum install -y bar &> out.log baz",
 			libc:   platform.Glibc,
-			want:   []string{"foo", "bar"},
+			want:   []string{"foo", "bar", "baz"},
+		},
+		{
+			name:   "QuotedCommentAndProvides",
+			script: `echo "step #1" && dnf install -y "pkgconfig(zlib)" cairo-devel`,
+			libc:   platform.Glibc,
+			want:   []string{"pkgconfig(zlib)", "cairo-devel"},
+		},
+		{
+			name: "PackageManagerOnlyInCommandPosition",
+			script: textwrap.Dedent(`
+				echo Skipping yum install echo-devel
+				git -C vendor/yum install patch.txt
+				sudo -u yum install -m 0644 a b
+				CACHE=/var/cache/apk yum install -y foo-devel
+				sudo -E env FOO=1 dnf install -y bar-devel`),
+			libc: platform.Glibc,
+			want: []string{"foo-devel", "bar-devel"},
+		},
+		{
+			name: "CommandSubstitutionAndHeredoc",
+			script: textwrap.Dedent(`
+				yum install -y $(cat extra.txt) subst-devel
+				cat > /tmp/notes <<EOF
+				yum install -y heredoc-pkg
+				EOF`),
+			libc: platform.Glibc,
+			want: []string{"subst-devel"},
 		},
 	}
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
-			got := parsePackageManagerCommands(tc.script, tc.libc)
+			got, err := parsePackageManagerCommands(tc.script, tc.libc)
+			if err != nil {
+				t.Fatalf("parsePackageManagerCommands() unexpected error: %v", err)
+			}
 			if diff := cmp.Diff(tc.want, got); diff != "" {
 				t.Errorf("parsePackageManagerCommands() diff (-want +got):\n%s", diff)
 			}

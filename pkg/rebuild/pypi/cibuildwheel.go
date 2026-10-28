@@ -13,7 +13,7 @@ import (
 	"github.com/go-git/go-git/v5/plumbing/object"
 	"github.com/google/oss-rebuild/pkg/rebuild/pypi/parsing"
 	"github.com/google/oss-rebuild/pkg/rebuild/pypi/platform"
-	"github.com/google/shlex"
+	bash "github.com/msuozzo/bonsai/bonsai-bash"
 	"github.com/pkg/errors"
 	"gopkg.in/yaml.v3"
 )
@@ -120,7 +120,11 @@ func extractCibuildwheelDependencies(tree *object.Tree, searchDir string, libc p
 	}
 	var deps []string
 	for _, script := range scripts {
-		deps = appendUnique(deps, parsePackageManagerCommands(script, libc)...)
+		scriptDeps, err := parsePackageManagerCommands(script, libc)
+		if err != nil {
+			return nil, errors.Wrapf(err, "parsing cibuildwheel hook in %s", pyprojPath)
+		}
+		deps = appendUnique(deps, scriptDeps...)
 	}
 	return deps, nil
 }
@@ -181,11 +185,7 @@ type pkgManager struct {
 }
 
 var (
-	lineContinuationPat = re.MustCompile(`\\\r?\n`)
-	shellCommentPat     = re.MustCompile(`(?m)(?:^|[\s;])#.*$`)
-	shellCommandSepPat  = re.MustCompile(`[\r\n;&|()]+`)
-	shellRedirectPat    = re.MustCompile(`^\d*[<>]+`)
-	rpmPkgManager       = pkgManager{
+	rpmPkgManager = pkgManager{
 		libc:   platform.Glibc,
 		subcmd: "install",
 		valueFlags: []string{
@@ -208,40 +208,53 @@ var (
 			},
 		},
 	}
+	// commandWrappers run their first argument that is not an option or a
+	// variable assignment as a command. Each maps to its options that take a
+	// value.
+	commandWrappers = map[string][]string{
+		"sudo": {"-u", "-g", "-C"},
+		"env":  {"-u", "-C"},
+		"nice": {"-n"},
+		"time": nil,
+	}
 )
 
 // parsePackageManagerCommands extracts system package names from a shell script
 // for the target libc (yum/dnf/microdnf install on glibc, apk add on musl).
-func parsePackageManagerCommands(script string, libc platform.LibcImpl) []string {
-	cleaned := shellCommentPat.ReplaceAllString(lineContinuationPat.ReplaceAllString(script, " "), "")
+func parsePackageManagerCommands(script string, libc platform.LibcImpl) ([]string, error) {
+	src := []byte(script)
+	root, err := bash.NewParser().Parse(src)
+	if err != nil {
+		return nil, err
+	}
+	trailing := trailingArgs(root, src)
 	var deps []string
-	for _, segment := range shellCommandSepPat.Split(cleaned, -1) {
-		tokens, err := shlex.Split(segment)
-		if err != nil {
-			tokens = strings.Fields(segment)
+	for cmd := range root.Find(bash.KindCommand) {
+		argv := append(commandArgv(cmd, src), trailing[cmd]...)
+		i := 0
+		for i < len(argv) {
+			valueFlags, ok := commandWrappers[path.Base(argv[i])]
+			if !ok {
+				break
+			}
+			for i++; i < len(argv) && (strings.HasPrefix(argv[i], "-") || strings.Contains(argv[i], "=")); i++ {
+				if slices.Contains(valueFlags, argv[i]) {
+					i++
+				}
+			}
 		}
-		pmIdx := slices.IndexFunc(tokens, func(t string) bool {
-			_, ok := pkgManagers[path.Base(t)]
-			return ok
-		})
-		if pmIdx < 0 {
+		if i >= len(argv) {
 			continue
 		}
-		pm := pkgManagers[path.Base(tokens[pmIdx])]
-		if pm.libc != libc {
+		pm, ok := pkgManagers[path.Base(argv[i])]
+		if !ok || pm.libc != libc {
 			continue
 		}
 		seenSubcmd := false
-		for i := pmIdx + 1; i < len(tokens); i++ {
-			arg := tokens[i]
-			if shellRedirectPat.MatchString(arg) {
-				if shellRedirectPat.ReplaceAllString(arg, "") == "" {
-					i++
-				}
-				continue
-			}
+		for i++; i < len(argv); i++ {
+			arg := argv[i]
 			if strings.HasPrefix(arg, "-") {
-				if slices.Contains(pm.valueFlags, arg) && i+1 < len(tokens) {
+				if slices.Contains(pm.valueFlags, arg) {
 					i++
 				}
 				continue
@@ -255,7 +268,85 @@ func parsePackageManagerCommands(script string, libc platform.LibcImpl) []string
 			}
 		}
 	}
-	return deps
+	return deps, nil
+}
+
+// commandArgv returns the name and arguments of a command node, with "" for
+// each word that needs expansion.
+func commandArgv(cmd *bash.Node, src []byte) []string {
+	var argv []string
+	for _, c := range cmd.Children {
+		if c.Field == bash.FieldName || c.Field == bash.FieldArgument {
+			argv = append(argv, shellWord(c, src))
+		}
+	}
+	return argv
+}
+
+// trailingArgs maps commands to the arguments that tree-sitter-bash parsed as
+// redirect destinations after them.
+//
+// NOTE: tree-sitter-bash parses every word after a redirect operator as a
+// destination, so "yum install -y 2>&1 foo" ends the command at the redirect,
+// and a redirect after "a && b" wraps the list rather than b. Destinations past
+// a redirect's first are arguments of the last command before it.
+// https://github.com/tree-sitter/tree-sitter-bash/issues/233
+// https://github.com/tree-sitter/tree-sitter-bash/issues/345
+func trailingArgs(root *bash.Node, src []byte) map[*bash.Node][]string {
+	args := make(map[*bash.Node][]string)
+	for stmt := range root.Find(bash.KindRedirectedStatement) {
+		last := stmt.ChildByField(bash.FieldBody)
+		for last != nil && last.Kind != bash.KindCommand && len(last.Children) > 0 {
+			last = last.Children[len(last.Children)-1]
+		}
+		if last == nil || last.Kind != bash.KindCommand {
+			continue
+		}
+		for _, redirect := range stmt.Children {
+			if redirect.Field != bash.FieldRedirect {
+				continue
+			}
+			target := true
+			for _, dest := range redirect.Children {
+				if dest.Field != bash.FieldDestination {
+					continue
+				}
+				if !target {
+					args[last] = append(args[last], shellWord(dest, src))
+				}
+				target = false
+			}
+		}
+	}
+	return args
+}
+
+// shellWord returns the value of a word that needs no expansion, or "".
+func shellWord(n *bash.Node, src []byte) string {
+	switch n.Kind {
+	case bash.KindWord, bash.KindNumber:
+		return string(n.Text(src))
+	case bash.KindRawString:
+		return strings.Trim(string(n.Text(src)), "'")
+	case bash.KindCommandName, bash.KindString, bash.KindConcatenation:
+		var b strings.Builder
+		for _, c := range n.Children {
+			if !c.Named {
+				continue
+			}
+			if c.Kind == bash.KindStringContent {
+				b.Write(c.Text(src))
+				continue
+			}
+			s := shellWord(c, src)
+			if s == "" {
+				return ""
+			}
+			b.WriteString(s)
+		}
+		return b.String()
+	}
+	return ""
 }
 
 func cleanPackageToken(tok string) string {
@@ -269,7 +360,7 @@ func cleanPackageToken(tok string) string {
 	if idx := strings.IndexAny(tok, "=<>~@"); idx > 0 {
 		tok = tok[:idx]
 	}
-	if strings.ContainsAny(tok, "$`<>();&|*{}! \t") {
+	if strings.ContainsAny(tok, "$`<>;&|*{}! \t") {
 		return ""
 	}
 	return tok
