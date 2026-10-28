@@ -6,6 +6,7 @@ package signals
 import (
 	"fmt"
 	"iter"
+	"os"
 	"path/filepath"
 	"time"
 
@@ -248,6 +249,27 @@ func Fetch(dest billy.Basic, dir string) (string, error) {
 		return "", err
 	}
 	return path, nil
+}
+
+// Open copies the signal database published under dest to a temp directory
+// and opens it. The cleanup closes it and removes the copy.
+// TODO: Cache the copy by object generation once callers run at job cadence.
+func Open(dest billy.Basic) (*sqlite3.Conn, func(), error) {
+	dir, err := os.MkdirTemp("", "signals-")
+	if err != nil {
+		return nil, nil, err
+	}
+	path, err := Fetch(dest, dir)
+	if err != nil {
+		os.RemoveAll(dir)
+		return nil, nil, err
+	}
+	db, err := sqlite3.Open(path)
+	if err != nil {
+		os.RemoveAll(dir)
+		return nil, nil, err
+	}
+	return db, func() { db.Close(); os.RemoveAll(dir) }, nil
 }
 
 // PackageSignalAt reads one package's signal row. ok is false when the

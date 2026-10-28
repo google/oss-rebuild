@@ -114,9 +114,9 @@ func TestOpenSignalDB(t *testing.T) {
 	if err := sqlitex.Publish(osfs.New(pub), signals.Object, built); err != nil {
 		t.Fatalf("Publish: %v", err)
 	}
-	sdb, cleanup, err := openSignalDB(context.Background(), "file://"+pub)
+	sdb, cleanup, err := signals.Open(osfs.New(pub))
 	if err != nil {
-		t.Fatalf("openSignalDB: %v", err)
+		t.Fatalf("Open: %v", err)
 	}
 	defer cleanup()
 	got, err := signals.VersionSignals(sdb, "npm", "lodash")

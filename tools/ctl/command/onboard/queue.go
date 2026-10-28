@@ -8,7 +8,6 @@ import (
 	"flag"
 	"fmt"
 	"io"
-	"os"
 	"strings"
 	"time"
 
@@ -94,7 +93,11 @@ func enqueueHandler(ctx context.Context, cfg enqueueConfig, deps *Deps) (*act.No
 	defer fire.Close()
 	campaigns := db.NewFirestoreCampaigns(fire)
 	// Candidates come only from the signal database, never a registry.
-	sdb, cleanup, err := openSignalDB(ctx, cfg.SignalsDB)
+	dest, err := billyx.NewResolver().DirFS(ctx, cfg.SignalsDB)
+	if err != nil {
+		return nil, errors.Wrap(err, "resolving the signal database")
+	}
+	sdb, cleanup, err := signals.Open(dest)
 	if err != nil {
 		return nil, errors.Wrap(err, "opening signal database")
 	}
@@ -136,32 +139,6 @@ func enqueueHandler(ctx context.Context, cfg enqueueConfig, deps *Deps) (*act.No
 		fmt.Fprintf(deps.IO.Err, "the signal database ranks only %d %s package(s): raise --top on the prevalence export and republish to expand past them\n", len(pool), cfg.Ecosystem)
 	}
 	return &act.NoOutput{}, nil
-}
-
-// openSignalDB fetches the published signal database into a temporary
-// directory and opens it. The returned func closes the connection and removes
-// the copy.
-// TODO: Use a shared generation-keyed cache once callers run at job cadence.
-func openSignalDB(ctx context.Context, destURI string) (*sqlite3.Conn, func(), error) {
-	dest, err := billyx.NewResolver().DirFS(ctx, destURI)
-	if err != nil {
-		return nil, nil, err
-	}
-	dir, err := os.MkdirTemp("", "signals-")
-	if err != nil {
-		return nil, nil, err
-	}
-	path, err := signals.Fetch(dest, dir)
-	if err != nil {
-		os.RemoveAll(dir)
-		return nil, nil, err
-	}
-	sdb, err := sqlite3.Open(path)
-	if err != nil {
-		os.RemoveAll(dir)
-		return nil, nil, err
-	}
-	return sdb, func() { sdb.Close(); os.RemoveAll(dir) }, nil
 }
 
 // enqueuePackage inserts campaigns for a package's ranked versions and
