@@ -176,6 +176,11 @@ func (ep *ExcludePath) Validate() error {
 	if slices.Contains(ep.Paths, "") {
 		return errors.New("invalid path")
 	}
+	for _, p := range ep.Paths {
+		if _, err := glob.Match(p, "x"); err != nil {
+			return errors.Wrap(err, "bad path pattern")
+		}
+	}
 	return nil
 }
 
@@ -184,7 +189,9 @@ func (ep *ExcludePath) Stabilizer(name string) Stabilizer {
 	tarfn := TarArchiveFn(func(ta *archive.TarArchive) {
 		var files []*archive.TarEntry
 		for _, f := range ta.Files {
-			if match, err := multiMatch(ep.Paths, f.Name); err != nil || match {
+			// Keep the entry if the glob is malformed. Dropping on error emptied both
+			// archives and made ArtifactEquivalence attestations vacuous.
+			if match, err := multiMatch(ep.Paths, f.Name); err == nil && match {
 				continue
 			}
 			files = append(files, f)
@@ -199,7 +206,7 @@ func (ep *ExcludePath) Stabilizer(name string) Stabilizer {
 		archive.ZipFormat: ZipArchiveFn(func(mzr *archive.MutableZipReader) {
 			var files []*archive.MutableZipFile
 			for _, f := range mzr.File {
-				if match, err := multiMatch(ep.Paths, f.Name); err != nil || match {
+				if match, err := multiMatch(ep.Paths, f.Name); err == nil && match {
 					continue
 				}
 				files = append(files, f)
