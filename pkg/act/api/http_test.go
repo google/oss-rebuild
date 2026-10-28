@@ -145,6 +145,35 @@ func TestHandler(t *testing.T) {
 	}
 }
 
+func TestHandlerContextEndsWithCaller(t *testing.T) {
+	ended := make(chan bool, 1)
+	handler := func(ctx context.Context, _ FooRequest, _ *NoDeps) (*FooResponse, error) {
+		select {
+		case <-ctx.Done():
+			ended <- true
+		case <-time.After(5 * time.Second):
+			ended <- false
+		}
+		return nil, nil
+	}
+	server := httptest.NewServer(Handler(NoDepsInit, handler))
+	defer server.Close()
+	ctx, cancel := context.WithTimeout(context.Background(), 50*time.Millisecond)
+	defer cancel()
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, server.URL, strings.NewReader(url.Values{"foo": {"foo"}}.Encode()))
+	if err != nil {
+		t.Fatal(err)
+	}
+	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	if resp, err := server.Client().Do(req); err == nil {
+		resp.Body.Close()
+		t.Fatal("request outlived its caller's deadline")
+	}
+	if !<-ended {
+		t.Error("the handler's context outlived its caller")
+	}
+}
+
 type SecretRequest struct {
 	Foo string            `form:"foo"`
 	Env map[string]string `form:"env" act:"nolog"`
