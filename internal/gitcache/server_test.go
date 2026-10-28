@@ -908,8 +908,8 @@ func TestFillStopsAtTimeBudget(t *testing.T) {
 	s := &Server{backend: &localBackend{baseDir: t.TempDir()}, cloneFunc: stagingClone(1)}
 	rr := httptest.NewRecorder()
 	s.HandleGet(rr, httptest.NewRequest("GET", "/get?uri=github.com/org/repo", nil))
-	if rr.Code != http.StatusInternalServerError || !strings.Contains(rr.Body.String(), errFillTimeout.Error()) {
-		t.Errorf("HandleGet() = %d %q, want 500 naming the time budget", rr.Code, rr.Body.String())
+	if rr.Code != http.StatusGatewayTimeout || !strings.Contains(rr.Body.String(), ErrFillTimeout.Error()) {
+		t.Errorf("HandleGet() = %d %q, want 504 naming the time budget", rr.Code, rr.Body.String())
 	}
 }
 

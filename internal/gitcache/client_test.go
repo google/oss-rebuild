@@ -356,22 +356,33 @@ func TestGetLinkReportsRefusals(t *testing.T) {
 			},
 		},
 		{
-			name:   "fill failed",
-			status: http.StatusInternalServerError,
-			body:   "Fill failed: fill ran past its time budget",
-			check: func(t *testing.T, err error) {
-				if err == nil || !strings.Contains(err.Error(), "fill ran past its time budget") {
-					t.Errorf("GetLink() error = %v, want the server's reason", err)
-				}
-			},
-		},
-		{
 			name:   "fills keep failing",
 			status: http.StatusUnprocessableEntity,
 			body:   "fills of github.com/org/repo failed 3 times in a row",
 			check: func(t *testing.T, err error) {
-				if err == nil || !strings.Contains(err.Error(), "failed 3 times in a row") {
-					t.Errorf("GetLink() error = %v, want the server's reason", err)
+				if !errors.Is(err, ErrGaveUp) || !strings.Contains(err.Error(), "failed 3 times in a row") {
+					t.Errorf("GetLink() error = %v, want ErrGaveUp with the server's reason", err)
+				}
+			},
+		},
+		{
+			name:   "fill timed out",
+			status: http.StatusGatewayTimeout,
+			body:   "fill ran past its time budget",
+			check: func(t *testing.T, err error) {
+				if !errors.Is(err, ErrFillTimeout) || strings.Count(err.Error(), ErrFillTimeout.Error()) != 1 {
+					t.Errorf("GetLink() error = %v, want ErrFillTimeout once", err)
+				}
+			},
+		},
+		{
+			// Any other failure says nothing about the repository.
+			name:   "internal error",
+			status: http.StatusInternalServerError,
+			body:   "Fill failed: upstream unreachable",
+			check: func(t *testing.T, err error) {
+				if err == nil || errors.Is(err, ErrGaveUp) || errors.Is(err, ErrFillTimeout) || !strings.Contains(err.Error(), "upstream unreachable") {
+					t.Errorf("GetLink() error = %v, want an untyped error with the server's reason", err)
 				}
 			},
 		},
