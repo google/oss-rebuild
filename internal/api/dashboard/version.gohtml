@@ -29,7 +29,7 @@
                 </td>
                 <td><small>{{.Message}}</small></td>
                 <td><a href="/attempt/{{.Encoded.Ecosystem}}/{{.Encoded.Package}}/{{.Encoded.Version}}/{{.Encoded.Artifact}}/{{.RunID}}">{{.RunID}}</a></td>
-                <td>{{.Created.Format "2006-01-02 15:04:05"}}</td>
+                <td>{{template "when" .Created}}</td>
             </tr>
             {{end}}
         </tbody>
@@ -48,7 +48,7 @@
             {{else if .StopReason}}<span class="status-fail">{{.StopReason}}</span>
             {{else if eq .Status "RUNNING"}}<span class="status-running">Running</span>
             {{else}}<span>{{.Status}}</span>{{end}}
-            <span class="session-meta">{{.Target.Artifact}} · {{.Created.Format "2006-01-02 15:04:05"}}{{if .ExecutionName}} · hosted{{else}} · local{{end}}</span>
+            <span class="session-meta">{{.Target.Artifact}} · {{template "when" .Created}}{{if .ExecutionName}} · hosted{{else}} · local{{end}}</span>
         </div>
         {{if .Summary}}<div class="session-summary"><small>{{.Summary}}</small></div>{{end}}
         {{if .Iterations}}

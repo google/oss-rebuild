@@ -16,8 +16,8 @@
 <p class="asof">Snapshot as of {{.AsOf}} &middot; last {{.WindowDays}} days</p>
 
 <div class="cards">
-    <div class="card"><div class="card-value">{{.TotalAttempts}}</div><div class="card-label">attempts</div></div>
-    <div class="card"><div class="card-value">{{.TotalSuccesses}}</div><div class="card-label">successes</div></div>
+    <div class="card"><div class="card-value">{{num .TotalAttempts}}</div><div class="card-label">attempts</div></div>
+    <div class="card"><div class="card-value">{{num .TotalSuccesses}}</div><div class="card-label">successes</div></div>
     <div class="card"><div class="card-value">{{.TotalTokens}}</div><div class="card-label">LLM tokens</div></div>
     <div class="card"><div class="card-value">{{printf "%.1f" .TotalBuilderHours}}</div><div class="card-label">builder hours</div></div>
     <div class="card"><div class="card-value">{{printf "%.1f" .TotalVMHours}}</div><div class="card-label">scratch VM hours</div></div>
@@ -47,9 +47,9 @@
     {{range .Days}}
     <tr>
         <td>{{.Day}}</td>
-        <td>{{.Attempts}}</td>
+        <td>{{num .Attempts}}</td>
         <td class="barcell"><div class="bar" style="width: {{.AttemptsBarPct}}%"></div></td>
-        <td>{{.Successes}}</td>
+        <td>{{num .Successes}}</td>
         <td>{{.SuccessPct}}%</td>
         <td>{{printf "%.1f" .BuilderMinutes}}</td>
         <td>{{.Tokens}}</td>
@@ -75,7 +75,7 @@
     <tr>
         <td>{{.Ecosystem}}</td>
         <td>{{.Package}}</td>
-        <td>{{.Attempts}}</td>
+        <td>{{num .Attempts}}</td>
         <td>{{printf "%.1f" .BuilderMinutes}}</td>
         <td class="barcell"><div class="bar" style="width: {{.BarPct}}%"></div></td>
     </tr>

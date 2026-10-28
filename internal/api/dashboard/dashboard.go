@@ -80,7 +80,7 @@ var (
 )
 
 func init() {
-	base := template.Must(template.New("page").Parse(layoutHTML))
+	base := template.Must(template.New("page").Funcs(pageFuncs).Parse(layoutHTML))
 	// The webfonts build tag defines the template with preload links and a
 	// font stylesheet; without it the definition is empty and pages render
 	// with system fonts.

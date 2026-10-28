@@ -22,15 +22,15 @@
     {{end}}
 </div>
 <div class="cards">
-    <div class="card"><div class="card-value">{{.Total}}</div><div class="card-label">packages{{template "def" "Packages with at least one completed attempt."}}</div></div>
-    <div class="card"><div class="card-value">{{.EverBuilt}}</div><div class="card-label">ever built{{template "def" "Reproduced at least one version."}}</div></div>
-    <div class="card"><div class="card-value">{{.NeverBuilt}}</div><div class="card-label">never built</div></div>
-    <div class="card"><div class="card-value">{{.Failing}}</div><div class="card-label">failing{{template "def" "Every attempt since the last success failed, or no attempt ever succeeded."}}</div></div>
+    <div class="card"><div class="card-value">{{num .Total}}</div><div class="card-label">packages{{template "def" "Packages with at least one completed attempt."}}</div></div>
+    <div class="card"><div class="card-value">{{num .EverBuilt}}</div><div class="card-label">ever built{{template "def" "Reproduced at least one version."}}</div></div>
+    <div class="card"><div class="card-value">{{num .NeverBuilt}}</div><div class="card-label">never built</div></div>
+    <div class="card"><div class="card-value">{{num .Failing}}</div><div class="card-label">failing{{template "def" "Every attempt since the last success failed, or no attempt ever succeeded."}}</div></div>
 </div>
 {{if not .Packages}}
 <p>No packages recorded in the snapshot.</p>
 {{else}}
-<p class="showing">Showing {{.Listed}} of {{.Total}}, longest failing streak first.</p>
+<p class="showing">Showing {{num .Listed}} of {{num .Total}}, longest failing streak first.</p>
 <table>
     <tr>
         {{if not .Eco}}<th>Ecosystem</th>{{end}}
@@ -48,7 +48,7 @@
         <td><a href="/package/{{.EncodedEcosystem}}/{{.EncodedPackage}}">{{.Package}}</a></td>
         <td>{{if .EverBuilt}}<span class="status-success">yes</span>{{else}}<span class="muted">no</span>{{end}}</td>
         <td>{{.VersionsSucceeded}} / {{.VersionsAttempted}}</td>
-        <td>{{.Attempts}}</td>
+        <td>{{num .Attempts}}</td>
         <td>{{if .FailingStreak}}<span class="streak">{{.FailingStreak}}</span>{{else}}<span class="muted">0</span>{{end}}</td>
         <td class="wrap">{{if .LastSucceededAt}}{{.LastSucceededAt}} <span class="muted">{{.LastSucceededVersion}}</span>{{else}}<span class="muted">&mdash;</span>{{end}}</td>
         <td class="wrap">{{.LastAttemptedAt}} <span class="muted">{{.LastAttemptedVersion}} {{.LastAttemptedStatus}}</span></td>
