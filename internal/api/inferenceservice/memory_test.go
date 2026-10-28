@@ -127,7 +127,7 @@ func TestReserveMemorySizes(t *testing.T) {
 	}{
 		{name: "RepositoryAndArtifact", artifactPath: "/artifact", wantHeld: repoFactor*archive + artifactFactor*artifact},
 		{name: "UnsizedArtifact", artifactPath: "/missing", wantHeld: repoFactor * archive},
-		{name: "OversizeRepository", artifactPath: "/artifact", maxBytes: archive - 1, wantTooLarge: &gitx.RepoTooLargeError{URL: repo, Limit: archive - 1}},
+		{name: "OversizeRepository", artifactPath: "/artifact", maxBytes: archive - 1, wantTooLarge: &gitx.RepoTooLargeError{URL: repo, Limit: archive - 1, Size: archive}},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			m := NewMemory(baseMemory + 4<<30)

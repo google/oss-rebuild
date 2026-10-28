@@ -199,17 +199,45 @@ func TestClientClone(t *testing.T) {
 }
 
 func TestClientCloneRefusesOversize(t *testing.T) {
-	client := setupCloneTestServer(t, testRepoYAML)
-	// The fixture gzips down to a few hundred bytes, so the budget sits
-	// below anything that could hold a packfile.
-	client.MaxBytes = 64
-	_, err := client.Clone(context.Background(), gitx.NewInMemoryStorer(), memfs.New(), &git.CloneOptions{URL: "https://github.com/org/repo", NoCheckout: true})
-	var tooLarge *gitx.RepoTooLargeError
-	if !errors.As(err, &tooLarge) {
-		t.Fatalf("Clone() error = %v, want a RepoTooLargeError", err)
-	}
-	if tooLarge.URL != "https://github.com/org/repo" || tooLarge.Limit != 64 {
-		t.Errorf("RepoTooLargeError = %+v, want the clone URL and the 64-byte budget", *tooLarge)
+	for _, tc := range []struct {
+		name     string
+		declared bool // response carries Content-Length
+	}{
+		{"DeclaredLength", true},
+		{"UndeclaredLength", false},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			client := setupCloneTestServer(t, testRepoYAML)
+			var size int64
+			api := *client.APIClient
+			base := api.Transport
+			api.Transport = roundTripFunc(func(r *http.Request) (*http.Response, error) {
+				resp, err := base.RoundTrip(r)
+				if err == nil {
+					size = resp.ContentLength
+					if !tc.declared {
+						resp.ContentLength = -1
+					}
+				}
+				return resp, err
+			})
+			client.APIClient = &api
+			// The fixture gzips down to a few hundred bytes, so the budget sits
+			// below anything that could hold a packfile.
+			client.MaxBytes = 64
+			_, err := client.Clone(context.Background(), gitx.NewInMemoryStorer(), memfs.New(), &git.CloneOptions{URL: "https://github.com/org/repo", NoCheckout: true})
+			var tooLarge *gitx.RepoTooLargeError
+			if !errors.As(err, &tooLarge) {
+				t.Fatalf("Clone() error = %v, want a RepoTooLargeError", err)
+			}
+			want := gitx.RepoTooLargeError{URL: "https://github.com/org/repo", Limit: 64}
+			if tc.declared {
+				want.Size = size
+			}
+			if *tooLarge != want {
+				t.Errorf("RepoTooLargeError = %+v, want %+v", *tooLarge, want)
+			}
+		})
 	}
 }
 
@@ -246,8 +274,8 @@ func TestClientSize(t *testing.T) {
 	client.MaxBytes = want - 1
 	_, err = client.Size(context.Background(), repo)
 	var tooLarge *gitx.RepoTooLargeError
-	if !errors.As(err, &tooLarge) || *tooLarge != (gitx.RepoTooLargeError{URL: repo, Limit: want - 1}) {
-		t.Errorf("Size() over MaxBytes: err = %v, want a RepoTooLargeError at %d", err, want-1)
+	if !errors.As(err, &tooLarge) || *tooLarge != (gitx.RepoTooLargeError{URL: repo, Limit: want - 1, Size: want}) {
+		t.Errorf("Size() over MaxBytes: err = %v, want a RepoTooLargeError carrying %d", err, want)
 	}
 }
 
