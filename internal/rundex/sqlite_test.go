@@ -16,7 +16,6 @@ import (
 	"github.com/google/oss-rebuild/internal/signals"
 	"github.com/google/oss-rebuild/internal/snapshot"
 	"github.com/google/oss-rebuild/internal/sqlitex"
-	"github.com/google/oss-rebuild/pkg/feed"
 	"github.com/google/oss-rebuild/pkg/rebuild/rebuild"
 	"github.com/google/oss-rebuild/pkg/rebuild/schema"
 	"github.com/google/oss-rebuild/pkg/scheduler"
@@ -221,15 +220,14 @@ func TestSQLiteFetchAttempt(t *testing.T) {
 	}
 }
 
-func TestSQLiteLatestTrackedPackages(t *testing.T) {
+func TestSQLiteLatestAttemptPerPackage(t *testing.T) {
 	r := newTestReader(t, testSource())
-	tracked := feed.TrackedPackageIndex{"pypi": {"pkgA": true}}
-	got, err := r.LatestTrackedPackages(context.Background(), tracked)
+	got, err := r.LatestAttemptPerPackage(context.Background(), PackageIndex{"pypi": {"pkgA": true}})
 	if err != nil {
-		t.Fatalf("LatestTrackedPackages: %v", err)
+		t.Fatalf("LatestAttemptPerPackage: %v", err)
 	}
 	// pkgA's newest attempt (r3) is RUNNING and skipped in favor of r2, and
-	// pkgB is untracked.
+	// pkgB is not in the index.
 	if diff := cmp.Diff([]string{"r2"}, runIDs(got)); diff != "" {
 		t.Errorf("run IDs diff (-want +got):\n%s", diff)
 	}

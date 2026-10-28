@@ -10,7 +10,6 @@ import (
 
 	"github.com/google/oss-rebuild/internal/rundex"
 	"github.com/google/oss-rebuild/pkg/act/api"
-	"github.com/google/oss-rebuild/pkg/feed"
 	"github.com/google/oss-rebuild/pkg/rebuild/rebuild"
 	"github.com/google/oss-rebuild/pkg/rebuild/schema"
 	"github.com/pkg/errors"
@@ -51,15 +50,15 @@ const recentSessionLimit = 100
 
 func Index(ctx context.Context, _ IndexRequest, deps *Deps) (*IndexData, error) {
 	data := IndexData{}
-	// Only populate the status grid at the top if deps.Tracked is provided.
-	if deps.Tracked != nil {
-		benchRebuilds, err := deps.Rundex.LatestTrackedPackages(ctx, deps.Tracked)
+	// Only populate the status grid at the top for a benchmark.
+	if deps.Benchmark != nil {
+		benchRebuilds, err := deps.Rundex.LatestAttemptPerPackage(ctx, deps.Benchmark)
 		if err != nil {
 			return nil, errors.Wrap(err, "fetching benchmark rebuilds")
 		}
 		applySuccessRegex(deps.SuccessRegex, benchRebuilds)
-		ran := feed.TrackedPackageIndex{}
-		success := feed.TrackedPackageIndex{}
+		ran := rundex.PackageIndex{}
+		success := rundex.PackageIndex{}
 		for _, rb := range benchRebuilds {
 			eco := rebuild.Ecosystem(rb.Ecosystem)
 			if _, ok := ran[eco]; !ok {
@@ -76,7 +75,7 @@ func Index(ctx context.Context, _ IndexRequest, deps *Deps) (*IndexData, error) 
 		}
 		var targets []BenchmarkTarget
 		var stats BenchmarkStats
-		for eco, pkgs := range deps.Tracked {
+		for eco, pkgs := range deps.Benchmark {
 			for pkg := range pkgs {
 				stats.Total++
 				hasRun := ran[eco][pkg]
@@ -112,11 +111,10 @@ func Index(ctx context.Context, _ IndexRequest, deps *Deps) (*IndexData, error) 
 	}
 	var rebuilds []rundex.Rebuild
 	var err error
-	if deps.Tracked != nil {
-		// Fetch recent rebuilds filtered by Tracked
+	if deps.Benchmark != nil {
 		rebuilds, err = deps.Rundex.FetchRebuilds(ctx, &rundex.FetchRebuildRequest{
-			Tracked: deps.Tracked,
-			Limit:   100,
+			Packages: deps.Benchmark,
+			Limit:    100,
 		})
 		if err != nil {
 			return nil, errors.Wrap(err, "fetching benchmark filtered rebuilds")

@@ -12,7 +12,6 @@ import (
 	"cloud.google.com/go/firestore"
 	"github.com/google/oss-rebuild/internal/iterx"
 	"github.com/google/oss-rebuild/internal/pipe"
-	"github.com/google/oss-rebuild/pkg/feed"
 	"github.com/google/oss-rebuild/pkg/rebuild/rebuild"
 	"github.com/google/oss-rebuild/pkg/rebuild/schema"
 	"github.com/pkg/errors"
@@ -48,9 +47,8 @@ func (f *FirestoreClient) FetchRebuilds(ctx context.Context, req *FetchRebuildRe
 	if req.Bench != nil && req.Bench.Count == 0 {
 		return nil, errors.New("empty bench provided")
 	}
-	// If a benchmark or tracked set is provided, we can optimize by querying for specific packages.
-	if req.Bench != nil || req.Tracked != nil {
-		// TODO: Should we use feed.TrackedPackageSet
+	// A benchmark or package set narrows the query to its packages.
+	if req.Bench != nil || req.Packages != nil {
 		packagesByEcosystem := make(map[string][]string)
 		if req.Bench != nil {
 			for _, p := range req.Bench.Packages {
@@ -59,8 +57,8 @@ func (f *FirestoreClient) FetchRebuilds(ctx context.Context, req *FetchRebuildRe
 				}
 			}
 		}
-		if req.Tracked != nil {
-			for eco, pkgs := range req.Tracked {
+		if req.Packages != nil {
+			for eco, pkgs := range req.Packages {
 				for pkg := range pkgs {
 					if !slices.Contains(packagesByEcosystem[string(eco)], pkg) {
 						packagesByEcosystem[string(eco)] = append(packagesByEcosystem[string(eco)], pkg)
@@ -239,15 +237,15 @@ func (f *FirestoreClient) FetchAttempt(ctx context.Context, target rebuild.Targe
 	return newRebuildFromFirestore(doc), nil
 }
 
-// LatestTrackedPackages fetches the most recent rebuild result for each tracked package.
-func (f *FirestoreClient) LatestTrackedPackages(ctx context.Context, tracked feed.TrackedPackageIndex) ([]Rebuild, error) {
+// LatestAttemptPerPackage fetches the most recent rebuild result for each package.
+func (f *FirestoreClient) LatestAttemptPerPackage(ctx context.Context, index PackageIndex) ([]Rebuild, error) {
 	type queryBatch struct {
 		ecosystem string
 		packages  []string
 	}
 	var batches []queryBatch
 	const batchSize = 30 // Firestore 'in' queries are limited to 30 values.
-	for eco, pkgs := range tracked {
+	for eco, pkgs := range index {
 		var pkgList []string
 		for pkg := range pkgs {
 			pkgList = append(pkgList, pkg)

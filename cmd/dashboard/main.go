@@ -5,7 +5,6 @@ package main
 
 import (
 	"context"
-	"encoding/json"
 	"flag"
 	"fmt"
 	"log"
@@ -24,7 +23,6 @@ import (
 	"github.com/google/oss-rebuild/internal/rundex"
 	"github.com/google/oss-rebuild/internal/snapshot"
 	"github.com/google/oss-rebuild/pkg/act/api"
-	"github.com/google/oss-rebuild/pkg/feed"
 	"github.com/google/oss-rebuild/pkg/rebuild/meta"
 	"github.com/google/oss-rebuild/pkg/rebuild/rebuild"
 	"github.com/google/oss-rebuild/tools/benchmark"
@@ -32,21 +30,20 @@ import (
 )
 
 var (
-	project         = flag.String("project", "", "GCP Project ID for storage and build resources")
-	bench           = flag.String("bench", "", "Path to a benchmark file")
-	trackedPackages = flag.String("tracked-packages", "", "JSON string of TrackedPackageSet")
-	port            = flag.Int("port", 8080, "port on which to serve")
-	successRegex    = flag.String("success-regex", "", "Regex to determine if a rebuild is successful based on its message")
-	logsBucket      = flag.String("logs-bucket", "", "GCS bucket containing build logs")
-	rundexURI       = flag.String("rundex", "", "Snapshot database URI to serve rundex reads from (supported schemes: gs, file). If empty, reads Firestore directly")
-	sessionsBucket  = flag.String("sessions-bucket", "", "GCS bucket containing agent session transcripts")
+	project        = flag.String("project", "", "GCP Project ID for storage and build resources")
+	bench          = flag.String("bench", "", "Path to a benchmark file")
+	port           = flag.Int("port", 8080, "port on which to serve")
+	successRegex   = flag.String("success-regex", "", "Regex to determine if a rebuild is successful based on its message")
+	logsBucket     = flag.String("logs-bucket", "", "GCS bucket containing build logs")
+	rundexURI      = flag.String("rundex", "", "Snapshot database URI to serve rundex reads from (supported schemes: gs, file). If empty, reads Firestore directly")
+	sessionsBucket = flag.String("sessions-bucket", "", "GCS bucket containing agent session transcripts")
 )
 
 var egressCfg httpegress.Config
 
 var (
 	successPat *regexp.Regexp
-	tracked    feed.TrackedPackageIndex
+	benchPkgs  rundex.PackageIndex
 	benchName  string
 	registry   rebuild.RegistryMux   // built once at startup
 	snapReader *rundex.SQLite        // process-level snapshot reader when -rundex is set
@@ -58,7 +55,7 @@ func DashboardInit(ctx context.Context) (*dashboard.Deps, error) {
 	deps := &dashboard.Deps{
 		LogsBucket:     *logsBucket,
 		SessionsBucket: *sessionsBucket,
-		Tracked:        tracked,
+		Benchmark:      benchPkgs,
 		BenchmarkName:  benchName,
 		SuccessRegex:   successPat,
 		Registry:       registry,
@@ -136,32 +133,22 @@ func main() {
 		log.Fatalf("Failed to create egress client: %v", err)
 	}
 	registry = meta.NewRegistryMux(egressClient)
-	// Without a tracked set the index omits its status grid and recent-rebuild
+	// Without a benchmark the index omits its status grid and recent-rebuild
 	// list, which suits a deployment that serves the whole snapshot.
-	if *bench != "" && *trackedPackages != "" {
-		log.Fatalf("Provide at most one of -bench or -tracked-packages")
-	}
 	if *bench != "" {
 		set, err := benchmark.ReadBenchmark(*bench)
 		if err != nil {
 			log.Fatalf("Failed to read benchmark file: %v", err)
 		}
-		tracked = make(feed.TrackedPackageIndex)
+		benchPkgs = make(rundex.PackageIndex)
 		for _, p := range set.Packages {
 			eco := rebuild.Ecosystem(p.Ecosystem)
-			if _, ok := tracked[eco]; !ok {
-				tracked[eco] = make(map[string]bool)
+			if _, ok := benchPkgs[eco]; !ok {
+				benchPkgs[eco] = make(map[string]bool)
 			}
-			tracked[eco][p.Name] = true
+			benchPkgs[eco][p.Name] = true
 		}
 		benchName = filepath.Base(*bench)
-	} else if *trackedPackages != "" {
-		var tps feed.TrackedPackageSet
-		if err := json.Unmarshal([]byte(*trackedPackages), &tps); err != nil {
-			log.Fatalf("Failed to unmarshal tracked-packages: %v", err)
-		}
-		tracked = tps.Index()
-		benchName = "Tracked Packages"
 	}
 	encoding := rebuild.FilesystemTargetEncoding
 

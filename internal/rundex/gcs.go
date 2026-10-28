@@ -14,7 +14,6 @@ import (
 	gcs "cloud.google.com/go/storage"
 	"github.com/google/oss-rebuild/internal/iterx"
 	"github.com/google/oss-rebuild/internal/pipe"
-	"github.com/google/oss-rebuild/pkg/feed"
 	"github.com/google/oss-rebuild/pkg/rebuild/rebuild"
 	"github.com/google/oss-rebuild/tools/ctl/layout"
 	"github.com/pkg/errors"
@@ -164,10 +163,10 @@ func (g *GCSClient) FetchAttempt(ctx context.Context, target rebuild.Target, run
 	return rebuild, nil
 }
 
-// LatestTrackedPackages fetches the most recent rebuild result for each tracked package.
-func (g *GCSClient) LatestTrackedPackages(ctx context.Context, tracked feed.TrackedPackageIndex) ([]Rebuild, error) {
+// LatestAttemptPerPackage fetches the most recent rebuild result for each package.
+func (g *GCSClient) LatestAttemptPerPackage(ctx context.Context, index PackageIndex) ([]Rebuild, error) {
 	return g.FetchRebuilds(ctx, &FetchRebuildRequest{
-		Tracked:          tracked,
+		Packages:         index,
 		LatestPerPackage: true,
 	})
 }

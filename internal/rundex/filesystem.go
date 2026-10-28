@@ -13,7 +13,6 @@ import (
 
 	"github.com/go-git/go-billy/v5"
 	"github.com/go-git/go-billy/v5/util"
-	"github.com/google/oss-rebuild/pkg/feed"
 	"github.com/google/oss-rebuild/pkg/rebuild/rebuild"
 	"github.com/google/oss-rebuild/tools/ctl/layout"
 	"github.com/pkg/errors"
@@ -211,10 +210,10 @@ func (f *FilesystemClient) FetchAttempt(ctx context.Context, target rebuild.Targ
 	return r, nil
 }
 
-// LatestTrackedPackages fetches the most recent rebuild result for each tracked package.
-func (f *FilesystemClient) LatestTrackedPackages(ctx context.Context, tracked feed.TrackedPackageIndex) ([]Rebuild, error) {
+// LatestAttemptPerPackage fetches the most recent rebuild result for each package.
+func (f *FilesystemClient) LatestAttemptPerPackage(ctx context.Context, index PackageIndex) ([]Rebuild, error) {
 	return f.FetchRebuilds(ctx, &FetchRebuildRequest{
-		Tracked:          tracked,
+		Packages:         index,
 		LatestPerPackage: true,
 	})
 }
