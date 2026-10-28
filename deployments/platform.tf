@@ -657,3 +657,79 @@ resource "google_cloud_scheduler_job" "scratch-reap" {
   }
   depends_on = [google_project_service.cloudscheduler]
 }
+
+## Dashboard load balancer
+
+resource "google_project_service" "iap" {
+  count   = var.enable_dashboard ? 1 : 0
+  service = "iap.googleapis.com"
+}
+resource "google_compute_global_address" "dashboard" {
+  count      = var.enable_dashboard ? 1 : 0
+  name       = "${var.host}-rebuild-dashboard"
+  depends_on = [google_project_service.compute]
+}
+locals {
+  # sslip.io resolves a-b-c-d.sslip.io to a.b.c.d, so the managed certificate's
+  # DNS check passes without a DNS record.
+  dashboard_host = (
+    !var.enable_dashboard ? "" :
+    var.dashboard_domain != "" ? var.dashboard_domain :
+    "${replace(google_compute_global_address.dashboard[0].address, ".", "-")}.sslip.io"
+  )
+}
+resource "google_compute_region_network_endpoint_group" "dashboard" {
+  count                 = var.enable_dashboard ? 1 : 0
+  name                  = "${var.host}-rebuild-dashboard"
+  region                = "us-central1"
+  network_endpoint_type = "SERVERLESS"
+  cloud_run {
+    service = google_cloud_run_v2_service.dashboard[0].name
+  }
+}
+resource "google_compute_backend_service" "dashboard" {
+  count                 = var.enable_dashboard ? 1 : 0
+  name                  = "${var.host}-rebuild-dashboard"
+  load_balancing_scheme = "EXTERNAL_MANAGED"
+  protocol              = "HTTPS"
+  backend {
+    group = google_compute_region_network_endpoint_group.dashboard[0].id
+  }
+  # Without a custom OAuth client, IAP's Google-managed client admits only the
+  # project's organization.
+  iap {
+    enabled = true
+  }
+  depends_on = [google_project_service.iap]
+}
+resource "google_compute_url_map" "dashboard" {
+  count           = var.enable_dashboard ? 1 : 0
+  name            = "${var.host}-rebuild-dashboard"
+  default_service = google_compute_backend_service.dashboard[0].id
+}
+# The certificate provisions once the hostname resolves to the address above.
+# Its name hashes the hostname so a replacement can be created first.
+resource "google_compute_managed_ssl_certificate" "dashboard" {
+  count = var.enable_dashboard ? 1 : 0
+  name  = "${var.host}-rebuild-dashboard-${substr(sha1(local.dashboard_host), 0, 8)}"
+  managed {
+    domains = [local.dashboard_host]
+  }
+  lifecycle {
+    create_before_destroy = true
+  }
+}
+resource "google_compute_target_https_proxy" "dashboard" {
+  count            = var.enable_dashboard ? 1 : 0
+  name             = "${var.host}-rebuild-dashboard"
+  url_map          = google_compute_url_map.dashboard[0].id
+  ssl_certificates = [google_compute_managed_ssl_certificate.dashboard[0].id]
+}
+resource "google_compute_global_forwarding_rule" "dashboard" {
+  count                 = var.enable_dashboard ? 1 : 0
+  name                  = "${var.host}-rebuild-dashboard"
+  load_balancing_scheme = "EXTERNAL_MANAGED"
+  ip_address            = google_compute_global_address.dashboard[0].address
+  port_range            = "443"
+  target                = google_compute_target_https_proxy.dashboard[0].id
+}

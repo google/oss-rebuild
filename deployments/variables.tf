@@ -176,3 +176,13 @@ variable "enable_dashboard" {
   description = "Whether to deploy the dashboard service. It serves the analytics snapshot and is reachable only through its load balancer."
   default     = false
 }
+variable "dashboard_domain" {
+  type        = string
+  description = "Hostname the dashboard is served on, e.g. dash.example.com. Create its DNS A record at the dashboard_address output after the first apply. Empty derives an sslip.io name from the address, which needs no record."
+  default     = ""
+}
+variable "dashboard_viewers" {
+  type        = list(string)
+  description = "IAM members admitted to the dashboard by IAP, in user:, group:, or domain: form."
+  default     = []
+}
