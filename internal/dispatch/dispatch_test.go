@@ -551,8 +551,11 @@ func TestPassHoldsAgentLaunchesAfterCapacityFailure(t *testing.T) {
 	if len(f.agents) != before || sum.Held != 3 {
 		t.Errorf("a later pass in the run attempted %d agent launches, held %d; want 0 and 3", len(f.agents)-before, sum.Held)
 	}
-	d.agentHeld = false // a new run
-	sum = d.Pass(ctx, active, &budget)
+	// A second run on the same Dispatcher, as --rolling makes, starts with no hold.
+	list := func(context.Context) ([]scheduler.Campaign, error) { return active, nil }
+	if _, err := d.Run(ctx, list, list); err != nil {
+		t.Fatal(err)
+	}
 	if len(f.agents) != before+1 {
 		t.Errorf("a new run attempted %d agent launches; want 1", len(f.agents)-before)
 	}

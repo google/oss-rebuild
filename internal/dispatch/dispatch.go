@@ -219,12 +219,13 @@ func (d *Dispatcher) pass(ctx context.Context, active []scheduler.Campaign) (*Re
 // A zero Refill or Window runs one pass. list is read once and inflight
 // before each refill.
 func (d *Dispatcher) Run(ctx context.Context, list, inflight func(context.Context) ([]scheduler.Campaign, error)) (*Report, error) {
+	// --rolling reuses the Dispatcher, so clear the previous run's holds.
+	d.agentHeld, d.buildHeld = false, false
 	if d.Config.Refill <= 0 || d.Config.Window <= 0 {
 		return d.Once(ctx, list)
 	}
 	window := d.Config.Window
 	defer func() { d.Config.Window = window }()
-	d.agentHeld, d.buildHeld = false, false
 	end := time.Now().Add(window)
 	active, err := list(ctx)
 	if err != nil {
