@@ -27,6 +27,7 @@ import (
 	"github.com/google/oss-rebuild/internal/gitx"
 	"github.com/google/oss-rebuild/internal/gitx/gitxtest"
 	"github.com/google/oss-rebuild/pkg/act/api/form"
+	"github.com/pkg/errors"
 )
 
 func TestGetRequestValidate(t *testing.T) {
@@ -236,6 +237,84 @@ func TestServerHandleGet(t *testing.T) {
 				if body := rr.Body.String(); !strings.Contains(body, tt.wantBody) {
 					t.Errorf("body = %q, want substring %q", body, tt.wantBody)
 				}
+			}
+		})
+	}
+}
+
+func TestServerHandleGetFillInProgress(t *testing.T) {
+	b := &localBackend{baseDir: t.TempDir()}
+	_, release, err := b.lease(context.Background(), "github.com/org/repo/repo.tgz")
+	if err != nil {
+		t.Fatalf("lease() error = %v, want held", err)
+	}
+	defer release()
+	s := &Server{backend: b, cloneFunc: func(context.Context, storage.Storer, billy.Filesystem, *git.CloneOptions) (*gitx.Repo, error) {
+		t.Fatal("cloned while another request holds the fill")
+		return nil, nil
+	}}
+	rr := httptest.NewRecorder()
+	s.HandleGet(rr, httptest.NewRequest("GET", "/get?uri=github.com/org/repo", nil))
+	if rr.Code != http.StatusServiceUnavailable || rr.Header().Get("Retry-After") != "10" {
+		t.Errorf("HandleGet() = %d with Retry-After %q, want 503 with 10", rr.Code, rr.Header().Get("Retry-After"))
+	}
+}
+
+// leasedBackend replaces localBackend's lease.
+type leasedBackend struct {
+	*localBackend
+	leaseFn func(context.Context, string) (context.Context, func(), error)
+}
+
+func (b leasedBackend) lease(ctx context.Context, path string) (context.Context, func(), error) {
+	return b.leaseFn(ctx, path)
+}
+
+func TestServerHandleGetLeaseFailures(t *testing.T) {
+	for _, tc := range []struct {
+		name  string
+		lease func(context.Context, string) (context.Context, func(), error)
+	}{
+		{
+			name: "lease error",
+			lease: func(context.Context, string) (context.Context, func(), error) {
+				return nil, nil, errors.New("storage unavailable")
+			},
+		},
+		{
+			name: "lease lost mid-fill",
+			lease: func(ctx context.Context, _ string) (context.Context, func(), error) {
+				held, lose := context.WithCancelCause(ctx)
+				lose(errLeaseLost)
+				return held, func() {}, nil
+			},
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			cacheDir := t.TempDir()
+			p := filepath.Join(cacheDir, "github.com/org/repo/repo.tgz")
+			if err := os.MkdirAll(filepath.Dir(p), 0o755); err != nil {
+				t.Fatal(err)
+			}
+			writeTarGz(t, p, "HEAD", []byte("ref: refs/heads/main\n"))
+			want, err := os.ReadFile(p)
+			if err != nil {
+				t.Fatal(err)
+			}
+			stale := time.Now().Add(-48 * time.Hour)
+			if err := os.Chtimes(p, stale, stale); err != nil {
+				t.Fatal(err)
+			}
+			s := &Server{backend: leasedBackend{&localBackend{baseDir: cacheDir}, tc.lease}, cloneFunc: func(ctx context.Context, _ storage.Storer, _ billy.Filesystem, _ *git.CloneOptions) (*gitx.Repo, error) {
+				return nil, ctx.Err()
+			}}
+			rr := httptest.NewRecorder()
+			s.HandleGet(rr, httptest.NewRequest("GET", "/get?uri=github.com/org/repo&contains="+time.Now().UTC().Add(-time.Hour).Format(time.RFC3339), nil))
+			if rr.Code != http.StatusServiceUnavailable || rr.Header().Get("Retry-After") == "" {
+				t.Errorf("HandleGet() = %d with Retry-After %q, want 503 with one", rr.Code, rr.Header().Get("Retry-After"))
+			}
+			if got, err := os.ReadFile(p); err != nil || !bytes.Equal(got, want) {
+				t.Errorf("entry after the request: err %v, unchanged %v, want it left for the lease holder", err, bytes.Equal(got, want))
 			}
 		})
 	}

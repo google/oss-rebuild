@@ -213,10 +213,24 @@ func TestClientCloneRefusesOversize(t *testing.T) {
 	}
 }
 
+type roundTripFunc func(*http.Request) (*http.Response, error)
+
+func (f roundTripFunc) RoundTrip(r *http.Request) (*http.Response, error) { return f(r) }
+
+// filling answers the first n requests as in-progress fills.
+func filling(n int, retryAfter string, base http.RoundTripper, calls *int) http.RoundTripper {
+	return roundTripFunc(func(r *http.Request) (*http.Response, error) {
+		if *calls++; *calls <= n {
+			return &http.Response{StatusCode: http.StatusServiceUnavailable, Header: http.Header{"Retry-After": {retryAfter}}, Body: http.NoBody, Request: r}, nil
+		}
+		return base.RoundTrip(r)
+	})
+}
+
 func TestClientSize(t *testing.T) {
 	const repo = "https://github.com/org/repo"
 	client := setupCloneTestServer(t, testRepoYAML)
-	link, err := client.GetLink(repo, time.Time{})
+	link, err := client.GetLink(context.Background(), repo, time.Time{})
 	if err != nil {
 		t.Fatalf("GetLink() error = %v", err)
 	}
@@ -234,5 +248,49 @@ func TestClientSize(t *testing.T) {
 	var tooLarge *gitx.RepoTooLargeError
 	if !errors.As(err, &tooLarge) || *tooLarge != (gitx.RepoTooLargeError{URL: repo, Limit: want - 1}) {
 		t.Errorf("Size() over MaxBytes: err = %v, want a RepoTooLargeError at %d", err, want-1)
+	}
+}
+
+func TestClientCloneWaitsForFill(t *testing.T) {
+	client := setupCloneTestServer(t, testRepoYAML)
+	var calls int
+	idc := *client.IDClient
+	idc.Transport = filling(2, "0", client.IDClient.Transport, &calls)
+	client.IDClient = &idc
+	if _, err := client.Clone(context.Background(), gitx.NewInMemoryStorer(), memfs.New(), &git.CloneOptions{URL: "https://github.com/org/repo", NoCheckout: true}); err != nil {
+		t.Fatalf("Clone() error = %v", err)
+	}
+	if calls != 3 {
+		t.Errorf("cache requests = %d, want 3 (two answered as filling)", calls)
+	}
+}
+
+func TestClientCloneStopsWaitingWithContext(t *testing.T) {
+	client := setupCloneTestServer(t, testRepoYAML)
+	var calls int
+	idc := *client.IDClient
+	idc.Transport = filling(1<<30, "60", client.IDClient.Transport, &calls)
+	client.IDClient = &idc
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+	_, err := client.Clone(ctx, gitx.NewInMemoryStorer(), memfs.New(), &git.CloneOptions{URL: "https://github.com/org/repo", NoCheckout: true})
+	if !errors.Is(err, context.Canceled) {
+		t.Fatalf("Clone() error = %v, want context.Canceled", err)
+	}
+	if calls != 1 {
+		t.Errorf("cache requests = %d, want 1", calls)
+	}
+}
+
+func TestClientSizeStopsWithContextMidRequest(t *testing.T) {
+	// The request that leads a fill blocks until the fill ends.
+	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) { <-r.Context().Done() }))
+	defer ts.Close()
+	u, _ := url.Parse(ts.URL)
+	c := Client{IDClient: ts.Client(), APIClient: ts.Client(), URL: u}
+	ctx, cancel := context.WithTimeout(context.Background(), 50*time.Millisecond)
+	defer cancel()
+	if _, err := c.Size(ctx, "github.com/org/repo"); !errors.Is(err, context.DeadlineExceeded) {
+		t.Errorf("Size() error = %v, want context.DeadlineExceeded", err)
 	}
 }

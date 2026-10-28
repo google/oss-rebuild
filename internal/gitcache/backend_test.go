@@ -6,15 +6,20 @@ package gitcache
 import (
 	"context"
 	"fmt"
+	"io"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
+	"sync"
 	"testing"
+	"time"
 
 	"cloud.google.com/go/storage"
+	"github.com/pkg/errors"
 	"google.golang.org/api/option"
 )
 
@@ -186,5 +191,189 @@ func TestLocalBackendDelete(t *testing.T) {
 	}
 	if _, err := os.Stat(path); !os.IsNotExist(err) {
 		t.Error("file still exists after delete")
+	}
+}
+
+func TestLocalBackendLease(t *testing.T) {
+	dir := t.TempDir()
+	b := &localBackend{baseDir: dir}
+	ctx := context.Background()
+	_, release, err := b.lease(ctx, "org/repo.tgz")
+	if err != nil {
+		t.Fatalf("lease() error = %v, want held", err)
+	}
+	if _, _, err := b.lease(ctx, "org/repo.tgz"); !errors.Is(err, errLeaseHeld) {
+		t.Fatalf("second lease() error = %v, want errLeaseHeld", err)
+	}
+	release()
+	_, release, err = b.lease(ctx, "org/repo.tgz")
+	if err != nil {
+		t.Fatalf("lease() after release error = %v, want held", err)
+	}
+	// A holder that stops renewing loses the lease once it lapses.
+	lapsed := time.Now().Add(-leaseTTL - time.Minute)
+	if err := os.Chtimes(filepath.Join(dir, "org/repo.tgz"+leaseSuffix), lapsed, lapsed); err != nil {
+		t.Fatal(err)
+	}
+	_, next, err := b.lease(ctx, "org/repo.tgz")
+	if err != nil {
+		t.Fatalf("lease() over a lapsed lease error = %v, want held", err)
+	}
+	defer next()
+	// The lapsed holder's release leaves its successor's lease in place.
+	release()
+	if _, _, err := b.lease(ctx, "org/repo.tgz"); !errors.Is(err, errLeaseHeld) {
+		t.Errorf("lease() after the lapsed holder's release error = %v, want errLeaseHeld", err)
+	}
+}
+
+func TestLocalBackendLeaseEndsWhenLost(t *testing.T) {
+	defer func(d time.Duration) { leaseRenew = d }(leaseRenew)
+	leaseRenew = 10 * time.Millisecond
+	dir := t.TempDir()
+	b := &localBackend{baseDir: dir}
+	held, release, err := b.lease(context.Background(), "repo.tgz")
+	if err != nil {
+		t.Fatalf("lease() error = %v, want held", err)
+	}
+	defer release()
+	// Another instance took over the claim.
+	p := filepath.Join(dir, "repo.tgz"+leaseSuffix)
+	if err := os.WriteFile(p, []byte("theirs"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	select {
+	case <-held.Done():
+	case <-time.After(5 * time.Second):
+		t.Fatal("held context outlived the lost lease")
+	}
+	if cause := context.Cause(held); !errors.Is(cause, errLeaseLost) {
+		t.Errorf("context.Cause(held) = %v, want errLeaseLost", cause)
+	}
+	release()
+	if b, err := os.ReadFile(p); err != nil || string(b) != "theirs" {
+		t.Errorf("successor's lease after release = %q, %v, want it kept", b, err)
+	}
+}
+
+// fakeLeaseGCS fakes the single-object GCS calls gcsBackend.lease makes.
+type fakeLeaseGCS struct {
+	mu      sync.Mutex
+	gen     int64 // 0 while absent
+	lastGen int64
+	updated time.Time
+}
+
+func (f *fakeLeaseGCS) ServeHTTP(w http.ResponseWriter, r *http.Request) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	io.Copy(io.Discard, r.Body)
+	w.Header().Set("Content-Type", "application/json")
+	fail := func(code int) {
+		w.WriteHeader(code)
+		fmt.Fprintf(w, `{"error":{"code":%d,"message":"fake"}}`, code)
+	}
+	switch r.Method {
+	case http.MethodPost:
+		if f.gen != 0 {
+			fail(http.StatusPreconditionFailed)
+			return
+		}
+		f.lastGen++
+		f.gen, f.updated = f.lastGen, time.Now()
+	case http.MethodGet:
+		if f.gen == 0 {
+			fail(http.StatusNotFound)
+			return
+		}
+	case http.MethodPatch:
+		if r.URL.Query().Get("ifGenerationMatch") != strconv.FormatInt(f.gen, 10) {
+			fail(http.StatusPreconditionFailed)
+			return
+		}
+		f.updated = time.Now()
+	case http.MethodDelete:
+		if r.URL.Query().Get("ifGenerationMatch") != strconv.FormatInt(f.gen, 10) {
+			fail(http.StatusPreconditionFailed)
+			return
+		}
+		f.gen = 0
+		w.WriteHeader(http.StatusNoContent)
+		return
+	}
+	fmt.Fprintf(w, `{"bucket":"test-bucket","name":"repo.tgz.lease","generation":"%d","updated":%q}`, f.gen, f.updated.Format(time.RFC3339Nano))
+}
+
+func newFakeLeaseBackend(t *testing.T) (*gcsBackend, *fakeLeaseGCS) {
+	fake := &fakeLeaseGCS{}
+	gcs := httptest.NewServer(fake)
+	t.Cleanup(gcs.Close)
+	client, err := storage.NewClient(context.Background(), option.WithEndpoint(gcs.URL), option.WithoutAuthentication())
+	if err != nil {
+		t.Fatalf("NewClient() error = %v", err)
+	}
+	return &gcsBackend{client: client, bucket: "test-bucket"}, fake
+}
+
+func TestGCSBackendLease(t *testing.T) {
+	b, fake := newFakeLeaseBackend(t)
+	ctx := context.Background()
+	_, release, err := b.lease(ctx, "repo.tgz")
+	if err != nil {
+		t.Fatalf("lease() error = %v, want held", err)
+	}
+	if _, _, err := b.lease(ctx, "repo.tgz"); !errors.Is(err, errLeaseHeld) {
+		t.Fatalf("second lease() error = %v, want errLeaseHeld", err)
+	}
+	release()
+	if fake.gen != 0 {
+		t.Fatalf("lease generation %d still exists after release", fake.gen)
+	}
+	_, release, err = b.lease(ctx, "repo.tgz")
+	if err != nil {
+		t.Fatalf("lease() after release error = %v, want held", err)
+	}
+	defer release()
+	// A holder that stops renewing loses the lease once it lapses.
+	fake.updated = time.Now().Add(-leaseTTL - time.Minute)
+	lapsed := fake.gen
+	_, next, err := b.lease(ctx, "repo.tgz")
+	if err != nil {
+		t.Fatalf("lease() over a lapsed lease error = %v, want held", err)
+	}
+	defer next()
+	if fake.gen == lapsed {
+		t.Errorf("lease generation = %d, want a new one replacing the lapsed %d", fake.gen, lapsed)
+	}
+}
+
+func TestGCSBackendLeaseEndsWhenLost(t *testing.T) {
+	defer func(d time.Duration) { leaseRenew = d }(leaseRenew)
+	leaseRenew = 10 * time.Millisecond
+	b, fake := newFakeLeaseBackend(t)
+	held, release, err := b.lease(context.Background(), "repo.tgz")
+	if err != nil {
+		t.Fatalf("lease() error = %v, want held", err)
+	}
+	defer release()
+	// Another instance replaced the claim with its own.
+	fake.mu.Lock()
+	fake.lastGen++
+	fake.gen = fake.lastGen
+	theirs := fake.gen
+	fake.mu.Unlock()
+	select {
+	case <-held.Done():
+	case <-time.After(5 * time.Second):
+		t.Fatal("held context outlived the lost lease")
+	}
+	if cause := context.Cause(held); !errors.Is(cause, errLeaseLost) {
+		t.Errorf("context.Cause(held) = %v, want errLeaseLost", cause)
+	}
+	release()
+	fake.mu.Lock()
+	defer fake.mu.Unlock()
+	if fake.gen != theirs {
+		t.Errorf("lease generation after release = %d, want the successor's %d kept", fake.gen, theirs)
 	}
 }

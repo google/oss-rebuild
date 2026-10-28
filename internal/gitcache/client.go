@@ -61,18 +61,18 @@ func (c *cappedReader) Read(p []byte) (int, error) {
 }
 
 // GetLink returns a GCS link to the cached repo resource.
-func (c Client) GetLink(repo string, contains time.Time) (uri string, err error) {
-	return c.GetLinkWithRef(repo, contains, "")
+func (c Client) GetLink(ctx context.Context, repo string, contains time.Time) (uri string, err error) {
+	return c.GetLinkWithRef(ctx, repo, contains, "")
 }
 
 // GetLinkWithRef returns a GCS link to the cached repo resource for a specific ref.
-func (c Client) GetLinkWithRef(repo string, contains time.Time, ref string) (uri string, err error) {
-	uri, _, err = c.getLink(repo, contains, ref)
+func (c Client) GetLinkWithRef(ctx context.Context, repo string, contains time.Time, ref string) (uri string, err error) {
+	uri, _, err = c.getLink(ctx, repo, contains, ref)
 	return uri, err
 }
 
 // getLink returns the link and the bytes of the archive it serves, or 0 when missing.
-func (c Client) getLink(repo string, contains time.Time, ref string) (uri string, size int64, err error) {
+func (c Client) getLink(ctx context.Context, repo string, contains time.Time, ref string) (uri string, size int64, err error) {
 	u, err := c.URL.Parse("/get")
 	if err != nil {
 		return "", 0, err
@@ -94,7 +94,11 @@ func (c Client) getLink(repo string, contains time.Time, ref string) (uri string
 		// Never follow redirect.
 		return http.ErrUseLastResponse
 	}
-	resp, err := idc.Get(u.String())
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, u.String(), nil)
+	if err != nil {
+		return "", 0, err
+	}
+	resp, err := idc.Do(req)
 	if err != nil {
 		return "", 0, err
 	}
@@ -115,15 +119,44 @@ func (c Client) getLink(repo string, contains time.Time, ref string) (uri string
 			return uri, 0, transport.ErrAuthenticationRequired
 		}
 		return uri, 0, errors.New(string(errs))
+	case http.StatusServiceUnavailable:
+		if s, err := strconv.Atoi(resp.Header.Get("Retry-After")); err == nil {
+			return uri, 0, &fillingError{retryAfter: time.Duration(s) * time.Second}
+		}
+		return uri, 0, errors.Wrap(errors.New(resp.Status), "making cache request")
 	default:
 		return uri, 0, errors.Wrap(errors.New(resp.Status), "making cache request")
 	}
 }
 
+type fillingError struct {
+	retryAfter time.Duration
+}
+
+func (e *fillingError) Error() string {
+	return "cache entry is being filled, retry after " + e.retryAfter.String()
+}
+
+// waitLink is getLink at the default freshness, retried while the entry fills.
+func (c Client) waitLink(ctx context.Context, repo, ref string) (uri string, size int64, err error) {
+	uri, size, err = c.getLink(ctx, repo, c.DefaultFreshness, ref)
+	var filling *fillingError
+	for errors.As(err, &filling) {
+		select {
+		case <-ctx.Done():
+			return "", 0, errors.Wrap(context.Cause(ctx), "waiting for the cache fill")
+		case <-time.After(filling.retryAfter):
+		}
+		uri, size, err = c.getLink(ctx, repo, c.DefaultFreshness, ref)
+	}
+	return uri, size, err
+}
+
 // Size returns the bytes of the archive Clone would fetch for repo, or 0 when
-// the cache reports none. Like Clone, it refuses an archive over MaxBytes.
+// the cache reports none. Like Clone, it waits out a fill and refuses an
+// archive over MaxBytes.
 func (c Client) Size(ctx context.Context, repo string) (int64, error) {
-	_, size, err := c.getLink(repo, c.DefaultFreshness, "")
+	_, size, err := c.waitLink(ctx, repo, "")
 	if err != nil {
 		return 0, errors.Wrap(err, "querying git cache")
 	}
@@ -156,7 +189,7 @@ func (c Client) Clone(ctx context.Context, s storage.Storer, fs billy.Filesystem
 	if opt.ReferenceName != "" {
 		ref = string(opt.ReferenceName)
 	}
-	uri, err := c.GetLinkWithRef(opt.URL, c.DefaultFreshness, ref)
+	uri, _, err := c.waitLink(ctx, opt.URL, ref)
 	if err != nil {
 		return nil, errors.Wrap(err, "cache error")
 	}
