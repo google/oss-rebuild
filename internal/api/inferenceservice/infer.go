@@ -57,8 +57,9 @@ type InferDeps struct {
 	GitCache           *gitcache.Client
 	RepoOptF           func() *gitx.RepositoryOptions
 	CratesRegistryStub api.StubFn[cratesregistryservice.FindRegistryCommitRequest, cratesregistryservice.FindRegistryCommitResponse]
-	RepoMetrics        db.RepoMetrics // optional. when nil, repos are not measured on clone
-	Memory             *Memory        // optional. when nil, requests load without reserving memory
+	CratesCache        *cratesregistryservice.Cache // optional. crates.io metadata from the crates registry service
+	RepoMetrics        db.RepoMetrics               // optional. when nil, repos are not measured on clone
+	Memory             *Memory                      // optional. when nil, requests load without reserving memory
 }
 
 // recordRepoMetrics measures rcfg and upserts its repo_metrics record keyed
@@ -115,8 +116,11 @@ func Infer(ctx context.Context, req schema.InferenceRequest, deps *InferDeps) (*
 	if deps.CratesRegistryStub != nil {
 		ctx = context.WithValue(ctx, rebuild.CratesRegistryStubID, deps.CratesRegistryStub)
 	}
-	// Cache registry metadata for repo and strategy inference accesses.
+	// Cache this request's registry responses for repo and strategy inference.
 	mux := meta.NewRegistryMux(httpx.NewCachedClient(deps.HTTPClient, &cache.CoalescingMemoryCache{}))
+	if deps.CratesCache != nil {
+		mux.CratesIO = deps.CratesCache.BackedBy(mux.CratesIO)
+	}
 	var s rebuild.Strategy
 	t := rebuild.Target{
 		Ecosystem: req.Ecosystem,

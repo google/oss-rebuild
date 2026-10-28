@@ -81,6 +81,7 @@ func InferInit(ctx context.Context) (*inferenceservice.InferDeps, error) {
 			return nil, errors.Wrap(err, "creating crates registry id client")
 		}
 		d.CratesRegistryStub = api.Stub[cratesregistryservice.FindRegistryCommitRequest, cratesregistryservice.FindRegistryCommitResponse](c, u.JoinPath("resolve"))
+		d.CratesCache = cratesregistryservice.NewCache(c, u)
 	}
 	if total, err := gitcache.MemTotal(); err != nil {
 		log.Printf("requests reserve no memory: %v", err)
