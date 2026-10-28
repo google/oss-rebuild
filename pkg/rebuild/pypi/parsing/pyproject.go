@@ -20,7 +20,7 @@ type ProjectMetadata struct {
 	Version string `toml:"version"`
 }
 
-// CibuildwheelHooks represents build hooks in [tool.cibuildwheel] or platform subtables.
+// CibuildwheelHooks represents build hooks in [tool.cibuildwheel], platform subtables, or override entries.
 type CibuildwheelHooks struct {
 	BeforeAll   any `toml:"before-all"`
 	BeforeBuild any `toml:"before-build"`
