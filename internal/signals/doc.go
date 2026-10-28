@@ -9,6 +9,9 @@
 // "Prevalence" is the signal derived from the dependency graphs of each
 // ecosystem. We define it as "how many other packages depend on this one,
 // directly or transitively," measured both per package and per version.
+// "Prominence" is the awareness signal: how well known the package is by
+// name, which is what carries the leaf applications no dependency graph can
+// rank.
 //
 // The exports are also assembled into a published SQLite database, read by
 // enqueue and by the snapshot. Unlike the snapshot's doc tables, its rows are

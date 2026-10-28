@@ -17,3 +17,12 @@ func LogScale(count, max int64) float64 {
 	}
 	return min(1, math.Log1p(float64(count))/math.Log1p(float64(max)))
 }
+
+// Percentile maps a 0-based descending rank within a population of n onto
+// (0,1], where the top-ranked entry scores highest. n <= 0 yields 0.
+func Percentile(rank, n int) float64 {
+	if n <= 0 {
+		return 0
+	}
+	return float64(n-rank) / float64(n)
+}

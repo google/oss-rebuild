@@ -11,6 +11,6 @@ func priorityCommand() *cobra.Command {
 		Use:   "priority",
 		Short: "Compute and export the signals that rank onboarding candidates",
 	}
-	cmd.AddCommand(prevalenceCommand(), publishCommand())
+	cmd.AddCommand(prevalenceCommand(), prominenceCommand(), publishCommand())
 	return cmd
 }
