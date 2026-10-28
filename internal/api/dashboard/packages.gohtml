@@ -6,15 +6,7 @@
 -->
 
 <style>
-    .asof { color: var(--muted); }
-    .tabs a.active { color: var(--heading); border-bottom-color: var(--accent); }
-    .cards { grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); margin-bottom: 12px; }
-    .info { display: inline-block; position: relative; margin-left: 5px; width: 1.15em; height: 1.15em; line-height: 1.15em; border-radius: 50%; border: 1px solid var(--border); background: var(--fill); color: var(--muted); font-size: 0.72rem; font-weight: 600; text-align: center; vertical-align: middle; cursor: help; }
-    .info::after { content: attr(data-tip); position: absolute; left: 50%; top: calc(100% + 6px); transform: translateX(-50%); width: max-content; max-width: 22em; padding: 6px 10px; border-radius: 4px; background: var(--heading); color: var(--bg); font-size: 0.8rem; font-weight: 400; line-height: 1.4; text-align: left; white-space: normal; visibility: hidden; z-index: 1; }
-    .info:hover::after, .info:focus-visible::after { visibility: visible; }
-    .info:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
     .showing { color: var(--muted); font-size: 0.9rem; margin: 0 0 8px; }
-    .muted { color: var(--muted); }
     .streak { color: var(--mismatch); font-weight: 600; }
 </style>
 <h2>Packages</h2>
@@ -58,8 +50,8 @@
         <td>{{.VersionsSucceeded}} / {{.VersionsAttempted}}</td>
         <td>{{.Attempts}}</td>
         <td>{{if .FailingStreak}}<span class="streak">{{.FailingStreak}}</span>{{else}}<span class="muted">0</span>{{end}}</td>
-        <td>{{if .LastSucceededAt}}{{.LastSucceededAt}} <span class="muted">{{.LastSucceededVersion}}</span>{{else}}<span class="muted">&mdash;</span>{{end}}</td>
-        <td>{{.LastAttemptedAt}} <span class="muted">{{.LastAttemptedVersion}} {{.LastAttemptedStatus}}</span></td>
+        <td class="wrap">{{if .LastSucceededAt}}{{.LastSucceededAt}} <span class="muted">{{.LastSucceededVersion}}</span>{{else}}<span class="muted">&mdash;</span>{{end}}</td>
+        <td class="wrap">{{.LastAttemptedAt}} <span class="muted">{{.LastAttemptedVersion}} {{.LastAttemptedStatus}}</span></td>
     </tr>
     {{end}}
 </table>
