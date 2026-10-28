@@ -40,36 +40,61 @@ var indexManager *index.IndexManager
 // snapshots caches the archive's snapshot listing across requests.
 var snapshots = &index.SnapshotList{TTL: time.Hour, List: index.ListAvailableSnapshots}
 
-// crates is the latest crates.io dump, nil until the first one loads.
+// crates is the latest crates.io dump, nil while none is loaded.
 var crates atomic.Pointer[dump.Index]
 
-// dumpCheck paces checks for a new crates.io dump, which is published daily.
-const dumpCheck = time.Hour
+// Dump refresh pacing. A new dump, published daily, loads within dumpCheck.
+// A failure, such as before a new instance's egress is up, is retried after
+// dumpRetryMin, doubling to dumpRetryMax while failures continue.
+// dumpLoad bounds an attempt so a stalled download cannot hold the loader.
+const (
+	dumpCheck    = time.Hour
+	dumpRetryMin = 10 * time.Second
+	dumpRetryMax = 5 * time.Minute
+	dumpLoad     = 30 * time.Minute
+)
 
 // loadDumps keeps crates on the latest published dump.
 func loadDumps(ctx context.Context) {
+	retry := dumpRetryMin
 	for {
-		latest, err := dump.Latest(ctx, http.DefaultClient)
-		if err != nil {
-			log.Printf("checking for a crates.io dump: %v", err)
-		} else if cur := crates.Load(); cur == nil || cur.ETag != latest {
-			// Two dumps do not fit beside the index clones this service holds
-			// in memory, so lookups go live while the new one loads.
-			crates.Store(nil)
-			start := time.Now()
-			if x, err := dump.Fetch(ctx, http.DefaultClient); err != nil {
-				log.Printf("loading the crates.io dump: %v", err)
-			} else {
-				crates.Store(x)
-				log.Printf("loaded crates.io dump %s in %s", x.ETag, time.Since(start).Round(time.Second))
-			}
+		next := dumpCheck
+		if err := refreshDump(ctx); err != nil {
+			log.Printf("refreshing the crates.io dump: %v", err)
+			next, retry = retry, min(2*retry, dumpRetryMax)
+		} else {
+			retry = dumpRetryMin
 		}
 		select {
 		case <-ctx.Done():
 			return
-		case <-time.After(dumpCheck):
+		case <-time.After(next):
 		}
 	}
+}
+
+// refreshDump loads the published dump unless it is the one already loaded.
+func refreshDump(ctx context.Context) error {
+	ctx, cancel := context.WithTimeout(ctx, dumpLoad)
+	defer cancel()
+	latest, err := dump.Latest(ctx, http.DefaultClient)
+	if err != nil {
+		return errors.Wrap(err, "checking for a new dump")
+	}
+	if cur := crates.Load(); cur != nil && cur.ETag == latest {
+		return nil
+	}
+	// Two dumps do not fit beside the index clones this service holds in
+	// memory, so lookups go live while the new one loads.
+	crates.Store(nil)
+	start := time.Now()
+	x, err := dump.Fetch(ctx, http.DefaultClient)
+	if err != nil {
+		return err
+	}
+	crates.Store(x)
+	log.Printf("loaded crates.io dump %s in %s", x.ETag, time.Since(start).Round(time.Second))
+	return nil
 }
 
 func MetadataInit(context.Context) (*cratesregistryservice.MetadataDeps, error) {
