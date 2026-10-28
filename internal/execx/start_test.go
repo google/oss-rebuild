@@ -7,6 +7,7 @@ import (
 	"context"
 	"errors"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 )
@@ -109,5 +110,16 @@ func TestMockStart(t *testing.T) {
 	}
 	if cmds := mock.GetCommands(); cmds[len(cmds)-1].Error == nil || cmds[len(cmds)-1].Handle != nil {
 		t.Errorf("failed start recorded as %+v; want the error and no handle", cmds[len(cmds)-1])
+	}
+}
+
+func TestRealExecute_EnvAndStderr(t *testing.T) {
+	var out, errOut strings.Builder
+	err := NewRealCommandExecutor().Execute(context.Background(), CommandOptions{Output: &out, Stderr: &errOut, Env: []string{"WORD=hi"}}, "sh", "-c", `echo "$WORD"; echo oops >&2`)
+	if err != nil {
+		t.Fatalf("Execute() error = %v", err)
+	}
+	if out.String() != "hi\n" || errOut.String() != "oops\n" {
+		t.Errorf("stdout %q, stderr %q, want %q and %q", out.String(), errOut.String(), "hi\n", "oops\n")
 	}
 }
