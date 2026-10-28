@@ -123,10 +123,12 @@ func (c Client) getLink(ctx context.Context, repo string, contains time.Time, re
 		if s, err := strconv.Atoi(resp.Header.Get("Retry-After")); err == nil {
 			return uri, 0, &fillingError{retryAfter: time.Duration(s) * time.Second}
 		}
-		return uri, 0, errors.Wrap(errors.New(resp.Status), "making cache request")
-	default:
-		return uri, 0, errors.Wrap(errors.New(resp.Status), "making cache request")
+	case http.StatusRequestEntityTooLarge:
+		limit, _ := strconv.ParseInt(resp.Header.Get(sizeLimitHeader), 10, 64)
+		return uri, 0, &gitx.RepoTooLargeError{URL: repo, Limit: limit}
 	}
+	body, _ := io.ReadAll(io.LimitReader(resp.Body, 1<<10))
+	return uri, 0, errors.Errorf("making cache request: %s: %s", resp.Status, strings.TrimSpace(string(body)))
 }
 
 type fillingError struct {

@@ -10,9 +10,6 @@ import (
 	"log"
 	"net/http"
 	"net/url"
-	"os"
-	"strconv"
-	"strings"
 
 	"cloud.google.com/go/firestore"
 	"github.com/go-git/go-billy/v5/memfs"
@@ -85,27 +82,12 @@ func InferInit(ctx context.Context) (*inferenceservice.InferDeps, error) {
 		}
 		d.CratesRegistryStub = api.Stub[cratesregistryservice.FindRegistryCommitRequest, cratesregistryservice.FindRegistryCommitResponse](c, u.JoinPath("resolve"))
 	}
-	if total, err := memTotal(); err != nil {
+	if total, err := gitcache.MemTotal(); err != nil {
 		log.Printf("requests reserve no memory: %v", err)
 	} else if d.Memory = inferenceservice.NewMemory(total); d.Memory == nil {
 		log.Printf("requests reserve no memory: %d MiB is within base memory", total>>20)
 	}
 	return &d, nil
-}
-
-// memTotal reads MemTotal, which Cloud Run sets to the container limit.
-func memTotal() (int64, error) {
-	b, err := os.ReadFile("/proc/meminfo")
-	if err != nil {
-		return 0, err
-	}
-	for line := range strings.Lines(string(b)) {
-		if rest, ok := strings.CutPrefix(line, "MemTotal:"); ok {
-			kb, err := strconv.ParseInt(strings.TrimSuffix(strings.TrimSpace(rest), " kB"), 10, 64)
-			return kb << 10, errors.Wrap(err, "parsing MemTotal")
-		}
-	}
-	return 0, errors.New("no MemTotal in /proc/meminfo")
 }
 
 func main() {

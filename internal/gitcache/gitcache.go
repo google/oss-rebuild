@@ -23,6 +23,11 @@
 // The repo cache is stored as a gzipped tar archive of the .git/ directory
 // from an empty checkout of the upstream repo, written with gzip.NoCompression.
 //
+// # Fill Budgets
+//
+// A fill stops at a time and size budget. One over its size budget fails with
+// 413.
+//
 // # Concurrent Fills
 //
 // A lease beside the entry lets one request at a time fill it. Others get 503
@@ -41,6 +46,7 @@ import (
 	"context"
 	"log"
 	"os"
+	"strconv"
 	"strings"
 	"time"
 
@@ -76,7 +82,37 @@ func NewServer(ctx context.Context, cacheStr string) (*Server, error) {
 	if err != nil {
 		return nil, err
 	}
-	return &Server{backend: backend, cloneFunc: gitx.Clone}, nil
+	s := &Server{backend: backend, cloneFunc: gitx.Clone}
+	switch total, err := MemTotal(); {
+	case err != nil:
+		log.Printf("no fill budget: %v", err)
+	case total <= fillMemoryReserve:
+		log.Printf("no fill budget: %d MiB is within the reserve", total>>20)
+	default:
+		s.fillBytes = total - fillMemoryReserve
+	}
+	return s, nil
+}
+
+// A fill stages its repository in memory, so it may use the memory beyond
+// fillMemoryReserve. The budget covers a pack split's or repack's second
+// copy, since watchSize counts it.
+const fillMemoryReserve = 2 << 30
+
+// MemTotal reads the total memory from /proc/meminfo. On Cloud Run, that is
+// the container's memory limit.
+func MemTotal() (int64, error) {
+	b, err := os.ReadFile("/proc/meminfo")
+	if err != nil {
+		return 0, err
+	}
+	for line := range strings.Lines(string(b)) {
+		if rest, ok := strings.CutPrefix(line, "MemTotal:"); ok {
+			kb, err := strconv.ParseInt(strings.TrimSuffix(strings.TrimSpace(rest), " kB"), 10, 64)
+			return kb << 10, errors.Wrap(err, "parsing MemTotal")
+		}
+	}
+	return 0, errors.New("no MemTotal in /proc/meminfo")
 }
 
 // newBackend creates a cacheBackend from the given cache location string.

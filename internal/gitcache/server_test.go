@@ -862,6 +862,44 @@ func TestServerHandleGetClonesWhenRefreshFails(t *testing.T) {
 	}
 }
 
+// stagingClone stages n bytes and waits for ctx, as an over-budget clone does.
+func stagingClone(n int) gitx.CloneFunc {
+	return func(ctx context.Context, st storage.Storer, _ billy.Filesystem, _ *git.CloneOptions) (*gitx.Repo, error) {
+		dir := st.(*filesystem.Storage).Filesystem().Root()
+		if err := os.WriteFile(filepath.Join(dir, "pack"), make([]byte, n), 0o644); err != nil {
+			return nil, err
+		}
+		select {
+		case <-ctx.Done():
+			return nil, errors.New("signal: killed")
+		case <-time.After(5 * time.Second):
+			return nil, errors.New("clone outlived its budget")
+		}
+	}
+}
+
+func TestFillStopsAtSizeBudget(t *testing.T) {
+	defer func(d time.Duration) { sizePollInterval = d }(sizePollInterval)
+	sizePollInterval = 10 * time.Millisecond
+	s := &Server{backend: &localBackend{baseDir: t.TempDir()}, fillBytes: 1 << 20, cloneFunc: stagingClone(2 << 20)}
+	rr := httptest.NewRecorder()
+	s.HandleGet(rr, httptest.NewRequest("GET", "/get?uri=github.com/org/repo", nil))
+	if rr.Code != http.StatusRequestEntityTooLarge || rr.Header().Get(sizeLimitHeader) != strconv.Itoa(1<<20) || !strings.Contains(rr.Body.String(), "repository exceeds the size limit") {
+		t.Errorf("HandleGet() = %d, limit %q, body %q, want 413 naming the 1 MiB budget", rr.Code, rr.Header().Get(sizeLimitHeader), rr.Body.String())
+	}
+}
+
+func TestFillStopsAtTimeBudget(t *testing.T) {
+	defer func(d time.Duration) { fillTimeout = d }(fillTimeout)
+	fillTimeout = 50 * time.Millisecond
+	s := &Server{backend: &localBackend{baseDir: t.TempDir()}, cloneFunc: stagingClone(1)}
+	rr := httptest.NewRecorder()
+	s.HandleGet(rr, httptest.NewRequest("GET", "/get?uri=github.com/org/repo", nil))
+	if rr.Code != http.StatusInternalServerError || !strings.Contains(rr.Body.String(), errFillTimeout.Error()) {
+		t.Errorf("HandleGet() = %d %q, want 500 naming the time budget", rr.Code, rr.Body.String())
+	}
+}
+
 func TestFailedFillKeepsEntry(t *testing.T) {
 	cacheDir := t.TempDir()
 	p := filepath.Join(cacheDir, "github.com/org/repo/repo.tgz")
