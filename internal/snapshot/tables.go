@@ -602,6 +602,8 @@ func Tables() []docdb.TableDef {
 				{Name: "score", Type: "REAL", Expr: docdb.Raw("$.Score")},
 				{Name: "published", Type: "TEXT", Expr: docdb.RawTime("$.Published"), Stored: true},
 				{Name: "dispatched_at", Type: "TEXT", Expr: docdb.RawTime("$.DispatchedAt")},
+				{Name: "origin", Type: "TEXT", Expr: docdb.Raw("$.Origin")},
+				{Name: "not_before", Type: "TEXT", Expr: docdb.RawTime("$.NotBefore")},
 			},
 			Indexes: [][]string{{"state"}},
 		},

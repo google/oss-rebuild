@@ -78,6 +78,8 @@
     "ecosystem": "TEXT pk=1",
     "last_run_id": "TEXT",
     "last_session": "TEXT",
+    "not_before": "TEXT",
+    "origin": "TEXT",
     "outcome": "TEXT",
     "package": "TEXT pk=2",
     "published": "TEXT",

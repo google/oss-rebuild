@@ -61,6 +61,15 @@ func TestSelect(t *testing.T) {
 			want:   []string{"i1", "a1"},
 		},
 		{
+			// A held campaign is passed over until its time, not dropped.
+			name: "NotBeforeHolds",
+			queued: []Campaign{
+				{Ecosystem: "npm", Package: "held", Version: "1.0.0", Stage: StageInfer, Score: 0.9, NotBefore: now.Add(time.Minute)},
+				{Ecosystem: "npm", Package: "settled", Version: "1.0.0", Stage: StageInfer, Score: 0.1, NotBefore: now.Add(-time.Minute)},
+			},
+			want: []string{"settled"},
+		},
+		{
 			name:   "CapNoneAdmitsNone",
 			queued: []Campaign{campaign("a1", StageAgent, 0.9, 0), campaign("i1", StageInfer, 0.1, 0)},
 			caps:   Caps{Agent: CapNone},
