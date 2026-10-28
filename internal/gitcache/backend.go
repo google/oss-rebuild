@@ -28,7 +28,8 @@ type cacheBackend interface {
 	// Returns zero time and nil error if not found.
 	exists(ctx context.Context, path string) (mtime time.Time, err error)
 	// writer returns a WriteCloser for writing data to the cache entry.
-	// The caller must call Close to finalize the write.
+	// The caller must call Close to finalize the write. Cancelling ctx before
+	// Close abandons the write and leaves any previous entry in place.
 	writer(ctx context.Context, path string) (io.WriteCloser, error)
 	// reader returns the cache entry's contents.
 	reader(ctx context.Context, path string) (io.ReadCloser, error)
@@ -211,8 +212,10 @@ func (l *localBackend) exists(ctx context.Context, path string) (time.Time, erro
 	return info.ModTime(), nil
 }
 
-// atomicFileWriter writes to a temp file and renames to the final path on Close.
+// atomicFileWriter writes to a temp file and renames to the final path on
+// Close, unless ctx ended first.
 type atomicFileWriter struct {
+	ctx       context.Context
 	finalPath string
 	tmpFile   *os.File
 }
@@ -226,6 +229,10 @@ func (w *atomicFileWriter) Close() error {
 	if err := w.tmpFile.Close(); err != nil {
 		os.Remove(tmpPath)
 		return errors.Wrap(err, "closing temp file")
+	}
+	if err := w.ctx.Err(); err != nil {
+		os.Remove(tmpPath)
+		return err
 	}
 	if err := os.Rename(tmpPath, w.finalPath); err != nil {
 		os.Remove(tmpPath)
@@ -248,7 +255,7 @@ func (l *localBackend) writer(ctx context.Context, path string) (io.WriteCloser,
 	if err != nil {
 		return nil, errors.Wrap(err, "creating temp file")
 	}
-	return &atomicFileWriter{finalPath: fullPath, tmpFile: tmpFile}, nil
+	return &atomicFileWriter{ctx: ctx, finalPath: fullPath, tmpFile: tmpFile}, nil
 }
 
 func (l *localBackend) serve(rw http.ResponseWriter, req *http.Request, path string) {

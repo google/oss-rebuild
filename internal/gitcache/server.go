@@ -138,9 +138,7 @@ func (s *Server) HandleGet(rw http.ResponseWriter, httpReq *http.Request) {
 					// The entry is now the new holder's to write.
 					respondFilling(rw)
 				default:
-					if err := s.backend.delete(ctx, p); err != nil {
-						log.Printf("Issue cleaning up failed write: %v\n", err)
-					}
+					// The previous entry stays for the next fill to refresh from.
 					http.Error(rw, "Internal Error", 500)
 				}
 				return
@@ -178,7 +176,6 @@ func (c nilCache) Put(plumbing.EncodedObject)                       {}
 func (c nilCache) Clear()                                           {}
 
 // populateCache writes an archived bare checkout of the repo to the cache backend.
-// NOTE: cachePath may have incomplete content even when err != nil.
 func (s *Server) populateCache(ctx context.Context, repo, ref string, cachePath string) error {
 	// Create a temp directory for cloning
 	tmpDir, err := os.MkdirTemp("", "git-cache-*")
@@ -210,14 +207,14 @@ func (s *Server) populateCache(ctx context.Context, repo, ref string, cachePath 
 }
 
 func (s *Server) writeEntry(ctx context.Context, dir, cachePath string) error {
+	ctx, cancel := context.WithCancel(ctx)
+	defer cancel()
 	w, err := s.backend.writer(ctx, cachePath)
 	if err != nil {
 		return errors.Wrapf(err, "failure opening cache writer for %s", cachePath)
 	}
 	if err := createTarball(dir, w); err != nil {
-		// Close but ignore error; the tarball write already failed.
-		// For localBackend this still renames the partial file, but the
-		// caller will delete the cache entry on error anyway.
+		cancel()
 		w.Close()
 		return errors.Wrapf(err, "failure archiving %s", cachePath)
 	}

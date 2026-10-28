@@ -861,3 +861,32 @@ func TestServerHandleGetClonesWhenRefreshFails(t *testing.T) {
 		t.Errorf("entry HEAD = %s after falling back to a clone, want refs/heads/main", head)
 	}
 }
+
+func TestFailedFillKeepsEntry(t *testing.T) {
+	cacheDir := t.TempDir()
+	p := filepath.Join(cacheDir, "github.com/org/repo/repo.tgz")
+	if err := os.MkdirAll(filepath.Dir(p), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	writeTarGz(t, p, "HEAD", []byte("ref: refs/heads/main\n"))
+	want, err := os.ReadFile(p)
+	if err != nil {
+		t.Fatal(err)
+	}
+	stale := time.Now().Add(-48 * time.Hour)
+	if err := os.Chtimes(p, stale, stale); err != nil {
+		t.Fatal(err)
+	}
+	s := &Server{backend: &localBackend{baseDir: cacheDir}, cloneFunc: func(context.Context, storage.Storer, billy.Filesystem, *git.CloneOptions) (*gitx.Repo, error) {
+		return nil, errors.New("upstream unreachable")
+	}}
+	rr := httptest.NewRecorder()
+	s.HandleGet(rr, httptest.NewRequest("GET", "/get?uri=github.com/org/repo&contains="+time.Now().UTC().Add(-time.Hour).Format(time.RFC3339), nil))
+	if rr.Code != http.StatusInternalServerError {
+		t.Errorf("HandleGet() = %d, want 500", rr.Code)
+	}
+	// The stale entry is what a later fill refreshes from.
+	if got, err := os.ReadFile(p); err != nil || !bytes.Equal(got, want) {
+		t.Errorf("entry after a failed fill: err %v, unchanged %v", err, bytes.Equal(got, want))
+	}
+}
