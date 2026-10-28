@@ -407,10 +407,17 @@ func TestCreateTarball(t *testing.T) {
 	if err := os.WriteFile(filepath.Join(srcDir, "config"), []byte("[core]\n"), 0o644); err != nil {
 		t.Fatal(err)
 	}
+	if err := os.WriteFile(filepath.Join(srcDir, "pack"), make([]byte, 1<<16), 0o644); err != nil {
+		t.Fatal(err)
+	}
 
 	var buf bytes.Buffer
 	if err := createTarball(srcDir, &buf); err != nil {
 		t.Fatalf("createTarball() error = %v", err)
+	}
+	// Zeros compress to almost nothing, so a full-size archive was stored.
+	if buf.Len() < 1<<16 {
+		t.Errorf("archive of a 64 KiB pack is %d bytes, want it stored uncompressed", buf.Len())
 	}
 
 	// Decompress and verify entries.

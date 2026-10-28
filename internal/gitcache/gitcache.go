@@ -21,7 +21,7 @@
 // # Object Format
 //
 // The repo cache is stored as a gzipped tar archive of the .git/ directory
-// from an empty checkout of the upstream repo.
+// from an empty checkout of the upstream repo, written with gzip.NoCompression.
 //
 // # Concurrent Fills
 //
