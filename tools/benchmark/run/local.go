@@ -60,7 +60,7 @@ func (s *localExecutionService) RebuildPackage(ctx context.Context, req schema.R
 	if req.UseSyscallMonitor {
 		return nil, errors.New("syscall monitor not supported")
 	}
-	mux := meta.NewRegistryMux(httpx.NewCachedClient(http.DefaultClient, &cache.CoalescingMemoryCache{}))
+	mux := meta.NewRegistryMux(httpx.NewCachedClient(&httpx.WithUserAgent{BasicClient: http.DefaultClient, UserAgent: rebuild.UserAgent("localbuild")}, &cache.CoalescingMemoryCache{}))
 	t := rebuild.Target{Ecosystem: req.Ecosystem, Package: req.Package, Version: req.Version, Artifact: req.Artifact}
 	if req.Artifact == "" {
 		a, err := meta.GuessArtifact(ctx, t, mux)
@@ -95,7 +95,7 @@ func RebuildWithStrategy(ctx context.Context, executor ExecutionService, t rebui
 	if !ok {
 		return nil, errors.New("RebuildWithStrategy is only supported for local execution")
 	}
-	mux := meta.NewRegistryMux(httpx.NewCachedClient(http.DefaultClient, &cache.CoalescingMemoryCache{}))
+	mux := meta.NewRegistryMux(httpx.NewCachedClient(&httpx.WithUserAgent{BasicClient: http.DefaultClient, UserAgent: rebuild.UserAgent("localbuild")}, &cache.CoalescingMemoryCache{}))
 	if t.Artifact == "" {
 		a, err := meta.GuessArtifact(ctx, t, mux)
 		if err != nil {
@@ -141,7 +141,7 @@ func (s *localExecutionService) Infer(ctx context.Context, req schema.InferenceR
 	if req.StrategyHint != nil {
 		return nil, errors.New("strategy hint not supported")
 	}
-	mux := meta.NewRegistryMux(httpx.NewCachedClient(http.DefaultClient, &cache.CoalescingMemoryCache{}))
+	mux := meta.NewRegistryMux(httpx.NewCachedClient(&httpx.WithUserAgent{BasicClient: http.DefaultClient, UserAgent: rebuild.UserAgent("localbuild")}, &cache.CoalescingMemoryCache{}))
 	t := rebuild.Target{Ecosystem: req.Ecosystem, Package: req.Package, Version: req.Version, Artifact: req.Artifact}
 	if req.Artifact == "" {
 		a, err := meta.GuessArtifact(ctx, t, mux)
