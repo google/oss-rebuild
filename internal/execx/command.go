@@ -8,6 +8,7 @@ package execx
 import (
 	"context"
 	"io"
+	"os"
 	"os/exec"
 	"syscall"
 	"time"
@@ -27,6 +28,10 @@ type CommandOptions struct {
 	Dir string
 	// StopGrace makes cancellation signal termination and wait before killing.
 	StopGrace time.Duration
+	// KillGroup runs the command in its own process group and stops the whole
+	// group, with the processes it started, on cancellation. With StopGrace,
+	// the rest of the group is killed once the command exits.
+	KillGroup bool
 }
 
 // CommandExecutor abstracts command execution for better testability
@@ -58,8 +63,9 @@ func NewRealCommandExecutor() CommandExecutor {
 	return &realCommandExecutor{}
 }
 
-// command builds the exec.Cmd for opts.
-func command(ctx context.Context, opts CommandOptions, name string, args ...string) *exec.Cmd {
+// command builds the exec.Cmd for opts, and a func to call once its Wait
+// returns.
+func command(ctx context.Context, opts CommandOptions, name string, args ...string) (*exec.Cmd, func()) {
 	cmd := exec.CommandContext(ctx, name, args...)
 	if opts.Input != nil {
 		cmd.Stdin = opts.Input
@@ -73,17 +79,47 @@ func command(ctx context.Context, opts CommandOptions, name string, args ...stri
 	}
 	cmd.Env = opts.Env
 	cmd.Dir = opts.Dir
-	if opts.StopGrace > 0 {
-		cmd.Cancel = func() error { return cmd.Process.Signal(syscall.SIGTERM) }
-		cmd.WaitDelay = opts.StopGrace
+	signal := func(s syscall.Signal) error { return cmd.Process.Signal(s) }
+	if opts.KillGroup {
+		cmd.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}
+		// Setpgid makes the command its group's leader.
+		signal = func(s syscall.Signal) error {
+			// os/exec takes os.ErrProcessDone from Cancel to mean the command
+			// already exited.
+			if err := syscall.Kill(-cmd.Process.Pid, s); err != syscall.ESRCH {
+				return err
+			}
+			return os.ErrProcessDone
+		}
+		cmd.Cancel = func() error { return signal(syscall.SIGKILL) }
 	}
-	return cmd
+	finish := func() {}
+	if opts.StopGrace > 0 {
+		var cancelled bool
+		cmd.Cancel = func() error {
+			cancelled = true
+			return signal(syscall.SIGTERM)
+		}
+		cmd.WaitDelay = opts.StopGrace
+		if opts.KillGroup {
+			// os/exec kills only the leader. Kill the rest after Wait, as a timer
+			// could fire once the group's ID has passed to another group.
+			finish = func() {
+				if cancelled {
+					signal(syscall.SIGKILL)
+				}
+			}
+		}
+	}
+	return cmd, finish
 }
 
 // Execute implements CommandExecutor with configurable options
 func (r *realCommandExecutor) Execute(ctx context.Context, opts CommandOptions, name string, args ...string) error {
 	// Block and wait for completion.
-	return command(ctx, opts, name, args...).Run()
+	cmd, finish := command(ctx, opts, name, args...)
+	defer finish()
+	return cmd.Run()
 }
 
 // started is the real Handle. A goroutine collects the exit once, so Done and
@@ -102,13 +138,14 @@ func (s *started) Wait() error {
 
 // Start implements CommandExecutor.
 func (r *realCommandExecutor) Start(ctx context.Context, opts CommandOptions, name string, args ...string) (Handle, error) {
-	cmd := command(ctx, opts, name, args...)
+	cmd, finish := command(ctx, opts, name, args...)
 	if err := cmd.Start(); err != nil {
 		return nil, err
 	}
 	s := &started{done: make(chan struct{})}
 	go func() {
 		s.err = cmd.Wait()
+		finish()
 		close(s.done)
 	}()
 	return s, nil
