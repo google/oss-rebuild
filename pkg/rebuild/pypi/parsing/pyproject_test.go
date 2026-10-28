@@ -114,3 +114,108 @@ commits:
 		})
 	}
 }
+
+func TestInTreeBackendModulePaths(t *testing.T) {
+	for _, tc := range []struct {
+		name     string
+		repoYAML string
+		want     []string
+		wantErr  bool
+	}{
+		{
+			name: "ObjectSuffixIgnored",
+			repoYAML: `
+commits:
+  - id: initial-commit
+    files:
+      pyproject.toml: |
+        [build-system]
+        build-backend = "backend:build_wheel"
+        backend-path = ["_build_hook"]
+`,
+			want: []string{"_build_hook/backend.py", "_build_hook/backend/__init__.py"},
+		},
+		{
+			name: "DottedModuleAcrossBackendPaths",
+			repoYAML: `
+commits:
+  - id: initial-commit
+    files:
+      pyproject.toml: |
+        [build-system]
+        build-backend = "pep517_backend.hooks"
+        backend-path = ["packaging", "."]
+`,
+			want: []string{
+				"packaging/pep517_backend/hooks.py",
+				"packaging/pep517_backend/hooks/__init__.py",
+				"pep517_backend/hooks.py",
+				"pep517_backend/hooks/__init__.py",
+			},
+		},
+		{
+			name: "EscapingAndAbsoluteBackendPathsSkipped",
+			repoYAML: `
+commits:
+  - id: initial-commit
+    files:
+      pyproject.toml: |
+        [build-system]
+        build-backend = "backend"
+        backend-path = ["../shared", "/abs", "sub/../hooks"]
+`,
+			want: []string{"hooks/backend.py", "hooks/backend/__init__.py"},
+		},
+		{
+			name: "ScalarBackendPathIgnored",
+			repoYAML: `
+commits:
+  - id: initial-commit
+    files:
+      pyproject.toml: |
+        [build-system]
+        build-backend = "backend"
+        backend-path = "_build_hook"
+`,
+			want: nil,
+		},
+		{
+			name: "NoBackendPath",
+			repoYAML: `
+commits:
+  - id: initial-commit
+    files:
+      pyproject.toml: |
+        [build-system]
+        build-backend = "setuptools.build_meta"
+`,
+			want: nil,
+		},
+		{
+			name: "InvalidTOML",
+			repoYAML: `
+commits:
+  - id: initial-commit
+    files:
+      pyproject.toml: |
+        [build-system]
+        build-backend = "backend
+`,
+			wantErr: true,
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			repo := must(gitxtest.CreateRepoFromYAML(tc.repoYAML, nil))
+			commit := must(repo.CommitObject(repo.Commits["initial-commit"]))
+			tree := must(commit.Tree())
+			f := must(tree.File("pyproject.toml"))
+			got, err := InTreeBackendModulePaths(f)
+			if (err != nil) != tc.wantErr {
+				t.Fatalf("InTreeBackendModulePaths() error = %v, wantErr %v", err, tc.wantErr)
+			}
+			if diff := cmp.Diff(tc.want, got, cmpopts.EquateEmpty()); diff != "" {
+				t.Errorf("InTreeBackendModulePaths() diff (-want +got):\n%s", diff)
+			}
+		})
+	}
+}

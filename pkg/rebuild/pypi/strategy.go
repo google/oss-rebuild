@@ -4,6 +4,8 @@
 package pypi
 
 import (
+	"maps"
+	re "regexp"
 	"slices"
 	"strings"
 	"time"
@@ -13,6 +15,11 @@ import (
 	"github.com/google/oss-rebuild/pkg/rebuild/pypi/platform"
 	"github.com/google/oss-rebuild/pkg/rebuild/rebuild"
 	"github.com/pkg/errors"
+)
+
+var (
+	buildEnvNamePat  = re.MustCompile(`^[A-Za-z_][A-Za-z0-9_]*$`)
+	buildEnvValuePat = re.MustCompile(`^[A-Za-z0-9_./:=+,@ -]*$`)
 )
 
 // PureWheelBuild aggregates the options controlling a wheel build.
@@ -131,12 +138,13 @@ func (b *SdistBuild) GenerateFor(t rebuild.Target, be rebuild.BuildEnv) (rebuild
 // PlatformWheelBuild aggregates the options controlling a platform-specific wheel build.
 type PlatformWheelBuild struct {
 	rebuild.Location
-	PythonTag    string    `json:"python_tag,omitempty" yaml:"python_tag,omitempty"`
-	ABITag       string    `json:"abi_tag,omitempty" yaml:"abi_tag,omitempty"`
-	Requirements []string  `json:"requirements" yaml:"requirements"`
-	PlatformTag  string    `json:"platform_tag,omitempty" yaml:"platform_tag,omitempty"`
-	SystemDeps   []string  `json:"system_deps,omitempty" yaml:"system_deps,omitempty"`
-	RegistryTime time.Time `json:"registry_time" yaml:"registry_time,omitempty"`
+	PythonTag    string            `json:"python_tag,omitempty" yaml:"python_tag,omitempty"`
+	ABITag       string            `json:"abi_tag,omitempty" yaml:"abi_tag,omitempty"`
+	Requirements []string          `json:"requirements" yaml:"requirements"`
+	BuildEnv     map[string]string `json:"build_env,omitempty" yaml:"build_env,omitempty"`
+	PlatformTag  string            `json:"platform_tag,omitempty" yaml:"platform_tag,omitempty"`
+	SystemDeps   []string          `json:"system_deps,omitempty" yaml:"system_deps,omitempty"`
+	RegistryTime time.Time         `json:"registry_time" yaml:"registry_time,omitempty"`
 	// BaseImage is the build image, used verbatim when set. It should be pinned by
 	// digest, as in "quay.io/pypa/musllinux_1_2_x86_64:2026.03.20-1@sha256:<digest>",
 	// because the image determines the compiler, CPython builds and auditwheel.
@@ -160,6 +168,19 @@ func (b *PlatformWheelBuild) ToWorkflow() (*rebuild.WorkflowStrategy, error) {
 	baseImage, err := b.resolveBaseImage()
 	if err != nil {
 		return nil, errors.Wrap(err, "selecting base image")
+	}
+	var buildEnvJSON string
+	if len(b.BuildEnv) > 0 {
+		for _, k := range slices.Sorted(maps.Keys(b.BuildEnv)) {
+			v := b.BuildEnv[k]
+			if !buildEnvNamePat.MatchString(k) {
+				return nil, errors.Errorf("invalid build environment variable name %q", k)
+			}
+			if !buildEnvValuePat.MatchString(v) {
+				return nil, errors.Errorf("invalid build environment variable value %q for %s", v, k)
+			}
+		}
+		buildEnvJSON = flow.MustToJSON(b.BuildEnv)
 	}
 	var registryTime string
 	if !b.RegistryTime.IsZero() {
@@ -202,6 +223,7 @@ func (b *PlatformWheelBuild) ToWorkflow() (*rebuild.WorkflowStrategy, error) {
 				"locator":    "/deps/bin/",
 				"wheelCli":   "/deps/wheel-cli",
 				"venvOnPath": needsVenvOnPath(b.Requirements),
+				"buildEnv":   buildEnvJSON,
 				// auditwheel repair --plat requires a single policy tag rather than a compressed
 				// tag set, and the highest tag matches the build container policy.
 				"highestPlatformTag": platform.HighestLibcTagString(b.PlatformTag),
@@ -369,6 +391,10 @@ var toolkit = []*flow.Tool{
 		Name: "pypi/build/platform-wheel",
 		Steps: []flow.Step{{
 			Runs: textwrap.Dedent(`
+				{{if .With.buildEnv -}}
+				{{range $k, $v := .With.buildEnv | fromJSON}}export {{$k}}='{{$v}}'
+				{{end -}}
+				{{end -}}
 				{{if .With.venvOnPath}}PATH={{.With.locator}}:$PATH {{end}}{{.With.locator}}python3 -m build --wheel -n{{if and (ne .With.dir ".") (ne .With.dir "")}} {{.With.dir}}{{end}}
 				{{if .With.highestPlatformTag -}}
 				mkdir -p {{.With.distDir}}/repaired
