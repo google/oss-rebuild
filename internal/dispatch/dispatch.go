@@ -536,7 +536,7 @@ func (d *Dispatcher) observe(ctx context.Context, c scheduler.Campaign, budget *
 	if err != nil {
 		return c, false
 	}
-	d.charge(ctx, budget, spend)
+	d.charge(ctx, budget, next, spend)
 	return next, true
 }
 
@@ -628,21 +628,26 @@ func (d *Dispatcher) mutateBudget(ctx context.Context, scope string, fn func(*sc
 	}
 }
 
-// charge records one completion's spend on the global ledger and on the local
-// copy that dispatch caps read.
-func (d *Dispatcher) charge(ctx context.Context, budget *scheduler.Budget, s scheduler.Spend) {
+// charge records one completion's spend on the global ledger, the campaign's
+// ecosystem ledger, and the local copy that dispatch caps read. Both ledgers
+// take the local copy's period, so an ecosystem's spend covers the same window
+// as the global total.
+func (d *Dispatcher) charge(ctx context.Context, budget *scheduler.Budget, c scheduler.Campaign, s scheduler.Spend) {
 	d.mu.Lock()
 	budget.Add(s)
+	start := budget.PeriodStart
 	d.mu.Unlock()
-	_, err := d.mutateBudget(ctx, scheduler.BudgetScopeGlobal, func(b *scheduler.Budget) {
-		if b.Scope == "" || b.Expired(d.Now, d.Config.Period) {
-			*b = scheduler.Budget{Scope: scheduler.BudgetScopeGlobal, PeriodStart: d.Now}
+	for _, scope := range []string{scheduler.BudgetScopeGlobal, scheduler.BudgetScopeEcosystem(c.Ecosystem)} {
+		_, err := d.mutateBudget(ctx, scope, func(b *scheduler.Budget) {
+			if b.Scope == "" || b.PeriodStart.Before(start) {
+				*b = scheduler.Budget{Scope: scope, PeriodStart: start}
+			}
+			b.Add(s)
+			b.Updated = d.Now
+		})
+		if err != nil {
+			fmt.Fprintf(d.errw(), "charging %s ledger: %v\n", scope, err)
 		}
-		b.Add(s)
-		b.Updated = d.Now
-	})
-	if err != nil {
-		fmt.Fprintf(d.errw(), "charging budget: %v\n", err)
 	}
 }
 
