@@ -119,6 +119,25 @@ func TestWorkflowStrategy_GenerateFor(t *testing.T) {
 			errContains: "invalid dir",
 		},
 		{
+			name:        "ControlCharacterInOutputPath",
+			strategy:    WorkflowStrategy{OutputDir: "dist"},
+			target:      Target{Artifact: "foo.tgz\nEOF"},
+			wantErr:     true,
+			errContains: "control character",
+		},
+		{
+			name:        "ControlCharacterInBaseImage",
+			strategy:    WorkflowStrategy{Requires: RequiredEnv{BaseImage: "alpine\nRUN id"}},
+			wantErr:     true,
+			errContains: "control character",
+		},
+		{
+			name:        "ControlCharacterInSystemDep",
+			strategy:    WorkflowStrategy{Requires: RequiredEnv{SystemDeps: []string{"git\nEOF"}}},
+			wantErr:     true,
+			errContains: "control character",
+		},
+		{
 			name: "invalid_step_both_runs_and_uses",
 			strategy: WorkflowStrategy{
 				Source: []flow.Step{{
