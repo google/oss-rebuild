@@ -241,6 +241,17 @@ func TestExtractCibuildwheelDependencies(t *testing.T) {
 			files: gitxtest.FileContent{"setup.py": "from setuptools import setup\nsetup(name='legacy', version='0.1.0')\n"},
 			want:  nil,
 		},
+		{
+			name: "RejectsRepoEnablingAcrossArrayAndSplitHooks",
+			libc: platform.Glibc,
+			files: gitxtest.FileContent{
+				"pyproject.toml": textwrap.Dedent(`
+					[tool.cibuildwheel]
+					before-all = ["yum install -y libfoo-devel", "yum install -y epel-release"]
+					before-build = "yum install -y zlib-devel"`),
+			},
+			want: nil,
+		},
 	}
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
@@ -259,14 +270,15 @@ func TestExtractCibuildwheelDependencies(t *testing.T) {
 
 func TestParsePackageManagerCommands(t *testing.T) {
 	tests := []struct {
-		name   string
-		script string
-		libc   platform.LibcImpl
-		want   []string
+		name            string
+		script          string
+		libc            platform.LibcImpl
+		want            []string
+		wantEnablesRepo bool
 	}{
 		{
 			name:   "YumAndMicrodnfWithValueFlags",
-			script: "yum -y --enablerepo=epel install --repo epel --disableexcludes all graphviz-devel && microdnf install -y zlib-devel",
+			script: "yum -y -c /etc/yum.conf --setopt=tsflags=nodocs --disablerepo=epel-release install --disableexcludes all graphviz-devel && microdnf install -y zlib-devel",
 			libc:   platform.Glibc,
 			want:   []string{"graphviz-devel", "zlib-devel"},
 		},
@@ -282,13 +294,85 @@ func TestParsePackageManagerCommands(t *testing.T) {
 		},
 		{
 			name:   "ApkAddWithVirtualFlagAndVersionPin",
-			script: "apk --no-cache add --virtual .build-deps graphviz-dev=14.1.5-r0 'cairo-dev>=1.18' pango-dev@edge !ignored-pkg",
+			script: "apk --no-cache add --virtual .build-deps graphviz-dev=14.1.5-r0 'cairo-dev>=1.18' !ignored-pkg",
 			libc:   platform.Musl,
-			want:   []string{"graphviz-dev", "cairo-dev", "pango-dev"},
+			want:   []string{"graphviz-dev", "cairo-dev"},
 		},
 		{
-			name:   "FiltersByTargetLibc",
-			script: "yum install -y graphviz-devel || apk add --no-cache graphviz-dev",
+			name:            "RejectsEpelReleasePackage",
+			script:          "dnf install -y epel-release && dnf install -y libfoo-devel",
+			libc:            platform.Glibc,
+			wantEnablesRepo: true,
+		},
+		{
+			name:            "RejectsSclReleasePackage",
+			script:          "yum install -y centos-release-scl && yum install -y libfoo-devel",
+			libc:            platform.Glibc,
+			wantEnablesRepo: true,
+		},
+		{
+			name:            "RejectsRpmInstallFromURL",
+			script:          "rpm -Uvh https://packages.microsoft.com/config/rhel/8/packages-microsoft-prod.rpm && yum install -y libfoo-devel",
+			libc:            platform.Glibc,
+			wantEnablesRepo: true,
+		},
+		{
+			name:            "RejectsDnfConfigManager",
+			script:          "dnf config-manager --set-enabled crb && dnf install -y libfoo-devel",
+			libc:            platform.Glibc,
+			wantEnablesRepo: true,
+		},
+		{
+			name:            "RejectsYumConfigManager",
+			script:          "yum-config-manager --enable powertools && yum install -y libfoo-devel",
+			libc:            platform.Glibc,
+			wantEnablesRepo: true,
+		},
+		{
+			name:            "RejectsEnableRepoEqualsForm",
+			script:          "dnf --enablerepo=crb install -y libfoo-devel",
+			libc:            platform.Glibc,
+			wantEnablesRepo: true,
+		},
+		{
+			name:            "RejectsRepoValueFlag",
+			script:          "dnf install --repo epel -y libfoo-devel",
+			libc:            platform.Glibc,
+			wantEnablesRepo: true,
+		},
+		{
+			name:            "RejectsYumReposDirWrite",
+			script:          "curl -fsSL https://example.com/custom.repo -o /etc/yum.repos.d/custom.repo && yum install -y libfoo-devel",
+			libc:            platform.Glibc,
+			wantEnablesRepo: true,
+		},
+		{
+			name:            "RejectsApkTaggedPackage",
+			script:          "apk add --no-cache pango-dev@edge",
+			libc:            platform.Musl,
+			wantEnablesRepo: true,
+		},
+		{
+			name:            "RejectsApkAttachedRepositoryFlag",
+			script:          "apk add -Xhttps://dl-cdn.alpinelinux.org/alpine/edge/testing foo-dev",
+			libc:            platform.Musl,
+			wantEnablesRepo: true,
+		},
+		{
+			name:            "RejectsApkRepositoryLongFlag",
+			script:          "apk add --repository https://dl-cdn.alpinelinux.org/alpine/edge/testing foo-dev",
+			libc:            platform.Musl,
+			wantEnablesRepo: true,
+		},
+		{
+			name:            "RejectsApkRepositoriesRedirect",
+			script:          "echo https://dl-cdn.alpinelinux.org/alpine/edge/community >> /etc/apk/repositories && apk add foo-dev",
+			libc:            platform.Musl,
+			wantEnablesRepo: true,
+		},
+		{
+			name:   "FiltersByTargetLibcEvenWhenOtherLibcEnablesRepo",
+			script: "curl -fsSL https://example.com/custom.repo -o /etc/yum.repos.d/custom.repo && yum --enablerepo=epel install -y graphviz-devel || apk add --no-cache graphviz-dev",
 			libc:   platform.Musl,
 			want:   []string{"graphviz-dev"},
 		},
@@ -346,9 +430,12 @@ func TestParsePackageManagerCommands(t *testing.T) {
 	}
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
-			got, err := parsePackageManagerCommands(tc.script, tc.libc)
+			got, gotEnablesRepo, err := parsePackageManagerCommands(tc.script, tc.libc)
 			if err != nil {
 				t.Fatalf("parsePackageManagerCommands() unexpected error: %v", err)
+			}
+			if gotEnablesRepo != tc.wantEnablesRepo {
+				t.Errorf("parsePackageManagerCommands() enablesRepo = %v, want %v", gotEnablesRepo, tc.wantEnablesRepo)
 			}
 			if diff := cmp.Diff(tc.want, got); diff != "" {
 				t.Errorf("parsePackageManagerCommands() diff (-want +got):\n%s", diff)

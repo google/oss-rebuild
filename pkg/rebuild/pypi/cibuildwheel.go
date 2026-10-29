@@ -120,9 +120,16 @@ func extractCibuildwheelDependencies(tree *object.Tree, searchDir string, libc p
 	}
 	var deps []string
 	for _, script := range scripts {
-		scriptDeps, err := parsePackageManagerCommands(script, libc)
+		scriptDeps, enablesRepo, err := parsePackageManagerCommands(script, libc)
 		if err != nil {
 			return nil, errors.Wrapf(err, "parsing cibuildwheel hook in %s", pyprojPath)
+		}
+		// NOTE: SystemDeps runs as a single install against the base image's
+		// default repositories, so packages that upstream pulls from an extra
+		// repository would fail setup. Dropping every hook dependency fails
+		// open to fewer inferred deps rather than a broken install.
+		if enablesRepo {
+			return nil, nil
 		}
 		deps = appendUnique(deps, scriptDeps...)
 	}
@@ -179,9 +186,11 @@ func selectorPatternApplies(pat string, libc platform.LibcImpl) bool {
 }
 
 type pkgManager struct {
-	libc       platform.LibcImpl
-	subcmd     string
-	valueFlags []string
+	libc        platform.LibcImpl
+	subcmd      string
+	valueFlags  []string
+	repoFlags   []string
+	enablesRepo func(string) bool
 }
 
 var (
@@ -194,6 +203,8 @@ var (
 			"--disableexcludes", "--setopt", "--releasever", "--forcearch",
 			"--repofrompath", "--enableplugin", "--disableplugin",
 		},
+		repoFlags:   []string{"--enablerepo", "--repo", "--repoid", "--repofrompath"},
+		enablesRepo: rpmEnablesRepo,
 	}
 	pkgManagers = map[string]pkgManager{
 		"yum":      rpmPkgManager,
@@ -206,6 +217,8 @@ var (
 				"-t", "--virtual", "-p", "--root", "-X", "--repository", "--keys-dir",
 				"--repositories-file", "--arch", "--cache-dir", "--wait",
 			},
+			repoFlags:   []string{"-X", "--repository", "--repositories-file"},
+			enablesRepo: apkEnablesRepo,
 		},
 	}
 	// commandWrappers run their first argument that is not an option or a
@@ -220,15 +233,27 @@ var (
 )
 
 // parsePackageManagerCommands extracts system package names from a shell script
-// for the target libc (yum/dnf/microdnf install on glibc, apk add on musl).
-func parsePackageManagerCommands(script string, libc platform.LibcImpl) ([]string, error) {
+// for the target libc (yum/dnf/microdnf install on glibc, apk add on musl) and
+// reports whether the script enables a package repository beyond the defaults.
+// NOTE: Repository enabling is detected from release packages such as
+// "epel-release", "dnf config-manager", "yum-config-manager", "rpm" installs
+// from a URL, repo flags such as "--enablerepo" and "-X", "@tag" apk
+// operands, and writes to "/etc/yum.repos.d" or "/etc/apk/repositories".
+// Scripts that redirect into repo configuration are rejected as a whole since
+// any later install may depend on the added repository.
+func parsePackageManagerCommands(script string, libc platform.LibcImpl) (deps []string, enablesRepo bool, err error) {
 	src := []byte(script)
 	root, err := bash.NewParser().Parse(src)
 	if err != nil {
-		return nil, err
+		return nil, false, err
+	}
+	for redirect := range root.Find(bash.KindFileRedirect) {
+		dest := redirect.ChildByField(bash.FieldDestination)
+		if dest != nil && strings.Contains(string(src[redirect.StartByte:dest.StartByte]), ">") && touchesRepoConfig(string(dest.Text(src)), libc) {
+			return nil, true, nil
+		}
 	}
 	trailing := trailingArgs(root, src)
-	var deps []string
 	for cmd := range root.Find(bash.KindCommand) {
 		argv := append(commandArgv(cmd, src), trailing[cmd]...)
 		i := 0
@@ -246,7 +271,17 @@ func parsePackageManagerCommands(script string, libc platform.LibcImpl) ([]strin
 		if i >= len(argv) {
 			continue
 		}
-		pm, ok := pkgManagers[path.Base(argv[i])]
+		cmdName := path.Base(argv[i])
+		// NOTE: echo and printf only mention the path when they feed a redirect,
+		// which the file redirect scan above already covers. Any other command
+		// naming repo configuration, such as "curl -o" or "tee", writes to it.
+		if cmdName != "echo" && cmdName != "printf" && slices.ContainsFunc(argv[i+1:], func(arg string) bool { return touchesRepoConfig(arg, libc) }) {
+			return nil, true, nil
+		}
+		if libc == platform.Glibc && (cmdName == "yum-config-manager" || (cmdName == "rpm" && slices.ContainsFunc(argv[i+1:], rpmEnablesRepo))) {
+			return nil, true, nil
+		}
+		pm, ok := pkgManagers[cmdName]
 		if !ok || pm.libc != libc {
 			continue
 		}
@@ -254,10 +289,17 @@ func parsePackageManagerCommands(script string, libc platform.LibcImpl) ([]strin
 		for i++; i < len(argv); i++ {
 			arg := argv[i]
 			if strings.HasPrefix(arg, "-") {
-				if slices.Contains(pm.valueFlags, arg) {
+				flag, _, hasEq := strings.Cut(arg, "=")
+				if slices.Contains(pm.repoFlags, flag) || (pm.libc == platform.Musl && strings.HasPrefix(flag, "-X")) {
+					return nil, true, nil
+				}
+				if !hasEq && slices.Contains(pm.valueFlags, flag) {
 					i++
 				}
 				continue
+			}
+			if pm.enablesRepo != nil && pm.enablesRepo(arg) {
+				return nil, true, nil
 			}
 			if !seenSubcmd {
 				seenSubcmd = arg == pm.subcmd
@@ -268,7 +310,37 @@ func parsePackageManagerCommands(script string, libc platform.LibcImpl) ([]strin
 			}
 		}
 	}
-	return deps, nil
+	return deps, false, nil
+}
+
+// rpmEnablesRepo reports whether a yum, dnf, or rpm operand adds a repository:
+// the "config-manager" subcommand, release packages such as "epel-release" or
+// "centos-release-scl", and remote ".rpm" URLs that ship repo configuration.
+func rpmEnablesRepo(tok string) bool {
+	if strings.HasPrefix(tok, "-") {
+		return false
+	}
+	return tok == "config-manager" ||
+		strings.HasSuffix(tok, "-release") ||
+		strings.Contains(tok, "-release-") ||
+		((strings.HasPrefix(tok, "http://") || strings.HasPrefix(tok, "https://")) && strings.HasSuffix(tok, ".rpm"))
+}
+
+// apkEnablesRepo reports whether an apk operand pins a tagged repository such
+// as "pango-dev@edge".
+func apkEnablesRepo(tok string) bool {
+	return strings.Contains(tok, "@")
+}
+
+func touchesRepoConfig(tok string, libc platform.LibcImpl) bool {
+	switch libc {
+	case platform.Glibc:
+		return strings.Contains(tok, "/etc/yum.repos.d")
+	case platform.Musl:
+		return strings.Contains(tok, "/etc/apk/repositories")
+	default:
+		return false
+	}
 }
 
 // commandArgv returns the name and arguments of a command node, with "" for
