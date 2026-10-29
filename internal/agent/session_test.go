@@ -34,6 +34,9 @@ type fakeAgent struct {
 	proposes   int
 	recorded   []*schema.AgentIteration // every iteration handed to RecordIteration
 	canonical  *schema.StrategyOneOf    // when set, what Canonicalize returns with changed=true
+	refusal    string                   // if set, Check refuses with it
+	refused    *schema.StrategyOneOf    // if set, the only strategy Check refuses
+	checks     int
 }
 
 func (a *fakeAgent) Propose(context.Context, *ProposeOpts) (*schema.StrategyOneOf, error) {
@@ -50,6 +53,14 @@ func (a *fakeAgent) Canonicalize(_ context.Context, _ *ProposeOpts, working *sch
 		return a.canonical, true, nil
 	}
 	return working, false, nil
+}
+
+func (a *fakeAgent) Check(_ context.Context, _ *ProposeOpts, s *schema.StrategyOneOf) (string, error) {
+	a.checks++
+	if a.refused != nil && s != a.refused {
+		return "", nil
+	}
+	return a.refusal, nil
 }
 
 func (a *fakeAgent) RecordIteration(i *schema.AgentIteration) { a.recorded = append(a.recorded, i) }
@@ -285,45 +296,86 @@ func (e *nthFailExecutor) Start(ctx context.Context, input rebuild.Input, opts b
 func (e *nthFailExecutor) Status() build.ExecutorStatus    { return e.inner.Status() }
 func (e *nthFailExecutor) Close(ctx context.Context) error { return e.inner.Close(ctx) }
 
-func TestDoIterationConfirmsCanonicalizedBuild(t *testing.T) {
-	artifact := testTarball(t)
-	runner := testRunner(&fakeExecutor{artifact: artifact})
-	runner.RegistryClient = &fakeRegistry{artifact: artifact}
+func TestDoIterationCanonicalForm(t *testing.T) {
 	original, canonical := testStrategy(), canonicalStrategy()
-	var confirmed *schema.AgentCreateIterationRequest
-	deps := RunSessionDeps{
-		ScratchRunner: runner,
-		IterationStub: func(_ context.Context, req schema.AgentCreateIterationRequest) (*schema.AgentCreateIterationResponse, error) {
-			confirmed = &req
-			return &schema.AgentCreateIterationResponse{Iteration: &schema.AgentIteration{ID: "c1", Status: schema.AgentIterationStatusSuccess}}, nil
-		},
-	}
-	if _, err := doIteration(context.Background(), "sess", 2, &fakeAgent{strategy: original, canonical: canonical}, deps); err != nil {
-		t.Fatalf("doIteration: %v", err)
-	}
-	if confirmed == nil || confirmed.Strategy != canonical {
-		t.Errorf("confirmed strategy = %v, want the canonical rewrite", confirmed)
+	for _, tc := range []struct {
+		name    string
+		failOn  int  // the Start call that fails, 0 for none
+		refused bool // Check refuses the canonical form
+		want    *schema.StrategyOneOf
+	}{
+		{name: "Adopted", want: canonical},
+		{name: "ReverifyFails", failOn: 2, want: original},
+		{name: "Refused", refused: true, want: original},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			artifact := testTarball(t)
+			runner := testRunner(&nthFailExecutor{inner: &fakeExecutor{artifact: artifact}, failOn: tc.failOn})
+			runner.RegistryClient = &fakeRegistry{artifact: artifact}
+			a := &fakeAgent{strategy: original, canonical: canonical}
+			if tc.refused {
+				a.refusal, a.refused = "proposal refused", canonical
+			}
+			var confirmed *schema.AgentCreateIterationRequest
+			deps := RunSessionDeps{
+				ScratchRunner: runner,
+				IterationStub: func(_ context.Context, req schema.AgentCreateIterationRequest) (*schema.AgentCreateIterationResponse, error) {
+					confirmed = &req
+					return &schema.AgentCreateIterationResponse{Iteration: &schema.AgentIteration{ID: "c1", Status: schema.AgentIterationStatusSuccess}}, nil
+				},
+			}
+			if _, err := doIteration(context.Background(), "sess", 2, a, deps); err != nil {
+				t.Fatalf("doIteration: %v", err)
+			}
+			if confirmed == nil || confirmed.Strategy != tc.want {
+				t.Errorf("confirmed strategy = %v, want %v", confirmed, tc.want)
+			}
+		})
 	}
 }
 
-func TestDoIterationConfirmsOriginalWhenCanonicalFails(t *testing.T) {
+func TestDoIterationRefusedProposalIsLocalOnly(t *testing.T) {
 	artifact := testTarball(t)
-	// The first Start (original) succeeds, the second (canonical re-verify) fails.
-	runner := testRunner(&nthFailExecutor{inner: &fakeExecutor{artifact: artifact}, failOn: 2})
+	runner := testRunner(&fakeExecutor{artifact: artifact})
 	runner.RegistryClient = &fakeRegistry{artifact: artifact}
-	original, canonical := testStrategy(), canonicalStrategy()
-	var confirmed *schema.AgentCreateIterationRequest
 	deps := RunSessionDeps{
 		ScratchRunner: runner,
-		IterationStub: func(_ context.Context, req schema.AgentCreateIterationRequest) (*schema.AgentCreateIterationResponse, error) {
-			confirmed = &req
-			return &schema.AgentCreateIterationResponse{Iteration: &schema.AgentIteration{ID: "c1", Status: schema.AgentIterationStatusSuccess}}, nil
+		IterationStub: func(context.Context, schema.AgentCreateIterationRequest) (*schema.AgentCreateIterationResponse, error) {
+			t.Error("IterationStub called for a refused proposal")
+			return nil, errors.New("unexpected call")
 		},
 	}
-	if _, err := doIteration(context.Background(), "sess", 2, &fakeAgent{strategy: original, canonical: canonical}, deps); err != nil {
+	a := &fakeAgent{strategy: testStrategy(), refusal: "proposal refused: the script supplies artifact content"}
+	iter, err := doIteration(context.Background(), "sess", 2, a, deps)
+	if err != nil {
 		t.Fatalf("doIteration: %v", err)
 	}
-	if confirmed == nil || confirmed.Strategy != original {
-		t.Errorf("confirmed strategy = %v, want the original verified build", confirmed)
+	if a.checks != 1 {
+		t.Errorf("Check called %d times, want 1", a.checks)
+	}
+	if iter.ID != "" || iter.Status != iterationStatusRefused || iter.Result == nil || iter.Result.ErrorMessage != a.refusal {
+		t.Errorf("refused iteration = %+v (result %+v)", iter, iter.Result)
+	}
+}
+
+func TestRunIterationsStopsAfterRepeatedRefusals(t *testing.T) {
+	artifact := testTarball(t)
+	runner := testRunner(&fakeExecutor{artifact: artifact})
+	runner.RegistryClient = &fakeRegistry{artifact: artifact}
+	deps := RunSessionDeps{ScratchRunner: runner}
+	a := &fakeAgent{strategy: testStrategy(), refusal: "proposal refused"}
+	req := RunSessionReq{SessionID: "sess", MaxIterations: 10, InitialIteration: &schema.AgentIteration{Strategy: testStrategy()}}
+	done := runIterations(context.Background(), req, 1, a, deps)
+	if done.StopReason != schema.AgentCompleteReasonFailed || !strings.Contains(done.Summary, "Refused 3 proposals") {
+		t.Errorf("completion = %+v, want FAILED after %d refusals", done, maxRefusals)
+	}
+	// Every refusal is recorded so the model sees it in the history.
+	if len(a.recorded) != maxRefusals {
+		t.Errorf("recorded %d iterations, want %d", len(a.recorded), maxRefusals)
+	}
+	for _, it := range a.recorded {
+		if it.Status != iterationStatusRefused || it.Result == nil || it.Result.ErrorMessage != a.refusal {
+			t.Errorf("recorded iteration is not a refusal: %+v", it)
+		}
 	}
 }

@@ -205,7 +205,7 @@ func AgentCreateIteration(ctx context.Context, req schema.AgentCreateIterationRe
 	} else if !exactMatch && !stabilizedMatch {
 		msg := "rebuild content mismatch"
 		if diffSummary != "" {
-			msg += "\n\n" + verifier.DiffSummaryPreamble + "\n" + diffSummary
+			msg += "\n\n" + verifier.DiffSummaryPreamble + "\n" + diffSummary + "\n" + verifier.MismatchGuidance
 		}
 		iteration.Status = schema.AgentIterationStatusFailed
 		iteration.Result = &schema.AgentBuildResult{

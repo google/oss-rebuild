@@ -16,12 +16,14 @@ import (
 	"strings"
 	"time"
 
+	gcs "cloud.google.com/go/storage"
 	"github.com/go-git/go-billy/v5"
 	"github.com/go-git/go-billy/v5/memfs"
 	"github.com/go-git/go-git/v5"
 	"github.com/go-git/go-git/v5/plumbing"
 	"github.com/go-git/go-git/v5/storage"
 	"github.com/google/oss-rebuild/internal/api/inferenceservice"
+	"github.com/google/oss-rebuild/internal/buildpolicy"
 	"github.com/google/oss-rebuild/internal/gitx"
 	"github.com/google/oss-rebuild/pkg/act/api"
 	"github.com/google/oss-rebuild/pkg/gcb"
@@ -79,8 +81,10 @@ type defaultAgent struct {
 	thoughts         []thoughtData
 	assets           rebuild.AssetStore
 	gitTools         []*llm.FunctionDefinition
-	sideUsage        schema.TokenUsage // accumulates LLM token consumption from calls made outside the main chat
-	inferenceFailure string            // inference failure a toolchain-only first attempt stood in for, shown to the model
+	sideUsage        schema.TokenUsage       // accumulates LLM token consumption from calls made outside the main chat
+	inferenceFailure string                  // inference failure a toolchain-only first attempt stood in for, shown to the model
+	refusals         []buildpolicy.Violation // shown so the model avoids them
+	reviewer         buildpolicy.Reviewer    // buildpolicy.Run, nil without a client
 }
 
 func NewDefaultAgent(t rebuild.Target, deps *AgentDeps) *defaultAgent {
@@ -88,6 +92,11 @@ func NewDefaultAgent(t rebuild.Target, deps *AgentDeps) *defaultAgent {
 	a.gitTools = llm.GitTools(func() (*git.Repository, string) {
 		return a.repo, a.loc.Ref
 	})
+	if deps != nil && deps.GenaiClient != nil {
+		a.reviewer = func(ctx context.Context, in buildpolicy.ReviewInput) (*buildpolicy.Review, *genai.GenerateContentResponseUsageMetadata, error) {
+			return buildpolicy.Run(ctx, deps.GenaiClient, cmp.Or(deps.Model, llm.GeminiPro), in)
+		}
+	}
 	return a
 }
 
@@ -560,6 +569,7 @@ func (a *defaultAgent) genericPrompt() []string {
 	return []string{
 		"You are an open source build expert. You will work towards getting the target package to build successfully and match the upstream.",
 		fmt.Sprintf("You are attempting to rebuild %#v", a.t),
+		"Every byte of the artifact must be produced by the package's own build tooling from the source at the ref, or be absent. Never author, copy, or transcribe artifact content into the source tree or the output, and never edit or repack the archive after the packaging tool produces it. A build that matches only because you wrote the differing bytes is a failure, not a success: an honest mismatch is the better outcome.",
 	}
 }
 
@@ -590,6 +600,19 @@ func (a *defaultAgent) outputOnlyScript(outputPath string) []string {
 		"DO NOT include markdown backtics, or ANY formatting besides the raw content of the bash script.",
 		"You SHOULD NOT change the repo in the location. Even if you do, that will be overwritten when we attempt to execute the build again.",
 		"You SHOULD NOT change the ref in the location.",
+		"Write gitHead and similar commit fields from git rev-parse HEAD, never as a typed sha: at the right ref they are the same value, and at the wrong ref the typed one hides that the ref is wrong.",
+		"Forbidden in the script, and a reviewer rejects the build:",
+		"- writing literal content (heredoc, printf, echo, tee, node -e, python -c, a typed hash, date, or version) into any file that ships in the artifact, lockfiles and package metadata included",
+		"- downloading or extracting anything from the published artifact or from any commit, branch, or repository other than the ref",
+		"- unpacking, editing, or re-creating the output archive with tar, zip, wheel, zipfile, or similar instead of letting the build tool produce it",
+		"- editing the content of shipped source, metadata, or documentation files",
+		"- deleting shipped files so the file set matches",
+		"Allowed, with a comment saying why:",
+		"- reproducing the publisher's environment (tool versions, environment variables, a build tool's configuration file wherever it lives, under node_modules or another dependency or tool directory included, removing .git so version tooling behaves as it did for the publisher, a value the publisher's tooling derives from the source such as gitHead from git rev-parse HEAD, a checkout with the line endings the publisher had)",
+		"- deleting files your build produces that upstream does not ship",
+		"- editing build inputs that never ship",
+		"- edits that leave the shipped bytes identical",
+		"If upstream contains content that cannot come from the source at the ref, such as a stray coverage or cache directory, editor swap files, or an untracked build product, say so in a comment and leave the mismatch. Do not recreate it.",
 		"To debug the build, you might want to use the read_logs_end tool to view the build errors to understand what's going wrong.",
 		"You might also want to inspect the contents of the source repo using the read_repo_file or list_repo_files tools.",
 		fmt.Sprintf("Make sure artifact eventually ends up in %s, which is the path from which it will be exported.", outputPath),
@@ -716,6 +739,16 @@ func (a *defaultAgent) historyContext(prev *executionDetails) []string {
 			a.inferenceFailure,
 			"```",
 		)
+	}
+	if len(a.refusals) > 0 {
+		prompt = append(prompt,
+			"",
+			"## Refused proposals",
+			"These commands were refused because they supply artifact content instead of building it. Do not propose them again in any form.",
+		)
+		for _, v := range a.refusals {
+			prompt = append(prompt, fmt.Sprintf("- %s %s: %s (%s)", v.Rule, buildpolicy.Title(v.Rule), v.Line, v.Why))
+		}
 	}
 	if len(a.thoughts) > 0 {
 		prompt = append(prompt,
@@ -984,22 +1017,112 @@ func stripFences(s string) string {
 // uploadProposalRecord records an iteration's proposed strategy in its
 // transcript directory. Best effort: a failed upload doesn't fail the proposal.
 func (a *defaultAgent) uploadProposalRecord(ctx context.Context, opts *ProposeOpts, obj string, s *schema.StrategyOneOf) {
+	a.uploadRecord(ctx, opts, obj, s)
+}
+
+// uploadRecord writes v to the iteration's transcript directory, best effort.
+func (a *defaultAgent) uploadRecord(ctx context.Context, opts *ProposeOpts, obj string, v any) {
 	if opts == nil || opts.ChatUploadURL == nil || opts.ChatUploadURL.Scheme != "gs" || a.deps.GCSClient == nil {
 		return
 	}
-	w := a.deps.GCSClient.Bucket(opts.ChatUploadURL.Host).Object(path.Join(opts.ChatUploadURL.Path, obj)).NewWriter(ctx)
+	uploadJSONRecord(ctx, a.deps.GCSClient, opts.ChatUploadURL.Host, path.Join(opts.ChatUploadURL.Path, obj), v)
+}
+
+// uploadJSONRecord writes v as JSON to obj, logging failures.
+func uploadJSONRecord(ctx context.Context, client *gcs.Client, bucket, obj string, v any) {
+	w := client.Bucket(bucket).Object(obj).NewWriter(ctx)
 	enc := json.NewEncoder(w)
 	enc.SetIndent("", "  ")
-	if err := enc.Encode(s); err != nil {
-		log.Printf("session transcript: writing %s: %v", obj, err)
+	if err := enc.Encode(v); err != nil {
+		log.Printf("session transcript: writing %s: %v", path.Base(obj), err)
 	}
 	if err := w.Close(); err != nil {
-		log.Printf("session transcript: closing %s: %v", obj, err)
+		log.Printf("session transcript: closing %s: %v", path.Base(obj), err)
 	}
 }
 
 func (a *defaultAgent) RecordIteration(i *schema.AgentIteration) {
 	a.iterHistory = append(a.iterHistory, i)
+}
+
+// Check reviews a proposal whose scratch build matched upstream, before it
+// is rebuilt on GCB. A refusal's violations stay in every later prompt.
+func (a *defaultAgent) Check(ctx context.Context, opts *ProposeOpts, proposal *schema.StrategyOneOf) (string, error) {
+	st, err := proposal.Strategy()
+	if err != nil {
+		return "", errors.Wrap(err, "reading proposal")
+	}
+	ms, ok := st.(*rebuild.ManualStrategy)
+	if !ok {
+		return "", nil // typed strategies have no shell
+	}
+	in := a.reviewInput(ms.Ref)
+	in.Deps, in.Build = ms.Deps, ms.Build
+	return a.judge(ctx, in, func(v any) { a.uploadRecord(ctx, opts, time.Now().UTC().Format(time.RFC3339Nano)+"-review.json", v) })
+}
+
+// reviewInput holds the target and the attempt a proposal revises.
+func (a *defaultAgent) reviewInput(ref string) buildpolicy.ReviewInput {
+	in := buildpolicy.ReviewInput{
+		Target:    buildpolicy.Target{Package: a.t.Package, Version: a.t.Version, Ref: ref},
+		Ecosystem: string(a.t.Ecosystem),
+		Artifact:  a.t.Artifact,
+	}
+	if n := len(a.iterHistory); n > 0 {
+		in.PreviousBuild, in.PreviousError = a.previousAttempt(a.iterHistory[n-1])
+	}
+	return in
+}
+
+// judge returns the reviewer's refusal, if any, and passes the verdict to
+// record. Without a reviewer it allows.
+func (a *defaultAgent) judge(ctx context.Context, in buildpolicy.ReviewInput, record func(any)) (string, error) {
+	if a.reviewer == nil {
+		return "", nil
+	}
+	var verdict *buildpolicy.Review
+	err := a.deps.Retrier.Do(ctx, func() error {
+		r, usage, err := a.reviewer(ctx, in)
+		a.addSideUsage(usage)
+		if err != nil {
+			return err
+		}
+		verdict = r
+		return nil
+	})
+	if err != nil {
+		return "", errors.Wrap(err, "reviewing proposal")
+	}
+	record(verdict)
+	if verdict.Rejected() {
+		a.refusals = append(a.refusals, verdict.Violations...)
+		return verdict.Message(), nil
+	}
+	return "", nil
+}
+
+// reviewErrorBytes caps the previous error shown to the reviewer. The head of
+// a long diff summary carries the file list.
+const reviewErrorBytes = 8000
+
+// previousAttempt returns prev's build script and error for the reviewer.
+func (a *defaultAgent) previousAttempt(prev *schema.AgentIteration) (build, errMsg string) {
+	if prev.Strategy != nil {
+		if st, err := prev.Strategy.Strategy(); err == nil {
+			if inst, err := st.GenerateFor(a.t, a.buildEnv()); err == nil {
+				build = inst.Build
+			} else if ms, ok := st.(*rebuild.ManualStrategy); ok {
+				build = ms.Build
+			}
+		}
+	}
+	if prev.Result != nil {
+		errMsg = prev.Result.ErrorMessage
+		if len(errMsg) > reviewErrorBytes {
+			errMsg = errMsg[:reviewErrorBytes] + "\n[cut]"
+		}
+	}
+	return build, errMsg
 }
 
 // addSideUsage attributes the token usage of an LLM call made outside the main
