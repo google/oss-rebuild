@@ -332,17 +332,17 @@ func (a *defaultAgent) runShell(ctx context.Context, name string, args map[strin
 	if terr != "" {
 		return refuse(terr)
 	}
-	run := func(script string, timeout int) (CommandResult, error) {
+	run := func(script string, timeout int, label schema.ScratchLabel) (CommandResult, error) {
 		if wrap != nil {
 			script = wrap(script)
 		}
-		return a.deps.Shell.RunCommand(ctx, script, timeout)
+		return a.deps.Shell.RunCommand(ctx, script, timeout, label)
 	}
 	out := fmt.Sprintf("/tmp/.rb-tool-%016x", rand.Uint64())
-	res, err := run(detachOutput(command, out), timeout)
+	res, err := run(detachOutput(command, out), timeout, schema.ToolLabel(name))
 	if errors.As(err, new(commandTimeout)) {
 		// A timeout can kill the shell before its replay.
-		back, rerr := run(readbackScript(out), readbackTimeout)
+		back, rerr := run(readbackScript(out), readbackTimeout, schema.ScratchLabelReadback)
 		if rerr != nil {
 			log.Printf("%s: reading back a timed-out call's output: %v", name, rerr)
 		}

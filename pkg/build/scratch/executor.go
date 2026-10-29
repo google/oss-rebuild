@@ -276,7 +276,7 @@ func (e *executor) prepareBuild(ctx context.Context, dir, recordName string, rec
 	}
 	script = append(script, "docker ps -aq --filter name=^rb- | xargs -r docker rm -f")
 	script = append(script, sweeps...)
-	_, err := e.utilityOp(ctx, []string{"/bin/sh", "-c", strings.Join(script, "\n")}, nil, record, "preparing build")
+	_, err := e.utilityOp(ctx, []string{"/bin/sh", "-c", strings.Join(script, "\n")}, nil, record, schema.ScratchLabelPrepare, "preparing build")
 	return err
 }
 
@@ -300,15 +300,15 @@ func (e *executor) phaseExec(ctx context.Context, handle *scratchHandle, req sch
 }
 
 // utilityExec runs one short exec op, folding all failure channels into a
-// single error wrapped with what.
-func (e *executor) utilityExec(ctx context.Context, cmd []string, env map[string]string, what string) error {
-	_, err := e.utilityOp(ctx, cmd, env, nil, what)
+// single error wrapped with what. label lands on the ledger row.
+func (e *executor) utilityExec(ctx context.Context, cmd []string, env map[string]string, label schema.ScratchLabel, what string) error {
+	_, err := e.utilityOp(ctx, cmd, env, nil, label, what)
 	return err
 }
 
 // utilityOp dispatches one short exec op to a terminal state, folding all
 // failure channels into a single error wrapped with what.
-func (e *executor) utilityOp(ctx context.Context, cmd []string, env map[string]string, stdin []byte, what string) (*longrunning.Operation[schema.ScratchExecResult], error) {
+func (e *executor) utilityOp(ctx context.Context, cmd []string, env map[string]string, stdin []byte, label schema.ScratchLabel, what string) (*longrunning.Operation[schema.ScratchExecResult], error) {
 	var stdinB64 string
 	if stdin != nil {
 		stdinB64 = base64.StdEncoding.EncodeToString(stdin)
@@ -319,6 +319,7 @@ func (e *executor) utilityOp(ctx context.Context, cmd []string, env map[string]s
 		Env:            env,
 		StdinB64:       stdinB64,
 		TimeoutSeconds: int(utilityTimeout.Seconds()),
+		Label:          label,
 	}, e.pollInterval)
 	if err != nil {
 		return nil, errors.Wrap(err, what)
@@ -333,8 +334,8 @@ func (e *executor) utilityOp(ctx context.Context, cmd []string, env map[string]s
 }
 
 // utilityExecOutput runs one short exec op and returns its merged output.
-func (e *executor) utilityExecOutput(ctx context.Context, cmd []string, what string) ([]byte, error) {
-	op, err := e.utilityOp(ctx, cmd, nil, nil, what)
+func (e *executor) utilityExecOutput(ctx context.Context, cmd []string, label schema.ScratchLabel, what string) ([]byte, error) {
+	op, err := e.utilityOp(ctx, cmd, nil, nil, label, what)
 	if err != nil {
 		return nil, err
 	}
@@ -440,6 +441,7 @@ func (e *executor) fetchAndUploadArtifact(ctx context.Context, dir, outputPath s
 		ScratchID:      e.scratchID,
 		Cmd:            []string{"/bin/sh", "-c", script},
 		TimeoutSeconds: int(utilityTimeout.Seconds()),
+		Label:          schema.ScratchLabelArtifact,
 	}, e.pollInterval)
 	if err != nil {
 		return errors.Wrap(err, "fetching artifact")

@@ -141,6 +141,7 @@ func ScratchExecCreate(ctx context.Context, req schema.ScratchExecRequest, deps 
 		Cmd:            req.Cmd,
 		Cwd:            req.Cwd,
 		TimeoutSeconds: timeoutSeconds,
+		Label:          req.Label,
 		State:          schema.ScratchExecPending,
 		OutURI:         outURIFor(deps.OutputBucket, scratch.ObliviousID, opID),
 		CreatedAt:      time.Now().UTC(),
