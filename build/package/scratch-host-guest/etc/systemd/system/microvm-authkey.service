@@ -1,5 +1,5 @@
 [Unit]
-Description=Install the broker's ssh key from the kernel cmdline
+Description=Install the ssh keys from the kernel cmdline
 DefaultDependencies=no
 Before=ssh.service
 After=systemd-tmpfiles-setup.service

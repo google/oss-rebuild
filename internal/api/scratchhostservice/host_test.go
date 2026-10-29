@@ -102,7 +102,7 @@ func testDeps(t *testing.T) (*GuestDeps, *execx.MockCommandExecutor) {
 
 // keyParam matches the ssh keys on a kernel command line, which differ per
 // run.
-var keyParam = regexp.MustCompile(`(mvm_ssh_[a-z_]+_key)=\S+`)
+var keyParam = regexp.MustCompile(`(mvm_ssh_[a-z_]+_key)=\S*`)
 
 // commands renders the recorded commands as lines, for exact comparison, with
 // the ssh keys masked.
@@ -126,7 +126,7 @@ func bootCommands(deps *GuestDeps) []string {
 		"ip link set mvmtap0 mtu 1460",
 		"ip link set mvmtap0 master mvmbr0",
 		"ip link set mvmtap0 up",
-		strings.Join(qemuArgv(cfg.QEMUBin, cfg.Guest, l, cfg.Net, "*"), " "),
+		keyParam.ReplaceAllString(strings.Join(qemuArgv(cfg.QEMUBin, cfg.Guest, l, cfg.Net, GuestCredential{}), " "), "$1=*"),
 	}
 }
 

@@ -299,8 +299,12 @@ func boot(ctx, guestCtx context.Context, deps *GuestDeps) (execx.Handle, error) 
 	if err := ensureTap(ctx, deps.Exec, guestTap, cfg.Bridge, cfg.Guest.MTU); err != nil {
 		return nil, errors.Wrap(err, "guest tap")
 	}
+	credential, err := deps.ChannelCache.GuestCredential(cfg.Net.IP.String())
+	if err != nil {
+		return nil, errors.Wrap(err, "guest credential")
+	}
 	// QEMU's stderr is the only record of a boot that never reached the console log.
-	argv := qemuArgv(cfg.QEMUBin, cfg.Guest, l, cfg.Net, deps.ChannelCache.GuestCredential())
+	argv := qemuArgv(cfg.QEMUBin, cfg.Guest, l, cfg.Net, credential)
 	proc, err := deps.Exec.Start(guestCtx, execx.CommandOptions{Output: os.Stderr, StopGrace: stopGrace}, argv[0], argv[1:]...)
 	if err != nil {
 		return nil, errors.Wrap(err, "starting guest")
