@@ -47,6 +47,7 @@ func TestSessionHandler(t *testing.T) {
 	if err := execs.Insert(ctx, schema.ScratchExec{
 		ID:         "op-1",
 		ScratchID:  "scr-1",
+		Label:      schema.ToolLabel("run_on_host"),
 		Cmd:        []string{"sh", "-c", "docker build ."},
 		State:      schema.ScratchExecCompleted,
 		OutURI:     "gs://out-bucket/obliv/op-1/out",
@@ -58,14 +59,17 @@ func TestSessionHandler(t *testing.T) {
 	}
 	// The chat-less first build. Its iter-1 label materializes iteration 1.
 	for i, e := range []schema.ScratchExec{{
+		Label:    schema.ScratchLabelPrepare,
 		Cmd:      []string{"/bin/sh", "-c", "set -eu\nmkdir -p \"/home/builder/builds/iter-1/out\"\ncat > \"/home/builder/builds/iter-1/build.sh\"\ndocker ps -aq --filter name=^rb- | xargs -r docker rm -f"},
 		State:    schema.ScratchExecCompleted,
 		ExitCode: 0,
 	}, {
+		Label:    schema.ScratchLabelStart,
 		Cmd:      []string{"docker", "run", "--detach", "--name", "rb-iter-1", "img", "sleep", "infinity"},
 		State:    schema.ScratchExecCompleted,
 		ExitCode: 0,
 	}, {
+		Label:    schema.PhaseLabel(rebuild.PhaseBuild),
 		Cmd:      []string{"docker", "exec", "rb-iter-1", "/bin/sh", "-c", "set -eux\nnpm install"},
 		State:    schema.ScratchExecCompleted,
 		ExitCode: 7,
@@ -120,9 +124,9 @@ func TestSessionHandler(t *testing.T) {
 		"docker build .",
 		"/session/sess-1/exec/op-1/out",
 		"1K in (40% cached) / 250 out",
-		"exec · completed · exit 0", // trajectory event in iteration 3
+		"exec · tool/run_on_host · completed · exit 0", // trajectory event in iteration 3
 		// One attempt under iteration 1, named by its failing phase.
-		"build iter-1 · phase exit 7",
+		"build iter-1 · phase/build exit 7",
 		"npm install",
 	} {
 		if !strings.Contains(out, want) {
@@ -345,76 +349,79 @@ func detached(cmd string) string {
 	return "( " + cmd + "\n) >" + out + " 2>&1; rc=$?; { rm -f " + out + "; cat; } <" + out + "; exit $rc"
 }
 
-// TestClassifyExec pins the argv shape of each emitter execClass tracks.
+// TestClassifyExec routes each label: a build's steps by their build, the
+// tools and the session's own execs by kind, and an unknown or missing label
+// as such.
 func TestClassifyExec(t *testing.T) {
 	const dir = "/home/builder/builds/iter-2"
-	prepare := "set -eu\nmkdir -p \"" + dir + "/out\"\ncat > \"" + dir + "/build.sh\"\ndocker ps -aq --filter name=^rb- | xargs -r docker rm -f\nrm -rf \"/home/builder/builds\"/*/src && mkdir -p \"" + dir + "/src\""
-	artifact := "set -eu\n[ -f \"" + dir + "/out/lodash-4.17.21.tgz\" ] || exit 44\n[ \"$(wc -c < \"" + dir + "/out/lodash-4.17.21.tgz\")\" -le 536870912 ] || exit 45\nbase64 \"" + dir + "/out/lodash-4.17.21.tgz\""
+	sh := func(script string) []string { return []string{"/bin/sh", "-c", script} }
+	artifact := "set -eu\n[ -f \"" + dir + "/out/x.tgz\" ] || exit 44"
 	// The stabilize URL's builds/ precedes the build's own paths.
-	diff := strings.Join([]string{
+	compare := strings.Join([]string{
 		"set -eu",
-		`die() { echo "$*"; exit 3; }`,
-		`fetch() { [ -e "$1" ] || { wget -q -O "$1.part" "$2" && mv "$1.part" "$1"; } || die "fetching $2 failed"; }`,
-		"mkdir -p /home/builder/tools /home/builder/upstream",
 		"fetch /home/builder/tools/stabilize https://storage.googleapis.com/prebuild/builds/v1/stabilize",
-		"fetch /home/builder/upstream/lodash-4.17.21.tgz https://registry.npmjs.org/lodash/-/lodash-4.17.21.tgz",
-		"stab /home/builder/builds/iter-2-canon/out/lodash-4.17.21.tgz /home/builder/builds/iter-2-canon/out/lodash-4.17.21.tgz.stabilized",
-		"exec /home/builder/tools/diffr --summary --label rebuild --label upstream /home/builder/builds/iter-2-canon/out/lodash-4.17.21.tgz.stabilized /home/builder/upstream/lodash-4.17.21.tgz.stabilized",
-		"",
+		"stab /home/builder/builds/iter-2-canon/out/x.tgz /home/builder/builds/iter-2-canon/out/x.tgz.stabilized",
+		"exec /home/builder/tools/diffr --summary --label rebuild --label upstream /home/builder/builds/iter-2-canon/out/x.tgz.stabilized /home/builder/upstream/x.tgz.stabilized",
 	}, "\n")
-	container := `c=$(docker ps -aq --filter name=^rb- | head -1); [ -n "$c" ] || { echo 'no build container found; run a build first' >&2; exit 125; }; docker start "$c" >/dev/null; exec docker exec "$c" /bin/sh -c '` + detached("npm ls") + `'`
+	restore := `c=$(docker ps -aq --filter name=^rb- | head -1); exec docker exec "$c" /bin/sh -c 'cd /src && git checkout --force v1 && git clean -fd'`
+	check := "set -eu\ndie() { exit 3; }\nexec diffr a b"
 	for _, tc := range []struct {
 		name string
-		cmd  []string
+		exec schema.ScratchExec
 		want classifiedExec
+		ok   bool
 	}{{
 		name: "keepalive",
-		cmd:  []string{"/bin/true"},
-		want: classifiedExec{class: execKeepAlive},
-	}, {
-		name: "prepare",
-		cmd:  []string{"/bin/sh", "-c", prepare},
-		want: classifiedExec{class: execBuildMachinery, label: "prepare", buildID: "iter-2", script: prepare},
-	}, {
-		name: "start",
-		cmd:  []string{"docker", "run", "--detach", "--rm", "--name", "rb-iter-2", "-v", dir + "/out:/out", "--ulimit", "core=0", "node:18", "sleep", "infinity"},
-		want: classifiedExec{class: execBuildMachinery, label: "start", buildID: "iter-2", script: "docker run --detach --rm --name rb-iter-2 -v " + dir + "/out:/out --ulimit core=0 node:18 sleep infinity"},
+		exec: schema.ScratchExec{Cmd: []string{"/bin/true"}, Label: schema.ScratchLabelKeepAlive},
+		want: classifiedExec{class: execKeepAlive, label: "keepalive", script: "/bin/true"},
+		ok:   true,
 	}, {
 		name: "phase",
-		cmd:  []string{"docker", "exec", "rb-iter-2", "/bin/sh", "-c", "set -eux\nnpm ci"},
-		want: classifiedExec{class: execBuildMachinery, label: "phase", buildID: "iter-2", script: "set -eux\nnpm ci"},
+		exec: schema.ScratchExec{Cmd: []string{"docker", "exec", "rb-iter-2", "/bin/sh", "-c", "set -eux\nnpm ci"}, Label: schema.PhaseLabel(rebuild.PhaseDeps)},
+		want: classifiedExec{class: execBuildMachinery, label: "phase/deps", buildID: "iter-2", script: "set -eux\nnpm ci"},
+		ok:   true,
 	}, {
-		name: "stop",
-		cmd:  []string{"docker", "stop", "-t", "0", "rb-iter-2"},
-		want: classifiedExec{class: execBuildMachinery, label: "stop", buildID: "iter-2", script: "docker stop -t 0 rb-iter-2"},
-	}, {
-		name: "artifact",
-		cmd:  []string{"/bin/sh", "-c", artifact},
+		name: "build step by its script's build directory",
+		exec: schema.ScratchExec{Cmd: sh(artifact), Label: schema.ScratchLabelArtifact},
 		want: classifiedExec{class: execBuildMachinery, label: "artifact", buildID: "iter-2", script: artifact},
+		ok:   true,
 	}, {
-		name: "diff",
-		cmd:  []string{"/bin/sh", "-c", diff},
-		want: classifiedExec{class: execBuildMachinery, label: "diff", buildID: "iter-2-canon", script: diff},
+		name: "comparison by the last build directory in its script",
+		exec: schema.ScratchExec{Cmd: sh(compare), Label: schema.ScratchLabelCompare},
+		want: classifiedExec{class: execBuildMachinery, label: "compare", buildID: "iter-2-canon", script: compare},
+		ok:   true,
 	}, {
-		name: "run_in_container",
-		cmd:  []string{"/bin/sh", "-c", container},
-		want: classifiedExec{class: execToolContainer, script: container},
+		name: "session exec outside any build",
+		exec: schema.ScratchExec{Cmd: sh(restore), Label: schema.ScratchLabelRestore},
+		want: classifiedExec{class: execOther, label: "restore", script: restore},
+		ok:   true,
 	}, {
-		name: "run_on_host",
-		cmd:  []string{"/bin/sh", "-c", detached("cat " + dir + "/build.sh")},
-		want: classifiedExec{class: execToolHost, script: "cat " + dir + "/build.sh"},
+		name: "host tool, unwrapped from its output envelope",
+		exec: schema.ScratchExec{Cmd: sh(detached("cat " + dir + "/build.sh")), Label: schema.ToolLabel("run_on_host")},
+		want: classifiedExec{class: execToolHost, label: "tool/run_on_host", script: "cat " + dir + "/build.sh"},
+		ok:   true,
 	}, {
-		name: "bare sh -c",
-		cmd:  []string{"sh", "-c", "docker images"},
-		want: classifiedExec{class: execToolHost, script: "docker images"},
+		name: "check_artifact",
+		exec: schema.ScratchExec{Cmd: sh(check), Label: schema.ToolLabel("check_artifact")},
+		want: classifiedExec{class: execToolCheck, label: "tool/check_artifact", script: check},
+		ok:   true,
 	}, {
-		name: "plain argv",
-		cmd:  []string{"ls", "-la"},
-		want: classifiedExec{class: execOther, script: "ls -la"},
+		name: "unknown tool",
+		exec: schema.ScratchExec{Cmd: []string{"ls"}, Label: schema.ToolLabel("run_elsewhere")},
+		want: classifiedExec{class: execOther, label: "tool/run_elsewhere", script: "ls"},
+	}, {
+		name: "unknown label",
+		exec: schema.ScratchExec{Cmd: sh("wget x.tar"), Label: "warmup"},
+		want: classifiedExec{class: execOther, label: "warmup", script: "wget x.tar"},
+	}, {
+		name: "no label",
+		exec: schema.ScratchExec{Cmd: []string{"/bin/true"}},
+		want: classifiedExec{class: execOther, script: "/bin/true"},
 	}} {
 		t.Run(tc.name, func(t *testing.T) {
-			if got := classifyExec(tc.cmd); got != tc.want {
-				t.Errorf("classifyExec(%q)\n got %+v\nwant %+v", tc.cmd, got, tc.want)
+			got, ok := classifyExec(tc.exec)
+			if got != tc.want || ok != tc.ok {
+				t.Errorf("classifyExec(%+v)\n got %+v, %v\nwant %+v, %v", tc.exec, got, ok, tc.want, tc.ok)
 			}
 		})
 	}
@@ -440,20 +447,26 @@ func TestComposeTrajectory(t *testing.T) {
 	data := &SessionData{}
 	for _, e := range []schema.ScratchExec{
 		// iter-1 ran clean but its artifact differed from upstream.
-		{ID: "1-prepare", Cmd: sh("set -eu\nmkdir -p \"/home/builder/builds/iter-1/out\""), CreatedAt: at(0)},
-		{ID: "1-start", Cmd: []string{"docker", "run", "--name", "rb-iter-1", "img", "sleep", "infinity"}, CreatedAt: at(time.Second)},
-		{ID: "1-phase", Cmd: []string{"docker", "exec", "rb-iter-1", "/bin/sh", "-c", "set -eux\nnpm ci"}, CreatedAt: at(2 * time.Second)},
-		{ID: "1-stop", Cmd: []string{"docker", "stop", "-t", "0", "rb-iter-1"}, CreatedAt: at(3 * time.Second)},
-		{ID: "1-artifact", Cmd: sh("set -eu\n[ -f \"/home/builder/builds/iter-1/out/x.tgz\" ] || exit 44"), CreatedAt: at(4 * time.Second)},
-		{ID: "1-diff", Cmd: sh("set -eu\ndie() { exit 3; }\nexec diffr --summary /home/builder/builds/iter-1/out/x.tgz.stabilized up"), ExitCode: 1, CreatedAt: at(5 * time.Second)},
+		{ID: "1-prepare", Label: schema.ScratchLabelPrepare, Cmd: sh("set -eu\nmkdir -p \"/home/builder/builds/iter-1/out\""), CreatedAt: at(0)},
+		{ID: "1-start", Label: schema.ScratchLabelStart, Cmd: []string{"docker", "run", "--name", "rb-iter-1", "img", "sleep", "infinity"}, CreatedAt: at(time.Second)},
+		{ID: "1-phase", Label: schema.PhaseLabel(rebuild.PhaseDeps), Cmd: []string{"docker", "exec", "rb-iter-1", "/bin/sh", "-c", "set -eux\nnpm ci"}, CreatedAt: at(2 * time.Second)},
+		{ID: "1-stop", Label: schema.ScratchLabelStop, Cmd: []string{"docker", "stop", "-t", "0", "rb-iter-1"}, CreatedAt: at(3 * time.Second)},
+		{ID: "1-artifact", Label: schema.ScratchLabelArtifact, Cmd: sh("set -eu\n[ -f \"/home/builder/builds/iter-1/out/x.tgz\" ] || exit 44"), CreatedAt: at(4 * time.Second)},
+		{ID: "1-diff", Label: schema.ScratchLabelCompare, Cmd: sh("set -eu\ndie() { exit 3; }\nexec diffr --summary /home/builder/builds/iter-1/out/x.tgz.stabilized up"), ExitCode: 1, CreatedAt: at(5 * time.Second)},
 		// Predates every window: ledger only.
-		{ID: "keepalive", Cmd: []string{"/bin/true"}, CreatedAt: at(6 * time.Second)},
-		// Only the host exec without a call renders.
-		{ID: "3-host", Cmd: sh(detached("ls builds")), CreatedAt: at(11 * time.Minute)},
-		{ID: "3-container", Cmd: sh("c=$(docker ps -aq --filter name=^rb- | head -1); exec docker exec \"$c\" /bin/sh -c 'ls'"), CreatedAt: at(12 * time.Minute)},
-		{ID: "3-stray", Cmd: sh(detached("cat notes")), CreatedAt: at(13 * time.Minute)},
-		{ID: "3c-prepare", Cmd: sh("set -eu\nmkdir -p \"/home/builder/builds/iter-3-canon/out\""), CreatedAt: at(20 * time.Minute)},
-		{ID: "3c-artifact", Cmd: sh("set -eu\n[ -f \"/home/builder/builds/iter-3-canon/out/x.tgz\" ] || exit 44"), CreatedAt: at(21 * time.Minute)},
+		{ID: "keepalive", Label: schema.ScratchLabelKeepAlive, Cmd: []string{"/bin/true"}, CreatedAt: at(6 * time.Second)},
+		// The transcript shows the tool execs as calls, so none renders.
+		{ID: "3-host", Label: schema.ToolLabel("run_on_host"), Cmd: sh(detached("ls builds")), CreatedAt: at(11 * time.Minute)},
+		{ID: "3-container", Label: schema.ToolLabel("run_in_container"), Cmd: sh("c=$(docker ps -aq --filter name=^rb- | head -1); exec docker exec \"$c\" /bin/sh -c 'ls'"), CreatedAt: at(12 * time.Minute)},
+		{ID: "3-stray", Label: schema.ToolLabel("run_on_host"), Cmd: sh(detached("cat notes")), CreatedAt: at(13 * time.Minute)},
+		// A dispatch outside any build renders as an exec, as does one with
+		// a label the page does not know.
+		{ID: "3-restore", Label: schema.ScratchLabelRestore, Cmd: sh("exec docker exec c /bin/sh -c 'git checkout --force v1'"), CreatedAt: at(14 * time.Minute)},
+		{ID: "3-warmup", Label: "warmup", Cmd: sh("wget -O - https://example/x.tar | tar -x"), CreatedAt: at(15 * time.Minute)},
+		{ID: "3c-prepare", Label: schema.ScratchLabelPrepare, Cmd: sh("set -eu\nmkdir -p \"/home/builder/builds/iter-3-canon/out\""), CreatedAt: at(20 * time.Minute)},
+		{ID: "3c-artifact", Label: schema.ScratchLabelArtifact, Cmd: sh("set -eu\n[ -f \"/home/builder/builds/iter-3-canon/out/x.tgz\" ] || exit 44"), CreatedAt: at(21 * time.Minute)},
+		// Unlabeled: reported, and shown as is.
+		{ID: "3-unlabeled", Cmd: []string{"/bin/true"}, CreatedAt: at(16 * time.Minute)},
 	} {
 		e.State = schema.ScratchExecCompleted
 		data.Execs = append(data.Execs, newExecView("sess-1", e))
@@ -463,7 +476,7 @@ func TestComposeTrajectory(t *testing.T) {
 	for _, v := range data.Execs {
 		iters = append(iters, v.Iter)
 	}
-	if want := []int{1, 1, 1, 1, 1, 1, 0, 3, 3, 3, 3, 3}; !slices.Equal(iters, want) {
+	if want := []int{1, 1, 1, 1, 1, 1, 0, 3, 3, 3, 3, 3, 3, 3, 3}; !slices.Equal(iters, want) {
 		t.Errorf("exec iterations = %v; want %v", iters, want)
 	}
 	titles := map[int][]string{}
@@ -475,37 +488,40 @@ func TestComposeTrajectory(t *testing.T) {
 	}
 	want := map[int][]string{
 		1: {"inference proposal", "build iter-1 · mismatch"},
-		3: {"prompt", "run_on_host", "exec · completed · exit 0 · N/A", "build iter-3-canon · succeeded"},
+		3: {"prompt", "run_on_host", "exec · restore · completed · exit 0 · N/A", "exec · warmup · completed · exit 0 · N/A", "exec · completed · exit 0 · N/A", "build iter-3-canon · succeeded"},
 	}
 	if diff := cmp.Diff(want, titles); diff != "" {
 		t.Errorf("event titles (-want +got):\n%s", diff)
+	}
+	if diff := cmp.Diff([]string{"1 exec without a label", `unknown exec label "warmup"`}, data.Warnings); diff != "" {
+		t.Errorf("warnings (-want +got):\n%s", diff)
 	}
 	var labels []string
 	for _, s := range groups[1].Events[1].Build.Steps {
 		labels = append(labels, s.Label)
 	}
-	if want := []string{"prepare", "start", "phase", "stop", "artifact", "diff"}; !slices.Equal(labels, want) {
+	if want := []string{"prepare", "start", "phase/deps", "stop", "artifact", "compare"}; !slices.Equal(labels, want) {
 		t.Errorf("iter-1 steps = %v; want %v", labels, want)
 	}
 }
 
 func TestBuildOutcome(t *testing.T) {
 	ok := func(label string) BuildStep { return BuildStep{Label: label, State: schema.ScratchExecCompleted} }
-	clean := []BuildStep{ok("prepare"), ok("start"), ok("phase"), ok("stop")}
+	clean := []BuildStep{ok("prepare"), ok("start"), ok("phase/build"), ok("stop")}
 	for _, tc := range []struct {
 		name  string
 		steps []BuildStep
 		want  string
 	}{
-		{"failing phase", []BuildStep{ok("prepare"), ok("start"), {Label: "phase", State: schema.ScratchExecCompleted, ExitCode: 7}}, "phase exit 7"},
+		{"failing phase", []BuildStep{ok("prepare"), ok("start"), {Label: "phase/build", State: schema.ScratchExecCompleted, ExitCode: 7}}, "phase/build exit 7"},
 		{"pending", []BuildStep{ok("prepare"), {Label: "start", State: schema.ScratchExecPending}}, "running"},
-		{"timed out", []BuildStep{ok("prepare"), ok("start"), {Label: "phase", State: schema.ScratchExecTimedOut}}, "phase timed_out"},
+		{"timed out", []BuildStep{ok("prepare"), ok("start"), {Label: "phase/build", State: schema.ScratchExecTimedOut}}, "phase/build timed_out"},
 		{"no artifact step", clean, "completed"},
 		{"artifact", append(slices.Clone(clean), ok("artifact")), "succeeded"},
 		{"missing artifact", append(slices.Clone(clean), BuildStep{Label: "artifact", State: schema.ScratchExecCompleted, ExitCode: 44}), "artifact exit 44"},
-		{"diff found differences", append(slices.Clone(clean), ok("artifact"), BuildStep{Label: "diff", State: schema.ScratchExecCompleted, ExitCode: 1}), "mismatch"},
-		{"diff found none", append(slices.Clone(clean), ok("artifact"), ok("diff")), "mismatch"},
-		{"diff setup failed", append(slices.Clone(clean), ok("artifact"), BuildStep{Label: "diff", State: schema.ScratchExecCompleted, ExitCode: 3}), "diff exit 3"},
+		{"comparison found differences", append(slices.Clone(clean), ok("artifact"), BuildStep{Label: "compare", State: schema.ScratchExecCompleted, ExitCode: 1}), "mismatch"},
+		{"comparison found none", append(slices.Clone(clean), ok("artifact"), ok("compare")), "mismatch"},
+		{"comparison setup failed", append(slices.Clone(clean), ok("artifact"), BuildStep{Label: "compare", State: schema.ScratchExecCompleted, ExitCode: 3}), "compare exit 3"},
 	} {
 		if got := buildOutcome(tc.steps); got != tc.want {
 			t.Errorf("%s: buildOutcome = %q; want %q", tc.name, got, tc.want)
