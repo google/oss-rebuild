@@ -82,6 +82,7 @@ type RunSessionDeps struct {
 	GitCache           *gitcache.Client  // When set, iteration inference repo clones go through the git-cache.
 	CratesRegistryStub api.StubFn[cratesregistryservice.FindRegistryCommitRequest, cratesregistryservice.FindRegistryCommitResponse]
 	CratesCache        *cratesregistryservice.Cache // Inference's crates.io metadata.
+	FreeForm           bool                         // Free-form mode. Needs ScratchRunner.
 }
 
 // transcriptOpts names iteration iterNum's transcript directory, or nothing
@@ -225,6 +226,13 @@ func doSession(ctx context.Context, req RunSessionReq, deps RunSessionDeps) (com
 	}()
 	a.deps.ChatFn = func(ctx context.Context) (*llm.Chat, error) {
 		return llm.NewChat(ctx, deps.Client, cmp.Or(deps.Model, llm.GeminiPro), config, &llm.ChatOpts{Tools: a.getTools(), MaxToolIterations: a.deps.MaxTurns, Retrier: deps.Retrier})
+	}
+	if deps.FreeForm && deps.ScratchRunner != nil {
+		// One chat per session, bounded by freeFormToolCalls.
+		a.enableFreeForm(deps.ScratchRunner, func(ctx context.Context, system string, tools []*llm.FunctionDefinition) (*llm.Chat, error) {
+			cfg := *config
+			return llm.NewChat(ctx, deps.Client, cmp.Or(deps.Model, llm.GeminiPro), llm.WithSystemPrompt(&cfg, genai.NewPartFromText(system)), &llm.ChatOpts{Tools: tools, MaxToolIterations: freeFormToolCalls, Retrier: deps.Retrier})
+		})
 	}
 	if req.InitialIteration != nil {
 		err := a.InitializeFromIteration(ctx, req.InitialIteration)

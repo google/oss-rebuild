@@ -131,6 +131,38 @@ func TestValidation(t *testing.T) {
 			},
 			wantErr: false,
 		},
+		{
+			name: "freeform on a scratch VM",
+			cfg: Config{
+				Project:        "test-project",
+				AgentAPI:       "http://test",
+				MetadataBucket: "bucket",
+				LogsBucket:     "logs",
+				Ecosystem:      "npm",
+				Package:        "test",
+				Version:        "1.0.0",
+				Artifact:       "test.tgz",
+				ScratchID:      "vm",
+				PrebuildBucket: "prebuild",
+				FreeForm:       true,
+			},
+			wantErr: false,
+		},
+		{
+			name: "freeform without a scratch VM",
+			cfg: Config{
+				Project:        "test-project",
+				AgentAPI:       "http://test",
+				MetadataBucket: "bucket",
+				LogsBucket:     "logs",
+				Ecosystem:      "npm",
+				Package:        "test",
+				Version:        "1.0.0",
+				Artifact:       "test.tgz",
+				FreeForm:       true,
+			},
+			wantErr: true,
+		},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {

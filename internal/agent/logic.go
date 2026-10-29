@@ -88,6 +88,17 @@ type defaultAgent struct {
 	refMoves         []refMove               // set_source_ref calls, in order
 	refMoved         bool                    // deps must be re-inferred
 	reinfer          inferFunc               // inferAt, or a test's fake
+	ff               *freeFormDriver         // nil outside free-form mode
+	newChat          chatMaker
+}
+
+// chatMaker starts a session-model chat with a system prompt and tools.
+type chatMaker func(ctx context.Context, system string, tools []*llm.FunctionDefinition) (*llm.Chat, error)
+
+// enableFreeForm makes proposals come from free-form sessions.
+func (a *defaultAgent) enableFreeForm(runner *ScratchRunner, newChat chatMaker) {
+	a.newChat = newChat
+	a.ff = newFreeFormDriver(a, runner, a.openFreeForm)
 }
 
 func NewDefaultAgent(t rebuild.Target, deps *AgentDeps) *defaultAgent {
@@ -940,6 +951,8 @@ func (a *defaultAgent) Propose(ctx context.Context, opts *ProposeOpts) (*schema.
 			return nil, context.Cause(ictx)
 		}
 		record = "0-inference-proposal.json"
+	} else if a.ff != nil {
+		s, err = a.ff.propose(ctx, opts)
 	} else {
 		s, err = a.proposeAgentInference(ctx, opts)
 	}
@@ -1021,7 +1034,7 @@ func splitCanonical(out string) (deps, build string, ok bool) {
 
 func stripFences(s string) string {
 	s = strings.TrimSpace(s)
-	for _, p := range []string{"```bash", "```shell", "```sh", "```"} {
+	for _, p := range []string{"```bash", "```shell", "```sh", "```json", "```"} {
 		if strings.HasPrefix(s, p) {
 			s = strings.TrimPrefix(s, p)
 			break
