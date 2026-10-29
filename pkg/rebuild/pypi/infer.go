@@ -19,6 +19,7 @@ import (
 
 	"github.com/go-git/go-git/v5"
 	"github.com/go-git/go-git/v5/plumbing"
+	"github.com/go-git/go-git/v5/plumbing/object"
 	"github.com/go-git/go-git/v5/plumbing/transport"
 	"github.com/google/oss-rebuild/internal/gitx"
 	"github.com/google/oss-rebuild/internal/uri"
@@ -538,7 +539,7 @@ func inferBuild(ctx context.Context, t rebuild.Target, mux rebuild.RegistryMux, 
 		if err != nil {
 			log.Println(errors.Wrap(err, "extracting ELF system deps from wheel"))
 		}
-		cibwSpecs, err := extractCibuildwheelSpecs(tree)
+		cibwSpecs, usesCibw, err := extractCibuildwheelSpecs(tree)
 		if err != nil {
 			log.Println(errors.Wrap(err, "Failed to extract cibuildwheel specs"))
 		}
@@ -556,6 +557,7 @@ func inferBuild(ctx context.Context, t rebuild.Target, mux rebuild.RegistryMux, 
 			SystemDeps:   sysDeps,
 			RegistryTime: a.UploadTime,
 			BaseImage:    inferBaseImage(platform.CibuildwheelPins, tags.Platform, a.UploadTime, cibwSpecs...),
+			BuildRoot:    inferBuildRoot(zr, tree, usesCibw),
 		}, nil
 	} else {
 		return &PureWheelBuild{
@@ -607,6 +609,34 @@ func inferBaseImage(pins platform.CibuildwheelPinTable, platformTag string, uplo
 	}
 	log.Printf("Using base image %s pinned by cibuildwheel %s", ref, version)
 	return ref
+}
+
+// inferBuildRoot returns the absolute path that upstream built the repository
+// at. A path recorded in the wheel's extension modules takes precedence, from
+// DWARF debug info if present or .rodata source paths if stripped. Without one,
+// a project whose CI runs cibuildwheel built in the directory that cibuildwheel
+// copies the project to. It returns an empty string, which builds in the
+// checkout, if none of these apply or if the wheel records the checkout itself.
+func inferBuildRoot(zr *zip.Reader, tree *object.Tree, usesCibuildwheel bool) string {
+	root, skipped, err := buildRootFromELF(zr, tree)
+	if len(skipped) > 0 {
+		log.Printf("Skipped %d sections that could not be read while inferring the build root, first: %v", len(skipped), skipped[0])
+	}
+	if err != nil {
+		log.Println(errors.Wrap(err, "Failed to read the build root from the wheel"))
+	}
+	switch {
+	case root == checkoutDir:
+		log.Printf("Upstream built in %s, which is the checkout, so no build root is needed", root)
+		return ""
+	case root != "":
+		log.Printf("Using build root %s from the wheel", root)
+		return root
+	case usesCibuildwheel:
+		log.Printf("No build root in the wheel, using %s, where cibuildwheel copies the project", cibuildwheelProjectDir)
+		return cibuildwheelProjectDir
+	}
+	return ""
 }
 
 var (

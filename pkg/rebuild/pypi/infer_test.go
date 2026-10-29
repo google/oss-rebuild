@@ -821,3 +821,81 @@ func TestInferStrategyPlatformWheelSystemDeps(t *testing.T) {
 		t.Errorf("PlatformWheelBuild.SystemDeps diff (-want +got):\n%s", diff)
 	}
 }
+
+func TestInferBuildRoot(t *testing.T) {
+	repo := must(gitxtest.CreateRepo([]gitxtest.Commit{{ID: "initial-commit", Files: gitxtest.FileContent{
+		"src/module.c":        "int answer = 42;\n",
+		"include/lib/log.h":   "",
+		"include/lib/array.h": "",
+	}}}, nil))
+	tree := must(must(repo.CommitObject(repo.Commits["initial-commit"])).Tree())
+	tests := []struct {
+		name             string
+		module           []byte
+		usesCibuildwheel bool
+		want             string
+	}{
+		{
+			name:             "DebugInfo",
+			module:           elfWithUnits(compileUnit{Name: "src/module.c", CompDir: "/tmp/build/pkg"}),
+			usesCibuildwheel: true,
+			want:             "/tmp/build/pkg",
+		},
+		{
+			name:   "StrippedWithRodata",
+			module: elfWithRodata("/tmp/build/pkg/src/module.c"),
+			want:   "/tmp/build/pkg",
+		},
+		{
+			// Headers that a CI step installed into a system directory must
+			// not outvote the sources built in the project.
+			name:             "StrippedWithInstalledHeaders",
+			module:           elfWithRodata("/project/src/module.c", "/usr/local/include/lib/log.h", "/usr/local/include/lib/array.h"),
+			usesCibuildwheel: true,
+			want:             "/project",
+		},
+		{
+			name:   "Stripped",
+			module: elfWithUnits(),
+			want:   "",
+		},
+		{
+			name:             "StrippedWithCibuildwheel",
+			module:           elfWithUnits(),
+			usesCibuildwheel: true,
+			want:             "/project",
+		},
+		{
+			name:             "UnmatchedDebugInfoWithCibuildwheel",
+			module:           elfWithUnits(compileUnit{Name: "build/__native.c", CompDir: "/project"}),
+			usesCibuildwheel: true,
+			want:             "/project",
+		},
+		{
+			name:             "UnusableRootWithCibuildwheel",
+			module:           elfWithUnits(compileUnit{Name: "src/module.c", CompDir: "/home/runner/my project"}),
+			usesCibuildwheel: true,
+			want:             "/project",
+		},
+		{
+			name:             "CheckoutRootWithCibuildwheel",
+			module:           elfWithUnits(compileUnit{Name: "src/module.c", CompDir: "/src"}),
+			usesCibuildwheel: true,
+			want:             "",
+		},
+		{
+			name:             "MalformedModuleWithCibuildwheel",
+			module:           []byte("\x7fELF\x02\x01"),
+			usesCibuildwheel: true,
+			want:             "/project",
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			zr := readWheel(t, zipEntry("pkg/module.cpython-312-x86_64-linux-gnu.so", string(tt.module)))
+			if got := inferBuildRoot(zr, tree, tt.usesCibuildwheel); got != tt.want {
+				t.Errorf("inferBuildRoot(%t) = %q, want %q", tt.usesCibuildwheel, got, tt.want)
+			}
+		})
+	}
+}
