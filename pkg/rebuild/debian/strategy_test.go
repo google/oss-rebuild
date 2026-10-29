@@ -313,7 +313,7 @@ func TestDebootsnapSbuild(t *testing.T) {
 				BuildPath:         "/build/path",
 				DscDir:            "/dsc/dir",
 				ForceNoRoot:       true,
-				Env:               []string{"VAR=val"},
+				Env:               []string{"VAR=val", "DEB_BUILD_OPTIONS=nocheck nodoc"},
 				BinaryOnlyChanges: "changes",
 			},
 			target: rebuild.Target{
@@ -339,7 +339,7 @@ $build_as_root_when_needed = 1;
 EOF
 echo "root:100000:65536" > /etc/subuid
 echo "root:100000:65536" > /etc/subgid
-env --chdir=/src VAR=val SBUILD_CONFIG=/tmp/sbuild.config\
+env --chdir=/src VAR=val 'DEB_BUILD_OPTIONS=nocheck nodoc' SBUILD_CONFIG=/tmp/sbuild.config\
     sbuild \
     --build=amd64 \
     --host=amd64 \

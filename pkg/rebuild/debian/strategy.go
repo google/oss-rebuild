@@ -197,7 +197,7 @@ func (b *DebootsnapSbuild) ToWorkflow() *rebuild.WorkflowStrategy {
 			{
 				Uses: "debian/build/sbuild",
 				With: map[string]string{
-					"env":       strings.Join(b.Env, " "),
+					"env":       flow.MustToJSON(b.Env),
 					"buildArch": b.BuildArch,
 					"hostArch":  b.HostArch,
 					"buildArchAll": func() string {
@@ -358,7 +358,7 @@ $build_as_root_when_needed = 1;
 EOF
 echo "root:100000:65536" > /etc/subuid
 echo "root:100000:65536" > /etc/subgid
-env --chdir=/src {{.With.env}} SBUILD_CONFIG=/tmp/sbuild.config\
+env --chdir=/src{{range $e := .With.env | fromJSON}} {{quote $e}}{{end}} SBUILD_CONFIG=/tmp/sbuild.config\
     sbuild \
     --build={{ .With.buildArch }} \
     --host={{ .With.hostArch }} \
