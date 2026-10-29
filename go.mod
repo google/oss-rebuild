@@ -20,6 +20,7 @@ require (
 	github.com/google/uuid v1.6.0
 	github.com/in-toto/in-toto-golang v0.9.1-0.20240514222827-dd6278764ab1
 	github.com/msuozzo/bonsai v0.4.0
+	github.com/msuozzo/bonsai/bonsai-bash v0.4.0
 	github.com/msuozzo/bonsai/bonsai-python v0.4.0
 	github.com/ncruces/go-sqlite3 v0.35.3
 	github.com/pavlo-v-chernykh/keystore-go/v4 v4.5.0

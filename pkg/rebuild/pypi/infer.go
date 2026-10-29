@@ -534,9 +534,14 @@ func inferBuild(ctx context.Context, t rebuild.Target, mux rebuild.RegistryMux, 
 		if err != nil {
 			return nil, errors.Wrapf(err, "determining target libc for wheel %s", a.Filename)
 		}
-		sysDeps, err := inferELFSystemDeps(zr, highest.LibcImpl)
+		sysDeps, err := extractCibuildwheelDependencies(tree, dir, highest.LibcImpl)
 		if err != nil {
+			log.Println(errors.Wrap(err, "extracting cibuildwheel dependencies"))
+		}
+		if elfDeps, err := inferELFSystemDeps(zr, highest.LibcImpl); err != nil {
 			log.Println(errors.Wrap(err, "extracting ELF system deps from wheel"))
+		} else {
+			sysDeps = appendUnique(sysDeps, elfDeps...)
 		}
 		cibwSpecs, err := extractCibuildwheelSpecs(tree)
 		if err != nil {
