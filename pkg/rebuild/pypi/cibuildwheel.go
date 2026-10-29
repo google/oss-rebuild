@@ -14,6 +14,7 @@ import (
 	"github.com/google/oss-rebuild/pkg/rebuild/pypi/parsing"
 	"github.com/google/oss-rebuild/pkg/rebuild/pypi/platform"
 	bash "github.com/msuozzo/bonsai/bonsai-bash"
+	"github.com/pelletier/go-toml/v2"
 	"github.com/pkg/errors"
 	"gopkg.in/yaml.v3"
 )
@@ -100,6 +101,11 @@ func extractCibuildwheelDependencies(tree *object.Tree, searchDir string, libc p
 	}
 	pyProject, err := parsing.ReadPyProject(f)
 	if err != nil {
+		// A pyproject.toml that fails TOML decoding is a rejected candidate, not an infrastructure failure.
+		var decodeErr *toml.DecodeError
+		if errors.As(err, &decodeErr) {
+			return nil, nil
+		}
 		return nil, errors.Wrapf(err, "reading %s", pyprojPath)
 	}
 	cfg := pyProject.Tool.Cibuildwheel

@@ -241,6 +241,12 @@ func TestExtractCibuildwheelDependencies(t *testing.T) {
 			files: gitxtest.FileContent{"setup.py": "from setuptools import setup\nsetup(name='legacy', version='0.1.0')\n"},
 			want:  nil,
 		},
+		{
+			name:  "MalformedPyprojectTomlIgnored",
+			libc:  platform.Glibc,
+			files: gitxtest.FileContent{"pyproject.toml": "[tool.cibuildwheel\nbefore-all = [unterminated\n"},
+			want:  nil,
+		},
 	}
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {

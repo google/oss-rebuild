@@ -536,7 +536,7 @@ func inferBuild(ctx context.Context, t rebuild.Target, mux rebuild.RegistryMux, 
 		}
 		sysDeps, err := extractCibuildwheelDependencies(tree, dir, highest.LibcImpl)
 		if err != nil {
-			log.Println(errors.Wrap(err, "extracting cibuildwheel dependencies"))
+			return nil, errors.Wrap(err, "extracting cibuildwheel dependencies")
 		}
 		if elfDeps, err := inferELFSystemDeps(zr, highest.LibcImpl); err != nil {
 			log.Println(errors.Wrap(err, "extracting ELF system deps from wheel"))
@@ -545,7 +545,7 @@ func inferBuild(ctx context.Context, t rebuild.Target, mux rebuild.RegistryMux, 
 		}
 		cibwSpecs, err := extractCibuildwheelSpecs(tree)
 		if err != nil {
-			log.Println(errors.Wrap(err, "Failed to extract cibuildwheel specs"))
+			return nil, errors.Wrap(err, "extracting cibuildwheel specs")
 		}
 		return &PlatformWheelBuild{
 			Location: rebuild.Location{
