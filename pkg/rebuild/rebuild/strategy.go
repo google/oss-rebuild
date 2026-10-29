@@ -91,7 +91,7 @@ type BuildEnv struct {
 }
 
 // TimewarpURL constructs the correct URL for this ecosystem and registryTime.
-func (b *BuildEnv) TimewarpURL(ecosystem string, registryTime time.Time) (string, error) {
+func (b BuildEnv) TimewarpURL(ecosystem string, registryTime time.Time) (string, error) {
 	if b.TimewarpHost == "" {
 		return "", errors.New("TimewarpHost hasn't been configured for this BuildEnv")
 	}
@@ -101,7 +101,7 @@ func (b *BuildEnv) TimewarpURL(ecosystem string, registryTime time.Time) (string
 // TimewarpURLFromString constructs the correct URL for an ecosystem and a point in time.
 // For most ecosystems, this moment is defined as an RFC 3339-formatted timestamp.
 // For cargo, this is defined as a git commit hash representing a historical registry state.
-func (b *BuildEnv) TimewarpURLFromString(ecosystem string, registryMoment string) (string, error) {
+func (b BuildEnv) TimewarpURLFromString(ecosystem string, registryMoment string) (string, error) {
 	if ecosystem == "cargosparse" {
 		if _, err := b.TimewarpURL(ecosystem, time.Now()); err != nil {
 			return "", err
