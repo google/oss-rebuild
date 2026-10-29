@@ -9,10 +9,10 @@ import (
 	"slices"
 	"time"
 
-	"github.com/go-git/go-git/v5"
 	"github.com/google/oss-rebuild/pkg/act/api"
 	"github.com/google/oss-rebuild/pkg/registry/cratesio/cargolock"
 	"github.com/google/oss-rebuild/pkg/registry/cratesio/index"
+	"github.com/msuozzo/go-git2"
 	"github.com/pkg/errors"
 	"google.golang.org/grpc/codes"
 )
@@ -126,7 +126,7 @@ func FindRegistryCommit(ctx context.Context, req FindRegistryCommitRequest, deps
 			handle.Close()
 		}
 	}()
-	var repos []*git.Repository
+	var repos []*git2.Repository
 	for _, handle := range handles {
 		repos = append(repos, handle.Repository)
 	}

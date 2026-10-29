@@ -7,9 +7,9 @@ import (
 	"testing"
 	"time"
 
-	"github.com/go-git/go-git/v5"
 	"github.com/google/oss-rebuild/internal/gitx/gitxtest"
 	"github.com/google/oss-rebuild/pkg/registry/cratesio/cargolock"
+	"github.com/msuozzo/go-git2"
 )
 
 func TestGetPackageFilePath(t *testing.T) {
@@ -302,14 +302,14 @@ func TestFindRegistryResolution(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			var repos []*gitxtest.Repository
-			var indices []*git.Repository
+			var indices []*git2.Repository
 			for _, repoYAML := range tt.repoYAMLs {
 				repo, err := gitxtest.CreateRepoFromYAML(repoYAML, nil)
 				if err != nil {
 					t.Fatalf("Failed to create test repo: %v", err)
 				}
 				repos = append(repos, repo)
-				indices = append(indices, repo.GoGit)
+				indices = append(indices, repo.Repository)
 			}
 			got, err := FindRegistryResolution(indices, tt.packages, tt.cratePublished, nil)
 			if err != nil || tt.wantErr {
@@ -329,7 +329,7 @@ func TestFindRegistryResolution(t *testing.T) {
 				return
 			}
 			if tt.wantCommit != "" {
-				wantHash := repos[tt.wantRepoIndex].Commits[tt.wantCommit]
+				wantHash := git2.Hash(repos[tt.wantRepoIndex].Commits[tt.wantCommit])
 				if got.CommitHash != wantHash {
 					t.Errorf("FindRegistryResolution().CommitHash = %v, want %v", got.CommitHash, wantHash)
 				}
@@ -373,7 +373,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 	}
 
 	unfiltered, err := FindRegistryResolution(
-		[]*git.Repository{current.GoGit, snapshot.GoGit},
+		[]*git2.Repository{current.Repository, snapshot.Repository},
 		lockfile.Packages,
 		time.Now(),
 		nil,
@@ -381,12 +381,12 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 	if err != nil {
 		t.Fatalf("FindRegistryResolution() with all packages error = %v", err)
 	}
-	if unfiltered.CommitHash != current.Commits["current"] {
+	if unfiltered.CommitHash != git2.Hash(current.Commits["current"]) {
 		t.Fatalf("unfiltered resolution = %v, want current index", unfiltered.CommitHash)
 	}
 
 	filtered, err := FindRegistryResolution(
-		[]*git.Repository{current.GoGit, snapshot.GoGit},
+		[]*git2.Repository{current.Repository, snapshot.Repository},
 		cargolock.CratesIOPackages(lockfile.Packages),
 		time.Now(),
 		nil,
@@ -394,7 +394,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 	if err != nil {
 		t.Fatalf("FindRegistryResolution() with crates.io packages error = %v", err)
 	}
-	if filtered.CommitHash != snapshot.Commits["snapshot"] {
+	if filtered.CommitHash != git2.Hash(snapshot.Commits["snapshot"]) {
 		t.Errorf("filtered resolution = %v, want snapshot index", filtered.CommitHash)
 	}
 }

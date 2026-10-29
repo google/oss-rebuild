@@ -16,11 +16,11 @@ import (
 	"time"
 
 	"github.com/go-git/go-billy/v5/osfs"
-	"github.com/go-git/go-git/v5"
 	"github.com/google/oss-rebuild/internal/iterx"
 	reg "github.com/google/oss-rebuild/pkg/registry/cratesio"
 	"github.com/google/oss-rebuild/pkg/registry/cratesio/cargolock"
 	"github.com/google/oss-rebuild/pkg/registry/cratesio/index"
+	"github.com/msuozzo/go-git2"
 	"github.com/pkg/errors"
 )
 
@@ -169,7 +169,7 @@ func findRegistryResolution(ctx context.Context, manager *index.IndexManager, pa
 	}
 	// Build list of repositories in order (current first, then snapshots)
 	var keys []index.RepositoryKey
-	var repos []*git.Repository
+	var repos []*git2.Repository
 	if needsCurrent {
 		fmt.Printf("Including current repository in search...\n")
 		keys = append(keys, index.RepositoryKey{Type: index.CurrentIndex})
