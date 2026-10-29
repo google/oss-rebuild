@@ -8,11 +8,12 @@ import (
 	"context"
 	"crypto/ed25519"
 	"crypto/rand"
-	"encoding/base64"
 	"encoding/hex"
+	"encoding/pem"
 	"io"
 	"net"
 	"strconv"
+	"sync"
 	"time"
 
 	"github.com/pkg/errors"
@@ -31,11 +32,15 @@ type SSHConfig struct {
 }
 
 // SSHDialer dials guests with one key generated per broker process. Guests
-// die with the broker, so nothing outlives the key.
+// die with the broker, so nothing outlives the key. Each boot gets its own
+// host key, so a dial reaches only the guest booted at that address.
 type SSHDialer struct {
 	cfg    SSHConfig
 	signer ssh.Signer
 	pubkey string
+
+	mu   sync.Mutex
+	pins map[string]ssh.PublicKey // guest address -> host key it booted with
 }
 
 // NewSSHDialer returns an SSHDialer over a freshly generated ed25519 key.
@@ -52,17 +57,45 @@ func NewSSHDialer(cfg SSHConfig) (*SSHDialer, error) {
 		cfg:    cfg,
 		signer: signer,
 		pubkey: string(bytes.TrimSpace(ssh.MarshalAuthorizedKey(signer.PublicKey()))),
+		pins:   map[string]ssh.PublicKey{},
 	}, nil
 }
 
-// GuestCredential returns the broker's authorized_keys line, base64 encoded
-// to survive the kernel command line.
-func (d *SSHDialer) GuestCredential() string {
-	return base64.RawStdEncoding.EncodeToString([]byte(d.pubkey))
+// GuestCredential is the ssh material a guest boots with.
+type GuestCredential struct {
+	AuthorizedKey []byte // the broker's authorized_keys line
+	HostKey       []byte // the guest's PEM private key, for this boot only
+}
+
+// GuestCredential generates and pins a host key for the guest booting at
+// addr, and returns it with the broker's authorized_keys line.
+func (d *SSHDialer) GuestCredential(addr string) (GuestCredential, error) {
+	pub, priv, err := ed25519.GenerateKey(rand.Reader)
+	if err != nil {
+		return GuestCredential{}, errors.Wrap(err, "generating host key")
+	}
+	hostKey, err := ssh.NewPublicKey(pub)
+	if err != nil {
+		return GuestCredential{}, errors.Wrap(err, "host public key")
+	}
+	block, err := ssh.MarshalPrivateKey(priv, "")
+	if err != nil {
+		return GuestCredential{}, errors.Wrap(err, "marshaling host key")
+	}
+	d.mu.Lock()
+	d.pins[addr] = hostKey
+	d.mu.Unlock()
+	return GuestCredential{AuthorizedKey: []byte(d.pubkey), HostKey: pem.EncodeToMemory(block)}, nil
 }
 
 // dial opens a channel to the guest at addr.
 func (d *SSHDialer) dial(ctx context.Context, addr string) (*sshChannel, error) {
+	d.mu.Lock()
+	hostKey, ok := d.pins[addr]
+	d.mu.Unlock()
+	if !ok {
+		return nil, transportErr("host key", errors.Errorf("no guest booted at %s", addr))
+	}
 	target := net.JoinHostPort(addr, strconv.Itoa(d.cfg.Port))
 	dial := d.cfg.Dial
 	if dial == nil {
@@ -78,11 +111,10 @@ func (d *SSHDialer) dial(ctx context.Context, addr string) (*sshChannel, error) 
 	}
 	_ = conn.SetDeadline(deadline)
 	cc, chans, reqs, err := ssh.NewClientConn(conn, target, &ssh.ClientConfig{
-		User: d.cfg.User,
-		Auth: []ssh.AuthMethod{ssh.PublicKeys(d.signer)},
-		// No host key pin: the bridge is host-local, and every guest shares the
-		// golden image's host key.
-		HostKeyCallback: ssh.InsecureIgnoreHostKey(),
+		User:              d.cfg.User,
+		Auth:              []ssh.AuthMethod{ssh.PublicKeys(d.signer)},
+		HostKeyCallback:   ssh.FixedHostKey(hostKey),
+		HostKeyAlgorithms: []string{hostKey.Type()},
 	})
 	if err != nil {
 		_ = conn.Close()

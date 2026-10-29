@@ -27,10 +27,16 @@ func testDialer(t *testing.T, n *guestNet) *SSHDialer {
 	return d
 }
 
-// bootFor boots a guest at addr with d's credential, as admission does.
-func bootFor(t *testing.T, n *guestNet, d *SSHDialer, addr string) {
+// bootFor boots a guest at addr with d's credential, as admission does, and
+// returns the credential.
+func bootFor(t *testing.T, n *guestNet, d *SSHDialer, addr string) GuestCredential {
 	t.Helper()
-	n.up(addr, "mvm_ssh_authorized_key="+d.GuestCredential())
+	cred, err := d.GuestCredential(addr)
+	if err != nil {
+		t.Fatalf("GuestCredential(%s): %v", addr, err)
+	}
+	n.up(addr, cred)
+	return cred
 }
 
 // testChannel dials a guest booted at testAddr.
@@ -49,12 +55,50 @@ func testChannel(t *testing.T, n *guestNet) *sshChannel {
 func TestSSHDialer_ReachesOnlyGuestsBootedWithItsKey(t *testing.T) {
 	n := newGuestNet(t)
 	ours, theirs := testDialer(t, n), testDialer(t, n)
-	bootFor(t, n, ours, testAddr)
-	// The guest authorizes only the key it booted with, so a later broker
-	// process cannot log in.
+	cred := bootFor(t, n, ours, testAddr)
+	// The guest serves the host key theirs pinned but authorizes only ours,
+	// as a guest from an earlier broker process would.
+	pinned, err := theirs.GuestCredential(testAddr)
+	if err != nil {
+		t.Fatalf("GuestCredential: %v", err)
+	}
+	n.up(testAddr, GuestCredential{AuthorizedKey: cred.AuthorizedKey, HostKey: pinned.HostKey})
 	if _, err := theirs.dial(context.Background(), testAddr); !isTransport(err) || !strings.Contains(err.Error(), "unable to authenticate") {
 		t.Errorf("dial with another broker's key = %v; want an authentication failure", err)
 	}
+}
+
+func TestSSHDialer_ReachesOnlyTheGuestBootedAtTheAddress(t *testing.T) {
+	n := newGuestNet(t)
+	d := testDialer(t, n)
+	dial := func(answering string, wantOK bool) {
+		t.Helper()
+		ch, err := d.dial(context.Background(), testAddr)
+		if err == nil {
+			_ = ch.Close()
+		}
+		switch {
+		case wantOK && err != nil:
+			t.Errorf("dial answered by %s: %v; want success", answering, err)
+		case !wantOK && (!isTransport(err) || !strings.Contains(err.Error(), "host key mismatch")):
+			t.Errorf("dial answered by %s: %v; want a host key mismatch", answering, err)
+		}
+	}
+	if _, err := d.dial(context.Background(), testAddr); !isTransport(err) {
+		t.Errorf("dial before any boot: %v; want a transport error", err)
+	}
+	here := bootFor(t, n, d, testAddr)
+	neighbor, err := d.GuestCredential("10.200.0.3")
+	if err != nil {
+		t.Fatalf("GuestCredential: %v", err)
+	}
+	dial("the guest booted there", true)
+	n.up(testAddr, neighbor)
+	dial("another slot's guest", false)
+	bootFor(t, n, d, testAddr)
+	dial("the address's new guest", true)
+	n.up(testAddr, here)
+	dial("the address's previous guest", false)
 }
 
 func TestSSHDialer_BoundsTheHandshake(t *testing.T) {

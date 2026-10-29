@@ -90,9 +90,8 @@ RUN <<EOF
  systemctl enable containerd docker ssh microvm-net microvm-authkey
  systemctl mask systemd-networkd-wait-online systemd-networkd systemd-resolved \
      apt-daily.timer apt-daily-upgrade.timer e2scrub_all.timer
- # Host keys at build time, shared by every guest: the bridge is host-local
- # and the broker's key is the auth boundary.
- ssh-keygen -A
+ # No host keys: microvm-authkey installs each boot's own from the cmdline.
+ rm -f /etc/ssh/ssh_host_*
  # Empty, so systemd generates a fresh machine-id per guest on first boot.
  : > /etc/machine-id
 EOF

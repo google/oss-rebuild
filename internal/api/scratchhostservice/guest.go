@@ -4,6 +4,7 @@
 package scratchhostservice
 
 import (
+	"encoding/base64"
 	"fmt"
 	"net/netip"
 	"path"
@@ -83,9 +84,11 @@ func (l Layout) console() string { return path.Join(l.GuestDir, "console.log") }
 func (l Layout) execDir(scratchID string) string { return path.Join(l.ExecsDir, scratchID) }
 
 // kernelCmdline builds the guest's kernel command line. Per-guest settings
-// travel there because the shared rootfs is read-only. The ssh key in it is
-// the broker's public key, safe in the guest's world-readable /proc/cmdline.
-func kernelCmdline(cfg GuestConfig, n GuestNet, credential string) string {
+// travel there because the shared rootfs is read-only. The credential in it
+// is safe in the guest's world-readable /proc/cmdline: the broker's public
+// key, and a host key that only this boot uses.
+func kernelCmdline(cfg GuestConfig, n GuestNet, cred GuestCredential) string {
+	enc := base64.StdEncoding.EncodeToString
 	return strings.Join([]string{
 		// See https://docs.kernel.org/admin-guide/kernel-parameters.html.
 		"root=/dev/vda rw rootfstype=ext4",
@@ -100,7 +103,9 @@ func kernelCmdline(cfg GuestConfig, n GuestNet, credential string) string {
 		"net.ifnames=0",
 		fmt.Sprintf("mvm_ip=%s mvm_gw=%s mvm_prefix=%d", n.IP, n.Gateway, n.Prefix.Bits()),
 		fmt.Sprintf("mvm_mtu=%d mvm_dns=%s mvm_name=%s", cfg.MTU, cfg.DNS, guestName),
-		"mvm_ssh_authorized_key=" + credential,
+		// base64, since a parameter cannot hold spaces.
+		"mvm_ssh_authorized_key=" + enc(cred.AuthorizedKey),
+		"mvm_ssh_host_key=" + enc(cred.HostKey),
 	}, " ")
 }
 
@@ -114,7 +119,7 @@ var avx512Flags = []string{
 
 // qemuArgv builds the QEMU invocation. QEMU stays in the foreground: the
 // broker reads guest liveness from its child process.
-func qemuArgv(bin string, cfg GuestConfig, l Layout, n GuestNet, credential string) []string {
+func qemuArgv(bin string, cfg GuestConfig, l Layout, n GuestNet, cred GuestCredential) []string {
 	return []string{
 		bin,
 		"-M", "microvm,acpi=on,rtc=on",
@@ -131,7 +136,7 @@ func qemuArgv(bin string, cfg GuestConfig, l Layout, n GuestNet, credential stri
 		"-display", "none",
 		"-kernel", l.Kernel,
 		"-initrd", l.Initrd,
-		"-append", kernelCmdline(cfg, n, credential),
+		"-append", kernelCmdline(cfg, n, cred),
 		"-drive", "id=root,file=" + l.overlay() + ",format=qcow2,if=none,cache=none,aio=native",
 		"-device", "virtio-blk-device,drive=root",
 		"-drive", "id=scratch,file=" + l.scratch() + ",format=qcow2,if=none,cache=none,aio=native",
