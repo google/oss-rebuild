@@ -14,6 +14,7 @@ import (
 
 	gcs "cloud.google.com/go/storage"
 	"github.com/go-git/go-billy/v5/memfs"
+	"github.com/google/oss-rebuild/internal/gcsx/gcsxtest"
 	"github.com/google/oss-rebuild/pkg/build"
 	"github.com/google/oss-rebuild/pkg/longrunning"
 	"github.com/google/oss-rebuild/pkg/rebuild/rebuild"
@@ -63,10 +64,14 @@ func testOptions() build.Options {
 }
 
 func testExecutorConfig(f *fakeStubs) ExecutorConfig {
+	client := testGCSClient
+	if f.outputs != nil {
+		client = f.outputs.Client
+	}
 	return ExecutorConfig{
 		ScratchID:    "s1",
 		Stubs:        f.stubs(),
-		GCSClient:    testGCSClient,
+		GCSClient:    client,
 		PollInterval: time.Millisecond,
 	}
 }
@@ -101,6 +106,14 @@ type fakeStubs struct {
 	gets map[string][]*longrunning.Operation[schema.ScratchExecResult]
 
 	createReqs []schema.ScratchExecRequest
+	outputs    *gcsxtest.Server // serves the ops' output, nil when none has any
+}
+
+// withOutput gives op an output object holding body.
+func (f *fakeStubs) withOutput(op *longrunning.Operation[schema.ScratchExecResult], body string) *longrunning.Operation[schema.ScratchExecResult] {
+	f.outputs.Put("out/"+op.ID, body)
+	op.Result.OutURI = "gs://out/" + op.ID
+	return op
 }
 
 func (f *fakeStubs) stubs() Stubs {
