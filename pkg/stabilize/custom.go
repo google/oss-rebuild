@@ -184,7 +184,7 @@ func (ep *ExcludePath) Stabilizer(name string) Stabilizer {
 	tarfn := TarArchiveFn(func(ta *archive.TarArchive) {
 		var files []*archive.TarEntry
 		for _, f := range ta.Files {
-			if match, err := multiMatch(ep.Paths, f.Name); err != nil || match {
+			if match, err := multiMatch(ep.Paths, f.Name); err == nil && match {
 				continue
 			}
 			files = append(files, f)
@@ -199,7 +199,7 @@ func (ep *ExcludePath) Stabilizer(name string) Stabilizer {
 		archive.ZipFormat: ZipArchiveFn(func(mzr *archive.MutableZipReader) {
 			var files []*archive.MutableZipFile
 			for _, f := range mzr.File {
-				if match, err := multiMatch(ep.Paths, f.Name); err != nil || match {
+				if match, err := multiMatch(ep.Paths, f.Name); err == nil && match {
 					continue
 				}
 				files = append(files, f)
