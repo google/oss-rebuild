@@ -4,6 +4,8 @@
 package pypi
 
 import (
+	"path"
+	re "regexp"
 	"slices"
 	"strings"
 	"time"
@@ -142,6 +144,8 @@ type PlatformWheelBuild struct {
 	// because the image determines the compiler, CPython builds and auditwheel.
 	// When unset, the latest image of the family matching PlatformTag is used.
 	BaseImage string `json:"base_image,omitempty" yaml:"base_image,omitempty"`
+	// BuildRoot is the absolute path the build is run from, when set.
+	BuildRoot string `json:"build_root,omitempty" yaml:"build_root,omitempty"`
 }
 
 var _ rebuild.Strategy = &PlatformWheelBuild{}
@@ -156,10 +160,34 @@ func (b *PlatformWheelBuild) resolveBaseImage() (string, error) {
 	return platform.SelectBaseImage(b.PlatformTag)
 }
 
+// checkoutDir is where the build planners check out the repository.
+const checkoutDir = "/src"
+
+// buildRootPat matches absolute paths of characters that need no shell quoting.
+var buildRootPat = re.MustCompile(`^(/[A-Za-z0-9._+,@-]+)+$`)
+
+// validateBuildRoot rejects build roots that the build step cannot use.
+func validateBuildRoot(root string) error {
+	switch {
+	case root == "":
+		return nil
+	case !buildRootPat.MatchString(root):
+		return errors.Errorf("build root %q is not an absolute path of letters, digits and '._+,@-'", root)
+	case path.Clean(root) != root:
+		return errors.Errorf("build root %q is not a clean path", root)
+	case root == checkoutDir || strings.HasPrefix(root, checkoutDir+"/"):
+		return errors.Errorf("build root %q is in the checkout at %s", root, checkoutDir)
+	}
+	return nil
+}
+
 func (b *PlatformWheelBuild) ToWorkflow() (*rebuild.WorkflowStrategy, error) {
 	baseImage, err := b.resolveBaseImage()
 	if err != nil {
 		return nil, errors.Wrap(err, "selecting base image")
+	}
+	if err := validateBuildRoot(b.BuildRoot); err != nil {
+		return nil, errors.Wrap(err, "validating build root")
 	}
 	var registryTime string
 	if !b.RegistryTime.IsZero() {
@@ -199,6 +227,7 @@ func (b *PlatformWheelBuild) ToWorkflow() (*rebuild.WorkflowStrategy, error) {
 			With: map[string]string{
 				"dir":        b.Location.Dir,
 				"distDir":    distDir,
+				"buildRoot":  b.BuildRoot,
 				"locator":    "/deps/bin/",
 				"wheelCli":   "/deps/wheel-cli",
 				"venvOnPath": needsVenvOnPath(b.Requirements),
@@ -369,7 +398,15 @@ var toolkit = []*flow.Tool{
 		Name: "pypi/build/platform-wheel",
 		Steps: []flow.Step{{
 			Runs: textwrap.Dedent(`
+				{{if .With.buildRoot -}}
+				{{- /* NOTE: No -p on the root so the copy can't merge into an existing directory. */ -}}
+				mkdir -p $(dirname {{.With.buildRoot}})
+				mkdir {{.With.buildRoot}}
+				cp -a . {{.With.buildRoot}}
+				{{if .With.venvOnPath}}PATH={{.With.locator}}:$PATH {{end}}{{.With.locator}}python3 -m build --wheel -n --outdir {{.With.distDir}} {{.With.buildRoot}}{{if and (ne .With.dir ".") (ne .With.dir "")}}/{{.With.dir}}{{end}}
+				{{else -}}
 				{{if .With.venvOnPath}}PATH={{.With.locator}}:$PATH {{end}}{{.With.locator}}python3 -m build --wheel -n{{if and (ne .With.dir ".") (ne .With.dir "")}} {{.With.dir}}{{end}}
+				{{end -}}
 				{{if .With.highestPlatformTag -}}
 				mkdir -p {{.With.distDir}}/repaired
 				AUDITWHEEL="{{.With.locator}}auditwheel"
