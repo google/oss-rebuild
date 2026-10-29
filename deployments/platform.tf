@@ -130,6 +130,17 @@ resource "google_storage_bucket" "scratch-output" {
   uniform_bucket_level_access = true
   depends_on                  = [google_project_service.storage]
   # TODO: Consider an age-based lifecycle rule once we have a feel for realistic retention needs.
+  # Sweeps sync parts an agent-api crash orphans. matches_prefix anchors at
+  # the object name, hence the top-level parts/ prefix.
+  lifecycle_rule {
+    condition {
+      age            = 1 # 1 day
+      matches_prefix = ["parts/"]
+    }
+    action {
+      type = "Delete"
+    }
+  }
 }
 
 resource "google_storage_bucket" "analytics" {
