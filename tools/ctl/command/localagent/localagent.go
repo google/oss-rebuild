@@ -51,6 +51,7 @@ type Config struct {
 	PrebuildDir    string
 	PrebuildAuth   bool
 	BuildTimeout   time.Duration
+	FreeForm       bool // see --freeform. Requires ScratchID
 }
 
 // Validate ensures the configuration is valid.
@@ -81,6 +82,9 @@ func (c Config) Validate() error {
 	}
 	if c.ScratchID != "" && c.PrebuildBucket == "" {
 		return errors.New("prebuild-bucket is required with scratch-id")
+	}
+	if c.FreeForm && c.ScratchID == "" {
+		return errors.New("freeform requires scratch-id")
 	}
 	return nil
 }
@@ -249,6 +253,7 @@ func Handler(ctx context.Context, cfg Config, deps *Deps) (*act.NoOutput, error)
 			AuthHeader:     authHeader,
 			BuildTimeout:   cfg.BuildTimeout,
 		}
+		runDeps.FreeForm = cfg.FreeForm
 	}
 	req := agent.RunSessionReq{
 		SessionID:        sessionID,
@@ -265,7 +270,7 @@ func Handler(ctx context.Context, cfg Config, deps *Deps) (*act.NoOutput, error)
 func Command() *cobra.Command {
 	cfg := Config{}
 	cmd := &cobra.Command{
-		Use:   "local-agent --project <project> --agent-api <URI> --metadata-bucket <bucket> --ecosystem <ecosystem> --package <name> --version <version> --artifact <name> --logs-bucket <bucket> [--retry-session <session-id>] [--agent-iterations <max iterations>] [--scratch-id <vm> --prebuild-bucket <bucket>]",
+		Use:   "local-agent --project <project> --agent-api <URI> --metadata-bucket <bucket> --ecosystem <ecosystem> --package <name> --version <version> --artifact <name> --logs-bucket <bucket> [--retry-session <session-id>] [--agent-iterations <max iterations>] [--scratch-id <vm> --prebuild-bucket <bucket> [--freeform]]",
 		Short: "Run agent code locally",
 		Args:  cobra.NoArgs,
 		RunE: cli.RunE(
@@ -298,5 +303,6 @@ func flagSet(name string, cfg *Config) *flag.FlagSet {
 	set.StringVar(&cfg.PrebuildDir, "prebuild-dir", "", "prefix within the prebuild bucket under which tools are stored (scratch mode)")
 	set.BoolVar(&cfg.PrebuildAuth, "prebuild-auth", false, "whether to authenticate requests to the prebuild tools bucket (scratch mode)")
 	set.DurationVar(&cfg.BuildTimeout, "build-timeout", time.Hour, "per-iteration build timeout for scratch execution")
+	set.BoolVar(&cfg.FreeForm, "freeform", false, "the model works in the retained container until the artifact matches, then the job formalizes the commands into a build (scratch mode)")
 	return set
 }

@@ -56,6 +56,7 @@ var (
 	prebuildBucket = flag.String("prebuild-bucket", "", "GCS bucket from which prebuilt build tools are stored")
 	prebuildDir    = flag.String("prebuild-dir", "", "Prefix within the prebuild bucket under which tools are stored")
 	prebuildAuth   = flag.Bool("prebuild-auth", false, "Whether to authenticate requests to the prebuild tools bucket")
+	freeForm       = flag.Bool("freeform", false, "The model works in the retained container until the artifact matches, then the job formalizes the commands into a build (scratch execution mode only)")
 )
 
 var httpcfg = httpegress.Config{}
@@ -95,6 +96,9 @@ func main() {
 		}
 	default:
 		log.Fatalf("invalid execution-mode %q", *executionMode)
+	}
+	if *freeForm && mode != schema.AgentExecutionModeScratch {
+		log.Fatal("freeform flag requires scratch execution mode")
 	}
 	if *targetEcosystem == "" {
 		log.Fatal("target-ecosystem flag is required")
@@ -238,6 +242,7 @@ func main() {
 			AuthHeader:     authHeader,
 			BuildTimeout:   *buildTimeout,
 		}
+		deps.FreeForm = *freeForm
 	}
 	req := agent.RunSessionReq{
 		SessionID:     *sessionID,
