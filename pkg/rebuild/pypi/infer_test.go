@@ -770,7 +770,21 @@ func TestInferBaseImage(t *testing.T) {
 }
 
 func TestInferStrategyPlatformWheelSystemDeps(t *testing.T) {
-	repo := must(gitxtest.CreateRepoFromYAML(`commits:
+	tests := []struct {
+		name        string
+		pkg         string
+		version     string
+		repoYAML    string
+		filename    string
+		wheelFiles  []archive.ZipEntry
+		wantSysDeps []string
+		wantEnv     map[string]string
+	}{
+		{
+			name:    "ELFLinkedLibraries",
+			pkg:     "pygraphviz",
+			version: "1.14",
+			repoYAML: `commits:
   - id: release-commit
     tag: v1.14
     files:
@@ -780,44 +794,748 @@ func TestInferStrategyPlatformWheelSystemDeps(t *testing.T) {
         version = "1.14"
         [build-system]
         requires = ["setuptools>=61"]
-`, nil))
-	filename := "pygraphviz-1.14-cp310-cp310-musllinux_1_2_x86_64.whl"
-	wheelURL := "https://files.pythonhosted.org/" + filename
-	wheelBuf := must(archivetest.ZipFile([]archive.ZipEntry{
-		{
-			FileHeader: &zip.FileHeader{Name: "pygraphviz-1.14.dist-info/WHEEL"},
-			Body:       []byte("Wheel-Version: 1.0\nGenerator: setuptools (70.0.0)\nRoot-Is-Purelib: false\nTag: cp310-cp310-musllinux_1_2_x86_64\n"),
+`,
+			filename: "pygraphviz-1.14-cp310-cp310-musllinux_1_2_x86_64.whl",
+			wheelFiles: []archive.ZipEntry{
+				{
+					FileHeader: &zip.FileHeader{Name: "pygraphviz-1.14.dist-info/WHEEL"},
+					Body:       []byte("Wheel-Version: 1.0\nGenerator: setuptools (70.0.0)\nRoot-Is-Purelib: false\nTag: cp310-cp310-musllinux_1_2_x86_64\n"),
+				},
+				{
+					FileHeader: &zip.FileHeader{Name: "pygraphviz-1.14.dist-info/METADATA"},
+					Body:       []byte("Metadata-Version: 2.1\nName: pygraphviz\nVersion: 1.14\n"),
+				},
+				{
+					FileHeader: &zip.FileHeader{Name: "pygraphviz/_graphviz.cpython-310-x86_64-linux-musl.so"},
+					Body:       createTestELF([]string{"libc.so.6", "libcgraph-17278668.so.6.0.0"}, ""),
+				},
+			},
+			wantSysDeps: []string{"so:libcgraph.so.6", "pc:libcgraph"},
 		},
 		{
-			FileHeader: &zip.FileHeader{Name: "pygraphviz-1.14.dist-info/METADATA"},
-			Body:       []byte("Metadata-Version: 2.1\nName: pygraphviz\nVersion: 1.14\n"),
+			name:    "ClangMypycAppendsCompiler",
+			pkg:     "mypycpkg",
+			version: "1.0",
+			repoYAML: `commits:
+  - id: release-commit
+    tag: v1.0
+    files:
+      pyproject.toml: |
+        [project]
+        name = "mypycpkg"
+        version = "1.0"
+        [build-system]
+        requires = ["hatchling>=1.27.0"]
+        build-backend = "hatchling.build"
+        [tool.hatch.build.targets.wheel.hooks.mypyc]
+        enable-by-default = false
+        dependencies = ["hatch-mypyc>=0.16.0"]
+`,
+			filename: "mypycpkg-1.0-cp312-cp312-musllinux_1_2_x86_64.whl",
+			wheelFiles: []archive.ZipEntry{
+				{
+					FileHeader: &zip.FileHeader{Name: "mypycpkg-1.0.dist-info/WHEEL"},
+					Body:       []byte("Wheel-Version: 1.0\nGenerator: hatchling 1.27.0\nRoot-Is-Purelib: false\nTag: cp312-cp312-musllinux_1_2_x86_64\n"),
+				},
+				{
+					FileHeader: &zip.FileHeader{Name: "mypycpkg-1.0.dist-info/METADATA"},
+					Body:       []byte("Metadata-Version: 2.1\nName: mypycpkg\nVersion: 1.0\n"),
+				},
+				{
+					FileHeader: &zip.FileHeader{Name: "a1b2c3__mypyc.cpython-312-x86_64-linux-musl.so"},
+					Body: createTestELFWithSections([]string{"libc.so.6", "libcgraph-17278668.so.6.0.0"}, "", map[string][]byte{
+						".comment": []byte("\x00GCC: (GNU) 14.2.1\x00clang version 19.1.7\x00"),
+					}),
+				},
+			},
+			wantSysDeps: []string{"so:libcgraph.so.6", "pc:libcgraph", "clang"},
+			wantEnv: map[string]string{
+				"HATCH_BUILD_HOOK_ENABLE_MYPYC": "1",
+				"CC":                            "clang",
+				"MYPYC_OPT_LEVEL":               "3",
+				"MYPYC_DEBUG_LEVEL":             "0",
+			},
 		},
-		{
-			FileHeader: &zip.FileHeader{Name: "pygraphviz/_graphviz.cpython-310-x86_64-linux-musl.so"},
-			Body:       createTestELF([]string{"libc.so.6", "libcgraph-17278668.so.6.0.0"}, ""),
-		},
-	}))
-	releaseJSON := fmt.Sprintf(`{"info":{"name":"pygraphviz","version":"1.14"},"urls":[{"filename":%q,"url":%q,"size":%d,"upload_time_iso_8601":"2026-05-01T00:00:00Z"}]}`, filename, wheelURL, wheelBuf.Len())
-	mux := rebuild.RegistryMux{PyPI: pypireg.HTTPRegistry{Client: &httpxtest.MockClient{
-		Calls: []httpxtest.Call{
-			{URL: "https://pypi.org/pypi/pygraphviz/1.14/json", Response: &http.Response{StatusCode: 200, Body: httpxtest.Body(releaseJSON)}},
-			{URL: "https://pypi.org/pypi/pygraphviz/1.14/json", Response: &http.Response{StatusCode: 200, Body: httpxtest.Body(releaseJSON)}},
-			{URL: wheelURL, Response: &http.Response{StatusCode: 200, Body: io.NopCloser(bytes.NewReader(wheelBuf.Bytes()))}},
-		},
-		URLValidator: httpxtest.NewURLValidator(t),
-	}}}
-	rcfg := &rebuild.RepoConfig{Repo: gitx.Repo{Repository: repo.Repository}, URI: "https://github.com/pygraphviz/pygraphviz"}
-	target := rebuild.Target{Ecosystem: rebuild.PyPI, Package: "pygraphviz", Version: "1.14", Artifact: filename}
-	strat, err := Rebuilder{}.InferStrategy(context.Background(), target, mux, rcfg, nil)
-	if err != nil {
-		t.Fatalf("InferStrategy() unexpected error: %v", err)
 	}
-	got, ok := strat.(*PlatformWheelBuild)
-	if !ok {
-		t.Fatalf("InferStrategy() returned %T, want *PlatformWheelBuild", strat)
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			repo := must(gitxtest.CreateRepoFromYAML(tc.repoYAML, nil))
+			wheelURL := "https://files.pythonhosted.org/" + tc.filename
+			wheelBuf := must(archivetest.ZipFile(tc.wheelFiles))
+			releaseJSON := fmt.Sprintf(`{"info":{"name":%q,"version":%q},"urls":[{"filename":%q,"url":%q,"size":%d,"upload_time_iso_8601":"2026-05-01T00:00:00Z"}]}`, tc.pkg, tc.version, tc.filename, wheelURL, wheelBuf.Len())
+			releaseURL := fmt.Sprintf("https://pypi.org/pypi/%s/%s/json", tc.pkg, tc.version)
+			mux := rebuild.RegistryMux{PyPI: pypireg.HTTPRegistry{Client: &httpxtest.MockClient{
+				Calls: []httpxtest.Call{
+					{URL: releaseURL, Response: &http.Response{StatusCode: 200, Body: httpxtest.Body(releaseJSON)}},
+					{URL: releaseURL, Response: &http.Response{StatusCode: 200, Body: httpxtest.Body(releaseJSON)}},
+					{URL: wheelURL, Response: &http.Response{StatusCode: 200, Body: io.NopCloser(bytes.NewReader(wheelBuf.Bytes()))}},
+				},
+				URLValidator: httpxtest.NewURLValidator(t),
+			}}}
+			rcfg := &rebuild.RepoConfig{Repo: gitx.Repo{Repository: repo.Repository}, URI: "https://github.com/example/" + tc.pkg}
+			target := rebuild.Target{Ecosystem: rebuild.PyPI, Package: tc.pkg, Version: tc.version, Artifact: tc.filename}
+			strat, err := Rebuilder{}.InferStrategy(context.Background(), target, mux, rcfg, nil)
+			if err != nil {
+				t.Fatalf("InferStrategy() unexpected error: %v", err)
+			}
+			got, ok := strat.(*PlatformWheelBuild)
+			if !ok {
+				t.Fatalf("InferStrategy() returned %T, want *PlatformWheelBuild", strat)
+			}
+			if diff := cmp.Diff(tc.wantSysDeps, got.SystemDeps); diff != "" {
+				t.Errorf("PlatformWheelBuild.SystemDeps diff (-want +got):\n%s", diff)
+			}
+			if diff := cmp.Diff(tc.wantEnv, got.BuildEnv); diff != "" {
+				t.Errorf("PlatformWheelBuild.BuildEnv diff (-want +got):\n%s", diff)
+			}
+		})
 	}
-	want := []string{"so:libcgraph.so.6", "pc:libcgraph"}
-	if diff := cmp.Diff(want, got.SystemDeps); diff != "" {
-		t.Errorf("PlatformWheelBuild.SystemDeps diff (-want +got):\n%s", diff)
+}
+
+func TestInferWheelBuildEnv(t *testing.T) {
+	cython329ELF := createTestELF([]string{"_cython_3_2_9"}, "")
+	cython329ABI3ELF := createTestELF([]string{"_cython_3_2_9limitednoamsendnofinalizenoamsend"}, "")
+	cython330ELF := createTestELF([]string{"_cython_3_3_0"}, "")
+	cython324ELF := createTestELF([]string{"_cython_3_2_4"}, "")
+	cythonPreReleaseELF := createTestELF([]string{"_cython_3_0_0a11"}, "")
+	cython329RodataELF := createTestELFWithSections(nil, "", map[string][]byte{".rodata": []byte("_cython_3_2_9\x00")})
+	plainELF := createTestELF([]string{"libc.so.6"}, "")
+	defaultMypycELF := createTestELFWithSections([]string{"libc.so.6"}, "", map[string][]byte{
+		".comment":    []byte("GCC: (GNU) 14.2.1\x00"),
+		".debug_info": {0},
+	})
+	cython329DebugELF := createTestELFWithSections([]string{"_cython_3_2_9"}, "", map[string][]byte{
+		".debug_info": {0},
+	})
+	clangStrippedMypycELF := createTestELFWithSections([]string{"libc.so.6"}, "", map[string][]byte{
+		".comment": []byte("\x00GCC: (GNU) 14.2.1\x00clang version 19.1.7\x00"),
+	})
+	gccStrippedMypycELF := createTestELFWithSections([]string{"libc.so.6"}, "", map[string][]byte{
+		".comment": []byte("GCC: (GNU) 14.2.1\x00"),
+	})
+	clangDebugMypycELF := createTestELFWithSections([]string{"libc.so.6"}, "", map[string][]byte{
+		".comment":    []byte("clang version 19.1.7\x00"),
+		".debug_info": {0},
+	})
+	tests := []struct {
+		name         string
+		pkg          string
+		repoYAML     string
+		wheelEntries []archive.ZipEntry
+		tags         WheelTags
+		reqs         []string
+		wantEnv      map[string]string
+		wantReqs     []string
+		wantErr      bool
+		wantSysDeps  []string
+	}{
+		{
+			name: "MypyInTreeMypycWithBuildRequirements",
+			pkg:  "mypy",
+			repoYAML: `commits:
+  - id: initial
+    files:
+      setup.py: |
+        import os
+        if os.getenv("MYPY_USE_MYPYC", None) == "1":
+            USE_MYPYC = True
+      mypyc/build.py: |
+        def mypycify(): pass
+      build-requirements.txt: |
+        # Build requirements
+        -r mypy-requirements.txt
+        types-psutil # inline comment
+        types-setuptools
+        pkg @ git+https://example.com/repo.git#subdirectory=sub
+      mypy-requirements.txt: |
+        mypy_extensions>=1.0.0
+`,
+			wheelEntries: []archive.ZipEntry{
+				{FileHeader: &zip.FileHeader{Name: "mypy/api.cpython-315-x86_64-linux-gnu.so"}, Body: defaultMypycELF},
+				{FileHeader: &zip.FileHeader{Name: "08ae81f72d5a2b5fa9e0__mypyc.cpython-315-x86_64-linux-gnu.so"}, Body: defaultMypycELF},
+			},
+			tags:     WheelTags{Python: "cp315", ABI: "cp315", Platform: "manylinux_2_28_x86_64"},
+			reqs:     []string{"setuptools==84.0.0"},
+			wantEnv:  map[string]string{"MYPY_USE_MYPYC": "1"},
+			wantReqs: []string{"mypy_extensions>=1.0.0", "types-psutil", "types-setuptools", "pkg @ git+https://example.com/repo.git#subdirectory=sub"},
+		},
+		{
+			name: "ExternalMypycAddsMypyRequirement",
+			pkg:  "charset-normalizer",
+			repoYAML: `commits:
+  - id: initial
+    files:
+      setup.py: |
+        import os
+        USE_MYPYC = os.getenv("CHARSET_NORMALIZER_USE_MYPYC", "0") == "1"
+`,
+			wheelEntries: []archive.ZipEntry{
+				{FileHeader: &zip.FileHeader{Name: "charset_normalizer/md__mypyc.cpython-312-x86_64-linux-gnu.so"}, Body: defaultMypycELF},
+			},
+			tags:     WheelTags{Python: "cp312", ABI: "cp312", Platform: "manylinux_2_28_x86_64"},
+			reqs:     []string{"setuptools==82.0.1"},
+			wantEnv:  map[string]string{"CHARSET_NORMALIZER_USE_MYPYC": "1"},
+			wantReqs: []string{"mypy"},
+		},
+		{
+			name: "CharsetNormalizerCythonABI3PinsFromELF",
+			pkg:  "charset-normalizer",
+			repoYAML: `commits:
+  - id: initial
+    files:
+      pyproject.toml: |
+        [build-system]
+        requires = ["setuptools"]
+        build-backend = "backend"
+        backend-path = ["_build_hook"]
+      setup.py: |
+        import os
+        USE_CYTHON = os.getenv("CHARSET_NORMALIZER_USE_CYTHON") == "1"
+        LIMITED_API = os.getenv("CHARSET_NORMALIZER_CYTHON_ABI3") == "1"
+      _build_hook/backend.py: |
+        CYTHON_SPEC = "Cython>=3.2,<3.3"
+`,
+			wheelEntries: []archive.ZipEntry{
+				{FileHeader: &zip.FileHeader{Name: "charset_normalizer/md.abi3.so"}, Body: cython329ABI3ELF},
+				{FileHeader: &zip.FileHeader{Name: "charset_normalizer/cd.abi3.so"}, Body: cython329ABI3ELF},
+			},
+			tags:     WheelTags{Python: "cp37", ABI: "abi3", Platform: "musllinux_1_2_x86_64"},
+			reqs:     []string{"setuptools==82.0.1"},
+			wantEnv:  map[string]string{"CHARSET_NORMALIZER_USE_CYTHON": "1", "CHARSET_NORMALIZER_CYTHON_ABI3": "1"},
+			wantReqs: []string{"Cython==3.2.9"},
+		},
+		{
+			name: "CharsetNormalizerCythonNativeOmitsABI3Var",
+			pkg:  "charset-normalizer",
+			repoYAML: `commits:
+  - id: initial
+    files:
+      pyproject.toml: |
+        [build-system]
+        requires = ["setuptools"]
+        build-backend = "backend"
+        backend-path = ["_build_hook"]
+      setup.py: |
+        import os
+        USE_CYTHON = os.getenv("CHARSET_NORMALIZER_USE_CYTHON") == "1"
+        LIMITED_API = os.getenv("CHARSET_NORMALIZER_CYTHON_ABI3") == "1"
+      _build_hook/backend.py: |
+        CYTHON_SPEC = "Cython>=3.2,<3.3"
+`,
+			wheelEntries: []archive.ZipEntry{
+				{FileHeader: &zip.FileHeader{Name: "charset_normalizer/md.cpython-312-x86_64-linux-gnu.so"}, Body: cython329ELF},
+			},
+			tags:     WheelTags{Python: "cp312", ABI: "cp312", Platform: "manylinux_2_28_x86_64"},
+			reqs:     []string{"setuptools==84.0.0"},
+			wantEnv:  map[string]string{"CHARSET_NORMALIZER_USE_CYTHON": "1"},
+			wantReqs: []string{"Cython==3.2.9"},
+		},
+		{
+			name: "CharsetNormalizerInTreeBackendFallbackWithoutELFSymbol",
+			pkg:  "charset-normalizer",
+			repoYAML: `commits:
+  - id: initial
+    files:
+      pyproject.toml: |
+        [build-system]
+        requires = ["setuptools"]
+        build-backend = "backend:build_wheel"
+        backend-path = ["_build_hook"]
+      setup.py: |
+        import os
+        USE_CYTHON = os.getenv("CHARSET_NORMALIZER_USE_CYTHON") == "1"
+      _build_hook/backend.py: |
+        CYTHON_SPEC = "cython>=3.2,<3.3; python_version>='3.8'"
+`,
+			wheelEntries: []archive.ZipEntry{
+				{FileHeader: &zip.FileHeader{Name: "charset_normalizer/md.cpython-312-x86_64-linux-gnu.so"}, Body: plainELF},
+			},
+			tags:     WheelTags{Python: "cp312", ABI: "cp312", Platform: "manylinux_2_28_x86_64"},
+			reqs:     []string{"setuptools==84.0.0"},
+			wantEnv:  map[string]string{"CHARSET_NORMALIZER_USE_CYTHON": "1"},
+			wantReqs: []string{"cython>=3.2,<3.3"},
+		},
+		{
+			name: "FonttoolsWithCythonSetMembership",
+			pkg:  "fonttools",
+			repoYAML: `commits:
+  - id: initial
+    files:
+      setup.py: |
+        import os
+        env_with_cython = os.environ.get("FONTTOOLS_WITH_CYTHON")
+        with_cython = True if env_with_cython in {"1", "true", "yes"} else None
+`,
+			wheelEntries: []archive.ZipEntry{
+				{FileHeader: &zip.FileHeader{Name: "fontTools/cu2qu/cu2qu.cpython-312-x86_64-linux-musl.so"}, Body: cython330ELF},
+			},
+			tags:     WheelTags{Python: "cp312", ABI: "cp312", Platform: "musllinux_1_2_x86_64"},
+			reqs:     []string{"setuptools==84.0.0"},
+			wantEnv:  map[string]string{"FONTTOOLS_WITH_CYTHON": "1"},
+			wantReqs: []string{"Cython==3.3.0"},
+		},
+		{
+			name: "PythonBoxOptionalCythonImport",
+			pkg:  "python-box",
+			repoYAML: `commits:
+  - id: initial
+    files:
+      setup.py: |
+        try:
+            from Cython.Build import cythonize
+        except ImportError:
+            cythonize = None
+`,
+			wheelEntries: []archive.ZipEntry{
+				{FileHeader: &zip.FileHeader{Name: "box/box.cpython-312-x86_64-linux-gnu.so"}, Body: cython324ELF},
+			},
+			tags:     WheelTags{Python: "cp312", ABI: "cp312", Platform: "manylinux_2_28_x86_64"},
+			reqs:     []string{"setuptools==82.0.0"},
+			wantEnv:  nil,
+			wantReqs: []string{"Cython==3.2.4"},
+		},
+		{
+			name: "DulwichOptionalCibuildwheelGate",
+			pkg:  "dulwich",
+			repoYAML: `commits:
+  - id: initial
+    files:
+      setup.py: |
+        import os
+        optional = os.environ.get("CIBUILDWHEEL", "0") != "1"
+`,
+			wheelEntries: []archive.ZipEntry{
+				{FileHeader: &zip.FileHeader{Name: "dulwich/_objects.cpython-312-x86_64-linux-gnu.so"}, Body: plainELF},
+			},
+			tags:     WheelTags{Python: "cp312", ABI: "cp312", Platform: "manylinux_2_28_x86_64"},
+			reqs:     []string{"setuptools==84.0.0", "setuptools_rust"},
+			wantEnv:  map[string]string{"CIBUILDWHEEL": "1"},
+			wantReqs: nil,
+		},
+		{
+			name: "CythonPreReleaseABIPinAndLowercaseSpecWithMarker",
+			pkg:  "example-cython-pkg",
+			repoYAML: `commits:
+  - id: initial
+    files:
+      setup.py: |
+        from Cython.Build import cythonize
+        setup_requires = ["cython>=3.0a1; python_version>='3.8'"]
+`,
+			wheelEntries: []archive.ZipEntry{
+				{FileHeader: &zip.FileHeader{Name: "example/mod.cpython-312-x86_64-linux-gnu.so"}, Body: cythonPreReleaseELF},
+			},
+			tags:     WheelTags{Python: "cp312", ABI: "cp312", Platform: "manylinux_2_28_x86_64"},
+			reqs:     []string{"setuptools==82.0.0"},
+			wantEnv:  nil,
+			wantReqs: []string{"Cython==3.0.0a11"},
+		},
+		{
+			name: "FlitCoreBackendIgnoresSetupPy",
+			pkg:  "tomli",
+			repoYAML: `commits:
+  - id: initial
+    files:
+      setup.py: |
+        import os
+        if os.environ.get("TOMLI_USE_MYPYC") == "1":
+            pass
+`,
+			wheelEntries: []archive.ZipEntry{
+				{FileHeader: &zip.FileHeader{Name: "tomli/_parser__mypyc.cpython-312-x86_64-linux-gnu.so"}, Body: plainELF},
+			},
+			tags:     WheelTags{Python: "cp312", ABI: "cp312", Platform: "manylinux_2_28_x86_64"},
+			reqs:     []string{"setuptools==82.0.1", "flit_core>=3.12,<4"},
+			wantEnv:  nil,
+			wantReqs: nil,
+		},
+		{
+			name: "CythonVersionFromRodata",
+			pkg:  "example-cython-pkg",
+			repoYAML: `commits:
+  - id: initial
+    files:
+      setup.py: |
+        from Cython.Build import cythonize
+`,
+			wheelEntries: []archive.ZipEntry{
+				{FileHeader: &zip.FileHeader{Name: "example/mod.cpython-312-x86_64-linux-gnu.so"}, Body: cython329RodataELF},
+			},
+			tags:     WheelTags{Python: "cp312", ABI: "cp312", Platform: "manylinux_2_28_x86_64"},
+			reqs:     []string{"setuptools==82.0.0"},
+			wantReqs: []string{"Cython==3.2.9"},
+		},
+		{
+			name: "SpacedSpecKeptWithoutELFVersion",
+			pkg:  "example-cython-pkg",
+			repoYAML: `commits:
+  - id: initial
+    files:
+      setup.py: |
+        from Cython.Build import cythonize
+        setup_requires = [ "Cython >= 3.0, < 3.1" ]
+`,
+			wheelEntries: []archive.ZipEntry{
+				{FileHeader: &zip.FileHeader{Name: "example/mod.cpython-312-x86_64-linux-gnu.so"}, Body: plainELF},
+			},
+			tags:     WheelTags{Python: "cp312", ABI: "cp312", Platform: "manylinux_2_28_x86_64"},
+			reqs:     []string{"setuptools==82.0.0"},
+			wantReqs: []string{"Cython >= 3.0, < 3.1"},
+		},
+		{
+			name: "UnterminatedAndProseSpecsIgnored",
+			pkg:  "example-cython-pkg",
+			repoYAML: `commits:
+  - id: initial
+    files:
+      setup.py: |
+        from Cython.Build import cythonize
+        spec = "Cython >= " + MIN_CYTHON
+        raise RuntimeError("Cython >= 0.29 is required")
+`,
+			wheelEntries: []archive.ZipEntry{
+				{FileHeader: &zip.FileHeader{Name: "example/mod.cpython-312-x86_64-linux-gnu.so"}, Body: plainELF},
+			},
+			tags:     WheelTags{Python: "cp312", ABI: "cp312", Platform: "manylinux_2_28_x86_64"},
+			reqs:     []string{"setuptools==82.0.0"},
+			wantReqs: []string{"Cython"},
+		},
+		{
+			name: "WildcardSpecPinnedFromELF",
+			pkg:  "example-cython-pkg",
+			repoYAML: `commits:
+  - id: initial
+    files:
+      setup.py: |
+        from Cython.Build import cythonize
+        setup_requires = ["Cython==3.2.*"]
+`,
+			wheelEntries: []archive.ZipEntry{
+				{FileHeader: &zip.FileHeader{Name: "example/mod.cpython-312-x86_64-linux-gnu.so"}, Body: cython329ELF},
+			},
+			tags:     WheelTags{Python: "cp312", ABI: "cp312", Platform: "manylinux_2_28_x86_64"},
+			reqs:     []string{"setuptools==82.0.0"},
+			wantReqs: []string{"Cython==3.2.9"},
+		},
+		{
+			name: "MalformedPyprojectFallsBackToCython",
+			pkg:  "charset-normalizer",
+			repoYAML: `commits:
+  - id: initial
+    files:
+      pyproject.toml: |
+        [build-system]
+        build-backend = "backend
+      setup.py: |
+        import os
+        USE_CYTHON = os.getenv("CHARSET_NORMALIZER_USE_CYTHON") == "1"
+`,
+			wheelEntries: []archive.ZipEntry{
+				{FileHeader: &zip.FileHeader{Name: "charset_normalizer/md.cpython-312-x86_64-linux-gnu.so"}, Body: plainELF},
+			},
+			tags:     WheelTags{Python: "cp312", ABI: "cp312", Platform: "manylinux_2_28_x86_64"},
+			reqs:     []string{"setuptools==84.0.0"},
+			wantEnv:  map[string]string{"CHARSET_NORMALIZER_USE_CYTHON": "1"},
+			wantReqs: []string{"Cython"},
+		},
+		{
+			name: "RequirementsFileContinuationRejected",
+			pkg:  "mypy",
+			repoYAML: `commits:
+  - id: initial
+    files:
+      setup.py: |
+        import os
+        if os.getenv("MYPY_USE_MYPYC", None) == "1":
+            USE_MYPYC = True
+      mypyc/build.py: |
+        def mypycify(): pass
+      build-requirements.txt: |
+        types-psutil==7.0.0 \
+            --hash=sha256:0000
+`,
+			wheelEntries: []archive.ZipEntry{
+				{FileHeader: &zip.FileHeader{Name: "08ae81f72d5a2b5fa9e0__mypyc.cpython-315-x86_64-linux-gnu.so"}, Body: plainELF},
+			},
+			tags:    WheelTags{Python: "cp315", ABI: "cp315", Platform: "manylinux_2_28_x86_64"},
+			reqs:    []string{"setuptools==84.0.0"},
+			wantErr: true,
+		},
+		{
+			name: "HatchlingMypycHookWithRuntimeDependenciesFromMetadata",
+			pkg:  "black",
+			repoYAML: `commits:
+  - id: initial
+    files:
+      pyproject.toml: |
+        [build-system]
+        requires = ["hatchling>=1.27.0"]
+        build-backend = "hatchling.build"
+
+        [tool.hatch.build.targets.wheel.hooks.mypyc]
+        enable-by-default = false
+        dependencies = ["hatch-mypyc>=0.16.0", "mypy==1.20.2"]
+        require-runtime-dependencies = true
+`,
+			wheelEntries: []archive.ZipEntry{
+				{FileHeader: &zip.FileHeader{Name: "a1b2c3__mypyc.cpython-312-x86_64-linux-gnu.so"}, Body: defaultMypycELF},
+				{
+					FileHeader: &zip.FileHeader{Name: "black/_vendor/vendored-1.0.dist-info/METADATA"},
+					Body:       []byte("Metadata-Version: 2.4\nName: vendored\nRequires-Dist: ignored-vendored-dep>=1.0\n"),
+				},
+				{
+					FileHeader: &zip.FileHeader{Name: "black-26.5.1.dist-info/METADATA"},
+					Body: []byte(
+						"Metadata-Version: 2.4\n" +
+							"Name: black\n" +
+							"Requires-Dist: click>=8.0.0\n" +
+							"Requires-Dist: pathspec>=1.0.0\n" +
+							"Requires-Dist: tomli>=1.1.0; python_version < '3.11'\n" +
+							"Requires-Dist: colorama>=0.4.3; extra == 'colorama'\n" +
+							"Requires-Dist: uvloop>=0.15.2; (sys_platform != 'win32') and extra == 'uvloop'\n" +
+							"\n" +
+							"Requires-Dist: ignored-readme-body-line>=1.0\n",
+					),
+				},
+			},
+			tags:    WheelTags{Python: "cp312", ABI: "cp312", Platform: "manylinux_2_28_x86_64"},
+			reqs:    []string{"hatchling==1.27.0"},
+			wantEnv: map[string]string{"HATCH_BUILD_HOOK_ENABLE_MYPYC": "1"},
+			wantReqs: []string{
+				"hatch-mypyc>=0.16.0",
+				"mypy==1.20.2",
+				"click>=8.0.0",
+				"pathspec>=1.0.0",
+				"tomli>=1.1.0; python_version < '3.11'",
+			},
+		},
+		{
+			name: "HatchlingCythonHookWithoutDirectCythonDependency",
+			pkg:  "psygnal",
+			repoYAML: `commits:
+  - id: initial
+    files:
+      pyproject.toml: |
+        [build-system]
+        requires = ["hatchling"]
+        build-backend = "hatchling.build"
+
+        [tool.hatch.build.targets.wheel.hooks.cython]
+        enable-by-default = false
+        dependencies = ["hatch-cython"]
+`,
+			wheelEntries: []archive.ZipEntry{
+				{FileHeader: &zip.FileHeader{Name: "psygnal/_signal.cpython-312-x86_64-linux-gnu.so"}, Body: cython329ELF},
+			},
+			tags:     WheelTags{Python: "cp312", ABI: "cp312", Platform: "manylinux_2_28_x86_64"},
+			reqs:     []string{"hatchling==1.27.0"},
+			wantEnv:  map[string]string{"HATCH_BUILD_HOOK_ENABLE_CYTHON": "1"},
+			wantReqs: []string{"hatch-cython", "Cython==3.2.9"},
+		},
+		{
+			name: "HatchlingSkippedAndUnmatchedHooks",
+			pkg:  "example",
+			repoYAML: `commits:
+  - id: initial
+    files:
+      setup.py: |
+        import os
+        if os.getenv("EXAMPLE_USE_CYTHON"):
+            pass
+      pyproject.toml: |
+        [build-system]
+        requires = ["hatchling"]
+        build-backend = "hatchling.build"
+
+        [tool.hatch.build.targets.wheel.hooks.cython]
+        enable-by-default = false
+        dependencies = ["hatch-cython"]
+
+        [tool.hatch.build.targets.wheel.hooks.mypyc]
+        enable-by-default = false
+        dependencies = ["hatch-mypyc"]
+
+        [tool.hatch.build.targets.wheel.hooks.vcs]
+        enable-by-default = false
+        dependencies = ["hatch-vcs"]
+
+        [tool.hatch.build.targets.wheel.hooks.custom]
+        enable-by-default = true
+        dependencies = ["setuptools"]
+`,
+			wheelEntries: []archive.ZipEntry{
+				{FileHeader: &zip.FileHeader{Name: "example/_ext.cpython-312-x86_64-linux-gnu.so"}, Body: plainELF},
+			},
+			tags: WheelTags{Python: "cp312", ABI: "cp312", Platform: "manylinux_2_28_x86_64"},
+			reqs: []string{"hatchling==1.27.0", "setuptools==84.0.0"},
+		},
+		{
+			name: "HatchlingCustomCythonAndMypycHooks",
+			pkg:  "chardet",
+			repoYAML: `commits:
+  - id: initial
+    files:
+      pyproject.toml: |
+        [build-system]
+        requires = ["hatchling", "hatch-vcs"]
+        build-backend = "hatchling.build"
+
+        [tool.hatch.build.targets.wheel.hooks.custom]
+        enable-by-default = false
+        dependencies = ["Cython>=3.0", "setuptools"]
+
+        [tool.hatch.build.targets.wheel.hooks.mypyc]
+        enable-by-default = false
+        dependencies = ["hatch-mypyc>=0.16.0", "mypy>=1.19"]
+        require-runtime-dependencies = false
+`,
+			wheelEntries: []archive.ZipEntry{
+				{FileHeader: &zip.FileHeader{Name: "chardet/_kernel.cpython-312-x86_64-linux-gnu.so"}, Body: cython329ELF},
+				{FileHeader: &zip.FileHeader{Name: "0123abcd__mypyc.cpython-312-x86_64-linux-gnu.so"}, Body: defaultMypycELF},
+			},
+			tags: WheelTags{Python: "cp312", ABI: "cp312", Platform: "manylinux_2_28_x86_64"},
+			reqs: []string{"hatchling==1.27.0", "hatch-vcs"},
+			wantEnv: map[string]string{
+				"HATCH_BUILD_HOOK_ENABLE_CUSTOM": "1",
+				"HATCH_BUILD_HOOK_ENABLE_MYPYC":  "1",
+			},
+			wantReqs: []string{
+				"Cython==3.2.9",
+				"setuptools",
+				"hatch-mypyc>=0.16.0",
+				"mypy>=1.19",
+			},
+		},
+		{
+			name: "MypycClangAndStrippedDebugSections",
+			pkg:  "black",
+			repoYAML: `commits:
+  - id: initial
+    files:
+      pyproject.toml: |
+        [build-system]
+        requires = ["hatchling>=1.27.0"]
+        build-backend = "hatchling.build"
+
+        [tool.hatch.build.targets.wheel.hooks.mypyc]
+        enable-by-default = false
+        dependencies = ["hatch-mypyc>=0.16.0", "mypy==1.20.2"]
+`,
+			wheelEntries: []archive.ZipEntry{
+				{FileHeader: &zip.FileHeader{Name: "a1b2c3__mypyc.cpython-312-x86_64-linux-gnu.so"}, Body: clangStrippedMypycELF},
+			},
+			tags: WheelTags{Python: "cp312", ABI: "cp312", Platform: "manylinux_2_28_x86_64"},
+			reqs: []string{"hatchling==1.27.0"},
+			wantEnv: map[string]string{
+				"CC":                            "clang",
+				"HATCH_BUILD_HOOK_ENABLE_MYPYC": "1",
+				"MYPYC_DEBUG_LEVEL":             "0",
+				"MYPYC_OPT_LEVEL":               "3",
+			},
+			wantReqs:    []string{"hatch-mypyc>=0.16.0", "mypy==1.20.2"},
+			wantSysDeps: []string{"clang"},
+		},
+		{
+			name: "MypycClangWithDebugSectionsRetainsDefaultDebugLevel",
+			pkg:  "mypy",
+			repoYAML: `commits:
+  - id: initial
+    files:
+      setup.py: |
+        import os
+        if os.getenv("MYPY_USE_MYPYC", None) == "1":
+            USE_MYPYC = True
+      mypyc/build.py: |
+        def mypycify(): pass
+      build-requirements.txt: |
+        mypy_extensions>=1.0.0
+`,
+			wheelEntries: []archive.ZipEntry{
+				{FileHeader: &zip.FileHeader{Name: "08ae81f72d5a2b5fa9e0__mypyc.cpython-312-x86_64-linux-musl.so"}, Body: clangDebugMypycELF},
+			},
+			tags:        WheelTags{Python: "cp312", ABI: "cp312", Platform: "musllinux_1_2_x86_64"},
+			reqs:        []string{"setuptools==84.0.0"},
+			wantEnv:     map[string]string{"CC": "clang", "MYPY_USE_MYPYC": "1"},
+			wantReqs:    []string{"mypy_extensions>=1.0.0"},
+			wantSysDeps: []string{"clang"},
+		},
+		{
+			name: "MixedCythonDebugAndStrippedMypycEmitsDebugLevelZero",
+			pkg:  "chardet",
+			repoYAML: `commits:
+  - id: initial
+    files:
+      pyproject.toml: |
+        [build-system]
+        requires = ["hatchling"]
+        build-backend = "hatchling.build"
+
+        [tool.hatch.build.targets.wheel.hooks.custom]
+        enable-by-default = false
+        dependencies = ["Cython>=3.0"]
+
+        [tool.hatch.build.targets.wheel.hooks.mypyc]
+        enable-by-default = false
+        dependencies = ["hatch-mypyc>=0.16.0", "mypy>=1.19"]
+`,
+			wheelEntries: []archive.ZipEntry{
+				{FileHeader: &zip.FileHeader{Name: "chardet/_kernel.cpython-312-x86_64-linux-gnu.so"}, Body: cython329DebugELF},
+				{FileHeader: &zip.FileHeader{Name: "0123abcd__mypyc.cpython-312-x86_64-linux-gnu.so"}, Body: gccStrippedMypycELF},
+			},
+			tags: WheelTags{Python: "cp312", ABI: "cp312", Platform: "manylinux_2_28_x86_64"},
+			reqs: []string{"hatchling==1.27.0"},
+			wantEnv: map[string]string{
+				"HATCH_BUILD_HOOK_ENABLE_CUSTOM": "1",
+				"HATCH_BUILD_HOOK_ENABLE_MYPYC":  "1",
+				"MYPYC_DEBUG_LEVEL":              "0",
+				"MYPYC_OPT_LEVEL":                "3",
+			},
+			wantReqs: []string{"Cython==3.2.9", "hatch-mypyc>=0.16.0", "mypy>=1.19"},
+		},
+		{
+			name: "UnparseableMypycELFOmitsDebugAndOptEnv",
+			pkg:  "black",
+			repoYAML: `commits:
+  - id: initial
+    files:
+      pyproject.toml: |
+        [build-system]
+        requires = ["hatchling>=1.27.0"]
+        build-backend = "hatchling.build"
+
+        [tool.hatch.build.targets.wheel.hooks.mypyc]
+        enable-by-default = false
+        dependencies = ["hatch-mypyc>=0.16.0", "mypy==1.20.2"]
+`,
+			wheelEntries: []archive.ZipEntry{
+				{FileHeader: &zip.FileHeader{Name: "a1b2c3__mypyc.cpython-312-x86_64-linux-gnu.so"}, Body: []byte("not-an-elf")},
+			},
+			tags:     WheelTags{Python: "cp312", ABI: "cp312", Platform: "manylinux_2_28_x86_64"},
+			reqs:     []string{"hatchling==1.27.0"},
+			wantEnv:  map[string]string{"HATCH_BUILD_HOOK_ENABLE_MYPYC": "1"},
+			wantReqs: []string{"hatch-mypyc>=0.16.0", "mypy==1.20.2"},
+		},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			repo := must(gitxtest.CreateRepoFromYAML(tc.repoYAML, nil))
+			commit := must(repo.Repository.CommitObject(repo.Commits["initial"]))
+			tree := must(commit.Tree())
+			buf := must(archivetest.ZipFile(tc.wheelEntries))
+			zr := must(zip.NewReader(bytes.NewReader(buf.Bytes()), int64(buf.Len())))
+			got, err := inferWheelBuildEnv(tree, "", tc.pkg, zr, tc.tags, tc.reqs)
+			if (err != nil) != tc.wantErr {
+				t.Fatalf("inferWheelBuildEnv() error = %v, wantErr %v", err, tc.wantErr)
+			}
+			if diff := cmp.Diff(tc.wantEnv, got.env); diff != "" {
+				t.Errorf("inferWheelBuildEnv() env diff (-want +got):\n%s", diff)
+			}
+			if diff := cmp.Diff(tc.wantReqs, got.reqs); diff != "" {
+				t.Errorf("inferWheelBuildEnv() reqs diff (-want +got):\n%s", diff)
+			}
+			if diff := cmp.Diff(tc.wantSysDeps, got.sysDeps); diff != "" {
+				t.Errorf("inferWheelBuildEnv() sysDeps diff (-want +got):\n%s", diff)
+			}
+		})
 	}
 }

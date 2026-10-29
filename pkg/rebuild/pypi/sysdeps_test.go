@@ -7,6 +7,7 @@ import (
 	"archive/zip"
 	"bytes"
 	"encoding/binary"
+	"slices"
 	"testing"
 
 	"github.com/google/go-cmp/cmp"
@@ -16,6 +17,10 @@ import (
 )
 
 func createTestELF(importedLibs []string, soname string) []byte {
+	return createTestELFWithSections(importedLibs, soname, nil)
+}
+
+func createTestELFWithSections(importedLibs []string, soname string, extraSections map[string][]byte) []byte {
 	strtab := []byte{0}
 	strOffsets := make(map[string]uint64)
 	addStr := func(s string) uint64 {
@@ -50,7 +55,19 @@ func createTestELF(importedLibs []string, soname string) []byte {
 	dynEntries = append(dynEntries, dynEntry{tag: 10, val: uint64(len(strtab))}) // DT_STRSZ
 	dynEntries = append(dynEntries, dynEntry{tag: 0, val: 0})                    // DT_NULL
 	shstrtab := []byte("\x00.dynamic\x00.dynstr\x00.shstrtab\x00")
-	dynDataOffset := uint64(64 + 4*64)
+	var extraNames []string
+	for name := range extraSections {
+		extraNames = append(extraNames, name)
+	}
+	slices.Sort(extraNames)
+	extraNameOffs := make(map[string]uint32, len(extraNames))
+	for _, name := range extraNames {
+		extraNameOffs[name] = uint32(len(shstrtab))
+		shstrtab = append(shstrtab, []byte(name)...)
+		shstrtab = append(shstrtab, 0)
+	}
+	numSections := uint16(4 + len(extraNames))
+	dynDataOffset := uint64(64 + uint64(numSections)*64)
 	dynDataSize := uint64(len(dynEntries) * 16)
 	dynstrDataOffset := dynDataOffset + dynDataSize
 	dynstrDataSize := uint64(len(strtab))
@@ -60,17 +77,17 @@ func createTestELF(importedLibs []string, soname string) []byte {
 	// ELF64 Header (64 bytes)
 	hdr := make([]byte, 64)
 	copy(hdr[0:4], []byte{0x7f, 'E', 'L', 'F'})
-	hdr[4] = 2                                    // ELFCLASS64
-	hdr[5] = 1                                    // ELFDATA2LSB
-	hdr[6] = 1                                    // EV_CURRENT
-	binary.LittleEndian.PutUint16(hdr[16:18], 3)  // ET_DYN
-	binary.LittleEndian.PutUint16(hdr[18:20], 62) // EM_X86_64
-	binary.LittleEndian.PutUint32(hdr[20:24], 1)  // e_version
-	binary.LittleEndian.PutUint64(hdr[40:48], 64) // e_shoff
-	binary.LittleEndian.PutUint16(hdr[52:54], 64) // e_ehsize
-	binary.LittleEndian.PutUint16(hdr[58:60], 64) // e_shentsize
-	binary.LittleEndian.PutUint16(hdr[60:62], 4)  // e_shnum
-	binary.LittleEndian.PutUint16(hdr[62:64], 3)  // e_shstrndx
+	hdr[4] = 2                                             // ELFCLASS64
+	hdr[5] = 1                                             // ELFDATA2LSB
+	hdr[6] = 1                                             // EV_CURRENT
+	binary.LittleEndian.PutUint16(hdr[16:18], 3)           // ET_DYN
+	binary.LittleEndian.PutUint16(hdr[18:20], 62)          // EM_X86_64
+	binary.LittleEndian.PutUint32(hdr[20:24], 1)           // e_version
+	binary.LittleEndian.PutUint64(hdr[40:48], 64)          // e_shoff
+	binary.LittleEndian.PutUint16(hdr[52:54], 64)          // e_ehsize
+	binary.LittleEndian.PutUint16(hdr[58:60], 64)          // e_shentsize
+	binary.LittleEndian.PutUint16(hdr[60:62], numSections) // e_shnum
+	binary.LittleEndian.PutUint16(hdr[62:64], 3)           // e_shstrndx
 	buf.Write(hdr)
 	// Section 0: SHT_NULL (64 bytes)
 	buf.Write(make([]byte, 64))
@@ -104,12 +121,27 @@ func createTestELF(importedLibs []string, soname string) []byte {
 	binary.LittleEndian.PutUint64(shShStrTab[32:40], shstrtabDataSize)   // sh_size
 	binary.LittleEndian.PutUint64(shShStrTab[48:56], 1)                  // sh_addralign
 	buf.Write(shShStrTab)
+	extraOffset := shstrtabDataOffset + shstrtabDataSize
+	for _, name := range extraNames {
+		secData := extraSections[name]
+		shExtra := make([]byte, 64)
+		binary.LittleEndian.PutUint32(shExtra[0:4], extraNameOffs[name])
+		binary.LittleEndian.PutUint32(shExtra[4:8], 1) // SHT_PROGBITS
+		binary.LittleEndian.PutUint64(shExtra[24:32], extraOffset)
+		binary.LittleEndian.PutUint64(shExtra[32:40], uint64(len(secData)))
+		binary.LittleEndian.PutUint64(shExtra[48:56], 1)
+		buf.Write(shExtra)
+		extraOffset += uint64(len(secData))
+	}
 	for _, d := range dynEntries {
 		binary.Write(buf, binary.LittleEndian, d.tag)
 		binary.Write(buf, binary.LittleEndian, d.val)
 	}
 	buf.Write(strtab)
 	buf.Write(shstrtab)
+	for _, name := range extraNames {
+		buf.Write(extraSections[name])
+	}
 	return buf.Bytes()
 }
 
