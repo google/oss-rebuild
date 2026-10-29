@@ -250,6 +250,18 @@ func ScratchExecGetInit(ctx context.Context) (*agentapiservice.ScratchExecGetDep
 	}, nil
 }
 
+func ScratchExecKillInit(ctx context.Context) (*agentapiservice.ScratchExecKillDeps, error) {
+	fs, err := firestore.NewClient(ctx, *project)
+	if err != nil {
+		return nil, errors.Wrap(err, "firestore client")
+	}
+	return &agentapiservice.ScratchExecKillDeps{
+		Scratches: db.NewFirestoreScratch(fs),
+		Execs:     db.NewFirestoreScratchExecs(fs),
+		Dialer:    scratchHostDialer(ctx, *scratchHostPort),
+	}, nil
+}
+
 func ScratchReapInit(ctx context.Context) (*agentapiservice.ScratchReapDeps, error) {
 	gce, err := agentapiservice.NewComputeGCE(ctx, *project)
 	if err != nil {
@@ -291,6 +303,7 @@ func main() {
 		mux.HandleFunc("/scratch/delete", api.Handler(ScratchDeleteInit, agentapiservice.ScratchDelete))
 		mux.HandleFunc("/scratch/exec/op/create", api.Handler(ScratchExecCreateInit, agentapiservice.ScratchExecCreate))
 		mux.HandleFunc("/scratch/exec/op/get", api.Handler(ScratchExecGetInit, agentapiservice.ScratchExecGet))
+		mux.HandleFunc("/scratch/exec/op/kill", api.Handler(ScratchExecKillInit, agentapiservice.ScratchExecKill))
 		mux.HandleFunc("/scratch/reap", api.Handler(ScratchReapInit, agentapiservice.ScratchReap))
 	}
 

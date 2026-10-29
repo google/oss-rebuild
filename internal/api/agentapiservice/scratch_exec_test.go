@@ -27,13 +27,14 @@ import (
 	"google.golang.org/grpc/status"
 )
 
-// fakeWorker mimics the host broker's /exec/start: records the request
-// and returns {}. Tests can swap in a failure to exercise the POST-failure
-// path.
+// fakeWorker mimics the host broker's /exec/start and /exec/op/kill:
+// records the request and returns {}. Tests can swap in a failure to
+// exercise the POST-failure path.
 type fakeWorker struct {
-	srv        *httptest.Server
-	received   *scratchhostservice.StartRequest
-	respStatus int
+	srv          *httptest.Server
+	received     *scratchhostservice.StartRequest
+	killReceived *scratchhostservice.OpRequest
+	respStatus   int
 }
 
 func newFakeWorker(t *testing.T) *fakeWorker {
@@ -48,6 +49,13 @@ func newFakeWorker(t *testing.T) *fakeWorker {
 	mux := http.NewServeMux()
 	mux.Handle("/exec/start", api.Handler(api.NoDepsInit, func(_ context.Context, req scratchhostservice.StartRequest, _ *api.NoDeps) (*act.NoOutput, error) {
 		fw.received = &req
+		if err := fail(); err != nil {
+			return nil, err
+		}
+		return &act.NoOutput{}, nil
+	}))
+	mux.Handle("/exec/op/kill", api.Handler(api.NoDepsInit, func(_ context.Context, req scratchhostservice.OpRequest, _ *api.NoDeps) (*act.NoOutput, error) {
+		fw.killReceived = &req
 		if err := fail(); err != nil {
 			return nil, err
 		}
@@ -780,6 +788,86 @@ func TestScratchExecGet_NotFound(t *testing.T) {
 	_, err := ScratchExecGet(context.Background(), schema.GetOperationRequest{ID: "missing"}, deps)
 	if status.Code(err) != codes.NotFound {
 		t.Errorf("code = %s; want NotFound. err=%v", status.Code(err), err)
+	}
+}
+
+func TestScratchExecKill_ForwardsToHost(t *testing.T) {
+	const opID = "op-kill"
+	fw := newFakeWorker(t)
+	createDeps, _, scratches, execs := fixture(t, opID, fw)
+	if _, err := ScratchExecCreate(context.Background(), schema.ScratchExecRequest{
+		ScratchID: "s-1", Cmd: []string{"sleep", "30"},
+	}, createDeps); err != nil {
+		t.Fatalf("ScratchExecCreate: %v", err)
+	}
+	killDeps := &ScratchExecKillDeps{Scratches: scratches, Execs: execs, Dialer: fw.dialer()}
+
+	if _, err := ScratchExecKill(context.Background(), schema.ScratchExecKillRequest{ID: opID}, killDeps); err != nil {
+		t.Fatalf("ScratchExecKill: %v", err)
+	}
+	if fw.killReceived == nil || fw.killReceived.ID != opID {
+		t.Errorf("worker kill request = %+v; want ID %q", fw.killReceived, opID)
+	}
+	// The record stays pending: the next sync persists the terminal state.
+	stored, err := execs.Get(context.Background(), opID)
+	if err != nil {
+		t.Fatalf("execs.Get: %v", err)
+	}
+	if stored.State != schema.ScratchExecPending {
+		t.Errorf("persisted State = %q; want pending", stored.State)
+	}
+}
+
+func TestScratchExecKill_TerminalOpIsNoop(t *testing.T) {
+	const opID = "op-kill-done"
+	fw := newFakeWorker(t)
+	_, _, scratches, execs := fixture(t, opID, fw)
+	if err := execs.Insert(context.Background(), schema.ScratchExec{
+		ID: opID, ScratchID: "s-1", State: schema.ScratchExecCompleted,
+	}); err != nil {
+		t.Fatalf("seed exec: %v", err)
+	}
+	killDeps := &ScratchExecKillDeps{Scratches: scratches, Execs: execs, Dialer: fw.dialer()}
+
+	if _, err := ScratchExecKill(context.Background(), schema.ScratchExecKillRequest{ID: opID}, killDeps); err != nil {
+		t.Fatalf("ScratchExecKill(terminal): %v", err)
+	}
+	if fw.killReceived != nil {
+		t.Errorf("worker received kill %+v; want none (already terminal)", fw.killReceived)
+	}
+}
+
+func TestScratchExecKill_NotFound(t *testing.T) {
+	killDeps := &ScratchExecKillDeps{Execs: db.NewMemoryScratchExecs()}
+	_, err := ScratchExecKill(context.Background(), schema.ScratchExecKillRequest{ID: "missing"}, killDeps)
+	if status.Code(err) != codes.NotFound {
+		t.Errorf("code = %s; want NotFound. err=%v", status.Code(err), err)
+	}
+}
+
+func TestScratchExecKill_HostFailureUnavailable(t *testing.T) {
+	const opID = "op-kill-fail"
+	fw := newFakeWorker(t)
+	fw.respStatus = http.StatusInternalServerError
+	_, _, scratches, execs := fixture(t, opID, fw)
+	if err := execs.Insert(context.Background(), schema.ScratchExec{
+		ID: opID, ScratchID: "s-1", State: schema.ScratchExecPending,
+	}); err != nil {
+		t.Fatalf("seed exec: %v", err)
+	}
+	killDeps := &ScratchExecKillDeps{Scratches: scratches, Execs: execs, Dialer: fw.dialer()}
+
+	_, err := ScratchExecKill(context.Background(), schema.ScratchExecKillRequest{ID: opID}, killDeps)
+	if status.Code(err) != codes.Unavailable {
+		t.Errorf("code = %s; want Unavailable. err=%v", status.Code(err), err)
+	}
+	// The failed kill must not finalize the record.
+	stored, gerr := execs.Get(context.Background(), opID)
+	if gerr != nil {
+		t.Fatalf("execs.Get: %v", gerr)
+	}
+	if stored.State != schema.ScratchExecPending {
+		t.Errorf("persisted State = %q; want pending", stored.State)
 	}
 }
 

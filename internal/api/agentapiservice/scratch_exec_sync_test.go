@@ -277,6 +277,29 @@ func TestSyncer_FinalFromStatus(t *testing.T) {
 			},
 		},
 		{
+			// A killed op lands in Lost with an Aborted error.
+			name: "KilledIsLost",
+			status: scratchhostservice.ExecStatus{
+				Done:       true,
+				Killed:     true,
+				StartedAt:  workerStart,
+				FinishedAt: workerFinish,
+			},
+			want: schema.ScratchExec{
+				ID:         "op1",
+				ScratchID:  "s1",
+				State:      schema.ScratchExecLost,
+				CreatedAt:  created,
+				StartedAt:  workerStart,
+				FinishedAt: workerFinish,
+				Updated:    brokerNow,
+				Error: &schema.Status{
+					Code:    int(codes.Aborted),
+					Message: "op killed",
+				},
+			},
+		},
+		{
 			name: "InfraErrorIsLost",
 			status: scratchhostservice.ExecStatus{
 				Done:       true,
