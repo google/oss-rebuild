@@ -94,7 +94,7 @@ func verifyPyProjectFile(ctx context.Context, f *object.File, name, version stri
 		}
 
 		verificationResult.foundVersion = foundVersion
-		if foundVersion != "" && version == foundVersion {
+		if foundVersion != "" && SameVersion(foundVersion, version) {
 			verificationResult.versionMatch = true
 		}
 	}

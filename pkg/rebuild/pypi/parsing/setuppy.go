@@ -291,7 +291,7 @@ func verifySetupPyFile(ctx context.Context, f *object.File, name, version string
 		if v, ok := args["version"]; ok && v.kind == pyString {
 			verificationResult.foundVersion = v.str
 		}
-		verificationResult.versionMatch = verificationResult.foundVersion != "" && verificationResult.foundVersion == version
+		verificationResult.versionMatch = verificationResult.foundVersion != "" && SameVersion(verificationResult.foundVersion, version)
 	}
 	return verificationResult, nil
 }
