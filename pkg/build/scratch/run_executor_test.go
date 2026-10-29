@@ -6,12 +6,14 @@ package scratch
 import (
 	"context"
 	"encoding/base64"
+	"io"
 	"slices"
 	"strings"
 	"testing"
 	"time"
 
 	"github.com/google/go-cmp/cmp"
+	"github.com/google/oss-rebuild/internal/gcsx/gcsxtest"
 	"github.com/google/oss-rebuild/pkg/longrunning"
 	"github.com/google/oss-rebuild/pkg/rebuild/rebuild"
 	"github.com/google/oss-rebuild/pkg/rebuild/schema"
@@ -43,11 +45,16 @@ func testRunExecutor(t *testing.T, f *fakeStubs) *DockerRunExecutor {
 func TestPhaseFailureSurfacesExitError(t *testing.T) {
 	// Phases: setup, source succeed and deps exits 42. The build phase and
 	// artifact fetch must not be dispatched.
-	f := &fakeStubs{creates: runCreates(0, 0, 42)}
+	f := &fakeStubs{creates: runCreates(0, 0, 42), outputs: gcsxtest.NewServer(t, nil)}
+	f.creates[4] = respond(f.withOutput(completedOp("deps", 42), "+ npm ci\nnpm ERR! missing package-lock.json\n"), nil)
 	result := awaitBuild(t, testRunExecutor(t, f), testOptions())
 	var exitErr *ExitError
 	if !errors.As(result.Error, &exitErr) || exitErr.Code != 42 || exitErr.Phase != "deps" {
 		t.Fatalf("Result.Error = %v, want ExitError{42, deps}", result.Error)
+	}
+	// The output's last trace line names the failing command.
+	if exitErr.Command != "npm ci" {
+		t.Errorf("Command = %q, want %q", exitErr.Command, "npm ci")
 	}
 	// The scripted ops carry no worker stamps, so the record holds a failure
 	// marker alone and Validated refuses it.
@@ -183,23 +190,32 @@ func TestOversizeArtifactFailsBuild(t *testing.T) {
 }
 
 func TestSuccessUploadsAssets(t *testing.T) {
-	f := &fakeStubs{
-		// No OutURI on the fetch op: an empty artifact.
-		creates: append(runCreates(0, 0, 0, 0), respond(completedOp("fetch", 0), nil)),
+	f := &fakeStubs{creates: runCreates(0, 0, 0, 0), outputs: gcsxtest.NewServer(t, nil)}
+	for i, phase := range []string{"setup", "source", "deps", "build"} {
+		f.creates[2+i] = respond(f.withOutput(completedOp(phase, 0), phase+" output\n"), nil)
 	}
+	f.creates = append(f.creates, respond(f.withOutput(completedOp("fetch", 0), "artifact bytes"), nil))
 	opts := testOptions()
 	result := awaitBuild(t, testRunExecutor(t, f), opts)
 	if result.Error != nil {
 		t.Fatalf("Result.Error = %v, want success", result.Error)
 	}
-	// Both assets exist in the store (empty, since the fake ops carry no output).
-	for _, asset := range []rebuild.Asset{rebuild.RebuildAsset.For(testTarget), rebuild.DebugLogsAsset.For(testTarget)} {
+	// The fetch op's output is the artifact, and the phases' outputs in order
+	// are the debug logs.
+	for asset, want := range map[rebuild.Asset]string{
+		rebuild.RebuildAsset.For(testTarget):   "artifact bytes",
+		rebuild.DebugLogsAsset.For(testTarget): "setup output\nsource output\ndeps output\nbuild output\n",
+	} {
 		r, err := opts.Resources.AssetStore.Reader(context.Background(), asset)
 		if err != nil {
 			t.Errorf("missing asset %v: %v", asset, err)
 			continue
 		}
+		got, err := io.ReadAll(r)
 		r.Close()
+		if err != nil || string(got) != want {
+			t.Errorf("asset %v = %q, %v; want %q", asset, got, err, want)
+		}
 	}
 	// The fetch script guards existence and size before the copy.
 	fetch := f.createReqs[7]
