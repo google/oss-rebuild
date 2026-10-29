@@ -250,3 +250,32 @@ func TestStrategies(t *testing.T) {
 		})
 	}
 }
+
+func TestGradleBuildSystemGradleValidation(t *testing.T) {
+	tests := []struct {
+		name         string
+		systemGradle string
+		wantErr      bool
+	}{
+		{name: "InferredDefault", systemGradle: gradleVersion},
+		{name: "MajorMinor", systemGradle: "7.6"},
+		{name: "ReleaseCandidate", systemGradle: "8.0-rc-1"},
+		{name: "Milestone", systemGradle: "8.0-milestone-1"},
+		{name: "MajorOnly", systemGradle: "8", wantErr: true},
+		{name: "Snapshot", systemGradle: "8.15-20250101000000+0000", wantErr: true},
+		{name: "ShellMetacharacters", systemGradle: "8.14.3;id", wantErr: true},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			b := &GradleBuild{
+				Location:     rebuild.Location{Repo: "https://foo.bar", Ref: "ref", Dir: "dir"},
+				JDKVersion:   "11.0.1",
+				SystemGradle: tc.systemGradle,
+			}
+			_, err := b.GenerateFor(rebuild.Target{Ecosystem: rebuild.Maven, Package: "com.github.ldapchai:ldapchai", Version: "0.8.6", Artifact: "ldapchai-0.8.6.jar"}, rebuild.BuildEnv{})
+			if gotErr := err != nil; gotErr != tc.wantErr {
+				t.Errorf("GenerateFor() error = %v, wantErr %v", err, tc.wantErr)
+			}
+		})
+	}
+}
