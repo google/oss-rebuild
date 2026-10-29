@@ -89,6 +89,7 @@ func fixture(t *testing.T, opID string, fw *fakeWorker) (*ScratchExecCreateDeps,
 		WorkerDialer: fw.dialer(),
 		OutputBucket: "test-output",
 		IDGen:        func() string { return opID },
+		OpTimeout:    time.Hour,
 	}
 	getDeps := &ScratchExecGetDeps{Scratches: scratches, Execs: execs}
 	return createDeps, getDeps, scratches, execs
@@ -165,6 +166,7 @@ func TestScratchExecCreate_NoObliviousIDFails(t *testing.T) {
 		WorkerDialer: fw.dialer(),
 		OutputBucket: "test-output",
 		IDGen:        func() string { return opID },
+		OpTimeout:    time.Hour,
 	}
 	_, err := ScratchExecCreate(context.Background(), schema.ScratchExecRequest{
 		ScratchID: "s-1", Cmd: []string{"true"},
@@ -245,6 +247,7 @@ func TestScratchExecCreate_DialerFailureReturnsAPIError(t *testing.T) {
 		},
 		OutputBucket: "test-output",
 		IDGen:        func() string { return opID },
+		OpTimeout:    time.Hour,
 	}
 	_, err := ScratchExecCreate(context.Background(), schema.ScratchExecRequest{
 		ScratchID: "s-1", Cmd: []string{"true"},
@@ -293,6 +296,7 @@ func TestScratchExecCreate_FinalizePersistFailureSurfacesAPIError(t *testing.T) 
 		WorkerDialer: fw.dialer(),
 		OutputBucket: "test-output",
 		IDGen:        func() string { return opID },
+		OpTimeout:    time.Hour,
 	}
 
 	_, err := ScratchExecCreate(context.Background(), schema.ScratchExecRequest{
@@ -335,6 +339,27 @@ func TestScratchExecCreate_TimeoutDefaultedAndStamped(t *testing.T) {
 	}
 	if fw.received == nil || fw.received.TimeoutSeconds != 3600 {
 		t.Errorf("worker TimeoutSeconds = %+v; want 3600", fw.received)
+	}
+}
+
+func TestScratchExecCreate_UnboundedRejected(t *testing.T) {
+	const opID = "op-unbounded"
+	fw := newFakeWorker(t)
+	createDeps, _, _, execs := fixture(t, opID, fw)
+	createDeps.OpTimeout = 0
+
+	_, err := ScratchExecCreate(context.Background(), schema.ScratchExecRequest{
+		ScratchID: "s-1", Cmd: []string{"true"},
+	}, createDeps)
+	if status.Code(err) != codes.InvalidArgument {
+		t.Errorf("code = %s; want InvalidArgument. err=%v", status.Code(err), err)
+	}
+	// Rejection happens before Insert: no dangling record.
+	if _, gerr := execs.Get(context.Background(), opID); !errors.Is(gerr, db.ErrNotFound) {
+		t.Errorf("exec exists after rejection; want no record (gerr=%v)", gerr)
+	}
+	if fw.received != nil {
+		t.Error("worker was dispatched to; want the request refused first")
 	}
 }
 
@@ -431,6 +456,7 @@ func waitFixture(t *testing.T, opID string, sync Syncer) (*ScratchExecCreateDeps
 		WorkerDialer: stubDialer(),
 		OutputBucket: "test-output",
 		IDGen:        func() string { return opID },
+		OpTimeout:    time.Hour,
 		Syncer:       sync,
 	}, execs
 }
