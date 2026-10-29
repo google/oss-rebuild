@@ -13,6 +13,7 @@ import (
 	"strings"
 	"text/template"
 
+	"github.com/google/oss-rebuild/internal/shell"
 	"github.com/google/oss-rebuild/internal/textwrap"
 	"github.com/google/oss-rebuild/pkg/build"
 	"github.com/google/oss-rebuild/pkg/build/timing"
@@ -249,6 +250,7 @@ var gcbDockerfileTpl = template.Must(
 		"indent": func(s string) string { return strings.ReplaceAll(s, "\n", "\n ") },
 		"join":   func(sep string, s []string) string { return strings.Join(s, sep) },
 		"list":   func(items ...string) []string { return items },
+		"quote":  shell.Quote,
 	}).Parse(
 		textwrap.Dedent(`
 			#syntax=docker/dockerfile:1.10
@@ -294,7 +296,7 @@ var gcbDockerfileTpl = template.Must(
 			RUN sed 's/^ //' <<'EOF' >/build
 			 set -eux
 			 {{.Instructions.Build | indent}}
-			 mkdir /out && cp /src/{{.Instructions.OutputPath}} /out/
+			 mkdir /out && cp /src/{{.Instructions.OutputPath | quote}} /out/
 			EOF
 			WORKDIR "/src"
 			ENTRYPOINT ["/bin/sh","/build"]
