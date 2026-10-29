@@ -5,7 +5,10 @@ package schema
 
 import (
 	"errors"
+	"strings"
 	"time"
+
+	"github.com/google/oss-rebuild/pkg/rebuild/rebuild"
 )
 
 // ScratchState is the lifecycle state of a scratch build environment.
@@ -177,6 +180,60 @@ type ScratchExec struct {
 	State    ScratchExecState `json:"state" firestore:"state"`
 	ExitCode int              `json:"exit_code,omitempty" firestore:"exit_code,omitempty"`
 	Error    *Status          `json:"error,omitempty" firestore:"error,omitempty"`
+	Label    ScratchLabel     `json:"label,omitempty" firestore:"label,omitempty"` // what the dispatcher ran this for, copied from the request
+}
+
+// ScratchLabel names what an exec was dispatched for. The machinery labels
+// are a closed set. PhaseLabel labels a build phase's exec and ToolLabel an
+// LLM tool call's, e.g. "phase/deps" and "tool/run_in_container".
+type ScratchLabel string
+
+const (
+	ScratchLabelKeepAlive      ScratchLabel = "keepalive"       // the idle-reaper heartbeat
+	ScratchLabelPrepare        ScratchLabel = "prepare"         // build dir staging and the previous container sweep
+	ScratchLabelStart          ScratchLabel = "start"           // docker run of the build container
+	ScratchLabelStop           ScratchLabel = "stop"            // docker stop of the build container
+	ScratchLabelImage          ScratchLabel = "image"           // docker build of a Dockerfile plan
+	ScratchLabelRun            ScratchLabel = "run"             // the Dockerfile plan's container run
+	ScratchLabelCleanup        ScratchLabel = "cleanup"         // image and container removal
+	ScratchLabelTiming         ScratchLabel = "timing"          // docker history and inspect for build timings
+	ScratchLabelArtifact       ScratchLabel = "artifact"        // artifact fetch over the output channel
+	ScratchLabelCompare        ScratchLabel = "compare"         // the job's stabilized comparison of a build's output with upstream
+	ScratchLabelPrepareCompare ScratchLabel = "prepare-compare" // staging of the comparison tools and upstream
+	ScratchLabelRestore        ScratchLabel = "restore"         // the free-form source tree reset after a refusal
+	ScratchLabelReadback       ScratchLabel = "readback"        // a timed-out tool call's output replay
+	ScratchLabelCtl            ScratchLabel = "ctl"             // an operator's ctl scratch exec
+)
+
+const (
+	phaseLabelPrefix = "phase/"
+	toolLabelPrefix  = "tool/"
+)
+
+// PhaseLabel labels an exec that runs a build phase.
+func PhaseLabel(phase rebuild.BuildPhase) ScratchLabel {
+	return phaseLabelPrefix + ScratchLabel(phase)
+}
+
+// ToolLabel labels an exec dispatched for the named LLM tool.
+func ToolLabel(tool string) ScratchLabel { return toolLabelPrefix + ScratchLabel(tool) }
+
+// Phase is the phase a phase label names, and ok is false for any other
+// label, a bare prefix included.
+func (l ScratchLabel) Phase() (phase rebuild.BuildPhase, ok bool) {
+	name, ok := l.name(phaseLabelPrefix)
+	return rebuild.BuildPhase(name), ok
+}
+
+// Tool is the tool a tool label names, and ok is false for any other label,
+// a bare prefix included.
+func (l ScratchLabel) Tool() (tool string, ok bool) { return l.name(toolLabelPrefix) }
+
+func (l ScratchLabel) name(prefix string) (string, bool) {
+	if name, ok := strings.CutPrefix(string(l), prefix); ok && name != "" {
+		return name, true
+	}
+	return "", false
 }
 
 // ScratchExecResult is the API payload inside derived from ScratchExec.
@@ -198,6 +255,7 @@ type ScratchExecRequest struct {
 	StdinB64       string            `form:"stdin_b64"`
 	TimeoutSeconds int               `form:"timeout_seconds"`
 	WaitSeconds    int               `form:"wait_seconds"`
+	Label          ScratchLabel      `form:"label"` // what the exec is for, recorded on its ledger row
 }
 
 // Validate implements act.Input.

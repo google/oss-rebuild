@@ -204,7 +204,7 @@ func TestRunCommand(t *testing.T) {
 			return nil, errors.New("unexpected ExecGet")
 		},
 	}
-	res, err := r.RunCommand(context.Background(), "docker images", 0)
+	res, err := r.RunCommand(context.Background(), "docker images", 0, schema.ToolLabel("run_on_host"))
 	if err != nil {
 		t.Fatalf("RunCommand: %v", err)
 	}
@@ -217,6 +217,9 @@ func TestRunCommand(t *testing.T) {
 	}
 	if len(gotReq.Cmd) != 3 || gotReq.Cmd[2] != "docker images" {
 		t.Errorf("req.Cmd = %v, want /bin/sh -c 'docker images'", gotReq.Cmd)
+	}
+	if gotReq.Label != "tool/run_on_host" {
+		t.Errorf("req.Label = %q, want tool/run_on_host", gotReq.Label)
 	}
 	if gotReq.ScratchID != "s1" {
 		t.Errorf("req.ScratchID = %q, want s1", gotReq.ScratchID)
@@ -241,7 +244,7 @@ func TestRunCommandTimeout(t *testing.T) {
 			return nil, errors.New("unexpected ExecGet")
 		},
 	}
-	res, err := r.RunCommand(context.Background(), "sleep 600", 5)
+	res, err := r.RunCommand(context.Background(), "sleep 600", 5, schema.ToolLabel("run_on_host"))
 	if err == nil || !strings.Contains(err.Error(), "timed out") {
 		t.Fatalf("err = %v, want timeout error", err)
 	}
