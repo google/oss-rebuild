@@ -411,6 +411,72 @@ func TestInferRepoPrefersReleaseLinks(t *testing.T) {
 	}
 }
 
+func TestInferRepoDescriptionCandidates(t *testing.T) {
+	for _, tc := range []struct {
+		name   string
+		target rebuild.Target
+		calls  []httpxtest.Call
+		want   string
+	}{
+		{
+			name:   "PrefersRepoNamedAfterPackage",
+			target: rebuild.Target{Ecosystem: rebuild.PyPI, Package: "fastcluster", Version: "1.3.0"},
+			calls: []httpxtest.Call{
+				{URL: "https://pypi.org/pypi/fastcluster/1.3.0/json", Response: &http.Response{StatusCode: 200, Body: httpxtest.Body(`{"info":{"name":"fastcluster","version":"1.3.0","home_page":"https://danifold.net","description":"See https://github.com/scipy/scipy/commit/3b22d1d and [my GitHub repository](https://github.com/dmuellner/fastcluster/)."}}`)}},
+				{URL: "https://pypi.org/pypi/fastcluster/json", Response: &http.Response{StatusCode: 200, Body: httpxtest.Body(`{"info":{"name":"fastcluster","project_urls":{"Homepage":"https://danifold.net"}}}`)}},
+			},
+			want: "https://github.com/dmuellner/fastcluster",
+		},
+		{
+			name:   "FallsBackToFirstMention",
+			target: rebuild.Target{Ecosystem: rebuild.PyPI, Package: "my-pkg", Version: "1.0.0"},
+			calls: []httpxtest.Call{
+				{URL: "https://pypi.org/pypi/my-pkg/1.0.0/json", Response: &http.Response{StatusCode: 200, Body: httpxtest.Body(`{"info":{"name":"my-pkg","version":"1.0.0","description":"Hosted at https://github.com/org/first-repo and https://github.com/org/second-repo"}}`)}},
+				{URL: "https://pypi.org/pypi/my-pkg/json", Response: &http.Response{StatusCode: 200, Body: httpxtest.Body(`{"info":{"name":"my-pkg"}}`)}},
+			},
+			want: "https://github.com/org/first-repo",
+		},
+		{
+			name:   "NameIsNormalized",
+			target: rebuild.Target{Ecosystem: rebuild.PyPI, Package: "fast-cluster", Version: "1.0.0"},
+			calls: []httpxtest.Call{
+				{URL: "https://pypi.org/pypi/fast-cluster/1.0.0/json", Response: &http.Response{StatusCode: 200, Body: httpxtest.Body(`{"info":{"name":"fast-cluster","version":"1.0.0","description":"See https://github.com/other/project and https://github.com/owner/Fast_Cluster"}}`)}},
+				{URL: "https://pypi.org/pypi/fast-cluster/json", Response: &http.Response{StatusCode: 200, Body: httpxtest.Body(`{"info":{"name":"fast-cluster"}}`)}},
+			},
+			want: "https://github.com/owner/fast_cluster",
+		},
+		{
+			name:   "SkipsSponsorsWithinDescription",
+			target: rebuild.Target{Ecosystem: rebuild.PyPI, Package: "my-pkg", Version: "1.0.0"},
+			calls: []httpxtest.Call{
+				{URL: "https://pypi.org/pypi/my-pkg/1.0.0/json", Response: &http.Response{StatusCode: 200, Body: httpxtest.Body(`{"info":{"name":"my-pkg","version":"1.0.0","description":"Sponsor https://github.com/sponsors/author or visit https://github.com/author/my-pkg"}}`)}},
+				{URL: "https://pypi.org/pypi/my-pkg/json", Response: &http.Response{StatusCode: 200, Body: httpxtest.Body(`{"info":{"name":"my-pkg"}}`)}},
+			},
+			want: "https://github.com/author/my-pkg",
+		},
+		{
+			name:   "OtherLinksInSortedKeyOrder",
+			target: rebuild.Target{Ecosystem: rebuild.PyPI, Package: "my-pkg", Version: "1.0.0"},
+			calls: []httpxtest.Call{
+				{URL: "https://pypi.org/pypi/my-pkg/1.0.0/json", Response: &http.Response{StatusCode: 200, Body: httpxtest.Body(`{"info":{"name":"my-pkg","version":"1.0.0","project_urls":{"Tracker":"https://github.com/org/z-repo/issues","Bug Reports":"https://github.com/org/a-repo/issues"}}}`)}},
+				{URL: "https://pypi.org/pypi/my-pkg/json", Response: &http.Response{StatusCode: 200, Body: httpxtest.Body(`{"info":{"name":"my-pkg"}}`)}},
+			},
+			want: "https://github.com/org/a-repo",
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			mux := rebuild.RegistryMux{PyPI: pypireg.HTTPRegistry{Client: &httpxtest.MockClient{Calls: tc.calls, URLValidator: httpxtest.NewURLValidator(t)}}}
+			got, err := Rebuilder{}.InferRepo(context.Background(), tc.target, mux)
+			if err != nil {
+				t.Fatalf("InferRepo() error = %v", err)
+			}
+			if got != tc.want {
+				t.Errorf("InferRepo() = %q, want %q", got, tc.want)
+			}
+		})
+	}
+}
+
 func TestPythonTag(t *testing.T) {
 	setuptools := []string{"wheel==0.36.2", "setuptools<=56.2.0"}
 	for _, tc := range []struct {

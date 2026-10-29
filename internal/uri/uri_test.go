@@ -5,6 +5,8 @@ package uri
 
 import (
 	"testing"
+
+	"github.com/google/go-cmp/cmp"
 )
 
 func TestFindARepo(t *testing.T) {
@@ -144,7 +146,6 @@ func TestCanonicalizeRepoURI(t *testing.T) {
 		{"Codeberg.org/User/Repo.git", "https://codeberg.org/user/repo", false},             // Codeberg, case insensitive, with .git
 		{"codeberg:user/repo", "https://codeberg.org/user/repo", false},                     // Codeberg, alt format
 	}
-
 	for _, test := range tests {
 		actual, err := CanonicalizeRepoURI(test.input)
 		if (err != nil) != test.wantErr {
@@ -153,5 +154,98 @@ func TestCanonicalizeRepoURI(t *testing.T) {
 		if actual != test.expected {
 			t.Errorf("CanonicalizeRepoURI(%s) = %s, expected %s", test.input, actual, test.expected)
 		}
+	}
+}
+
+func TestFindCommonRepos(t *testing.T) {
+	tests := []struct {
+		name  string
+		input string
+		want  []string
+	}{
+		{
+			name:  "Empty",
+			input: "",
+			want:  nil,
+		},
+		{
+			name:  "SingleGitHub",
+			input: "https://github.com/dmuellner/fastcluster",
+			want:  []string{"github.com/dmuellner/fastcluster"},
+		},
+		{
+			name:  "MultipleInTextOrder",
+			input: "see https://github.com/scipy/scipy/commit/3b22d1d and https://github.com/dmuellner/fastcluster/",
+			want:  []string{"github.com/scipy/scipy", "github.com/dmuellner/fastcluster"},
+		},
+		{
+			name:  "HostPriorityOverPosition",
+			input: "mirror at https://gitlab.com/org/repo and main at https://github.com/org/repo",
+			want:  []string{"github.com/org/repo", "gitlab.com/org/repo"},
+		},
+		{
+			name:  "Deduplicated",
+			input: "https://github.com/org/repo and https://github.com/org/repo/issues",
+			want:  []string{"github.com/org/repo"},
+		},
+		{
+			name:  "GitLabRouteTrimmed",
+			input: "https://gitlab.com/group/subgroup/repo/-/tree/main",
+			want:  []string{"gitlab.com/group/subgroup/repo"},
+		},
+		{
+			name:  "RawGitHubUserContentIgnored",
+			input: "https://raw.githubusercontent.com/fastcluster/fastcluster/master/docs/fastcluster.pdf",
+			want:  nil,
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := FindCommonRepos(tt.input)
+			if diff := cmp.Diff(tt.want, got); diff != "" {
+				t.Errorf("FindCommonRepos(%q) diff (-want +got):\n%s", tt.input, diff)
+			}
+		})
+	}
+}
+
+func TestRepoName(t *testing.T) {
+	tests := []struct {
+		name  string
+		input string
+		want  string
+	}{
+		{
+			name:  "GitHubPath",
+			input: "github.com/dmuellner/fastcluster",
+			want:  "fastcluster",
+		},
+		{
+			name:  "GitSuffix",
+			input: "https://github.com/org/project.git",
+			want:  "project",
+		},
+		{
+			name:  "ColonForm",
+			input: "github:user/repo",
+			want:  "repo",
+		},
+		{
+			name:  "GitLabSubgroup",
+			input: "gitlab.com/group/subgroup/repo",
+			want:  "repo",
+		},
+		{
+			name:  "Empty",
+			input: "",
+			want:  "",
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := RepoName(tt.input); got != tt.want {
+				t.Errorf("RepoName(%q) = %q, want %q", tt.input, got, tt.want)
+			}
+		})
 	}
 }
