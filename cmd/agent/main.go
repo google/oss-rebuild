@@ -90,6 +90,9 @@ func main() {
 		if *scratchID == "" {
 			log.Fatal("scratch-id flag is required for scratch execution mode")
 		}
+		if *prebuildBucket == "" {
+			log.Fatal("prebuild-bucket flag is required for scratch execution mode")
+		}
 	default:
 		log.Fatalf("invalid execution-mode %q", *executionMode)
 	}

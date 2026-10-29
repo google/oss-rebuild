@@ -83,6 +83,14 @@ type ScratchRunner struct {
 	// lastAssets is the previous iteration's asset store (RebuildAsset,
 	// DebugLogsAsset), backing the read_logs_end tool.
 	lastAssets rebuild.LocatableAssetStore
+	lastRunID  string // the build the VM retains
+}
+
+// LastRunID is the most recent build's ID, or "" before any.
+func (r *ScratchRunner) LastRunID() string {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	return r.lastRunID
 }
 
 // LastBuildLogs returns the merged output of the most recent iteration
@@ -102,10 +110,10 @@ func (r *ScratchRunner) LastBuildLogs(ctx context.Context) ([]byte, error) {
 	return io.ReadAll(rd)
 }
 
-func (r *ScratchRunner) setLastAssets(store rebuild.LocatableAssetStore) {
+func (r *ScratchRunner) setLast(runID string, store rebuild.LocatableAssetStore) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
-	r.lastAssets = store
+	r.lastRunID, r.lastAssets = runID, store
 }
 
 // Run executes the proposed strategy on the scratch VM and returns the
@@ -169,7 +177,7 @@ func (r *ScratchRunner) run(ctx context.Context, runID string, oneof *schema.Str
 	result, err := h.Wait(ctx)
 	// Retain whatever assets the build produced (debug logs upload even on
 	// failure) for the read_logs_end tool.
-	r.setLastAssets(store)
+	r.setLast(runID, store)
 	if err != nil {
 		return errorResult(errors.Wrap(err, "awaiting build"))
 	}
@@ -190,7 +198,7 @@ func (r *ScratchRunner) run(ctx context.Context, runID string, oneof *schema.Str
 			return errorResult(result.Error)
 		}
 	}
-	exactMatch, stabilizedMatch, diffSummary, err := r.verify(ctx, runID, rebuilder, store)
+	exactMatch, stabilizedMatch, diffSummary, err := r.verify(ctx, runID, store)
 	if err != nil {
 		return errorResult(errors.Wrap(err, "verifying artifact"))
 	}
@@ -221,13 +229,12 @@ func (r *ScratchRunner) mismatchMessage(runID, diffSummary string) string {
 // mismatch it also returns the file-level summary produced on the VM for the
 // LLM. A summary failure is logged rather than returned, so the mismatch is
 // still reported.
-func (r *ScratchRunner) verify(ctx context.Context, runID string, rebuilder rebuild.Rebuilder, store rebuild.LocatableAssetStore) (exactMatch, stabilizedMatch bool, diffSummary string, err error) {
+func (r *ScratchRunner) verify(ctx context.Context, runID string, store rebuild.LocatableAssetStore) (exactMatch, stabilizedMatch bool, diffSummary string, err error) {
 	stabilizers, err := stability.StabilizersForTarget(r.Target)
 	if err != nil {
 		return false, false, "", errors.Wrap(err, "getting stabilizers")
 	}
-	mux := meta.NewRegistryMux(r.RegistryClient)
-	upstreamURI, err := rebuilder.UpstreamURL(ctx, r.Target, mux)
+	upstreamURI, err := r.upstreamURL(ctx)
 	if err != nil {
 		return false, false, "", errors.Wrap(err, "getting upstream url")
 	}
@@ -248,12 +255,22 @@ func (r *ScratchRunner) verify(ctx context.Context, runID string, rebuilder rebu
 	return exactMatch, stabilizedMatch, diffSummary, nil
 }
 
+// upstreamURL is where the target's published artifact is fetched from.
+func (r *ScratchRunner) upstreamURL(ctx context.Context) (string, error) {
+	rebuilder, ok := meta.AllRebuilders[r.Target.Ecosystem]
+	if !ok {
+		return "", errors.Errorf("unsupported ecosystem %q", r.Target.Ecosystem)
+	}
+	return rebuilder.UpstreamURL(ctx, r.Target, meta.NewRegistryMux(r.RegistryClient))
+}
+
 // vmPaths are the comparison inputs on the VM: the build's artifact where the
 // executor left it, and the upstream artifact and the tools under the work
 // directory, fetched once per session. Each artifact's stabilized form is
-// written beside it.
+// written beside it, except a checked candidate's, which goes in checks to
+// keep the source tree clean.
 type vmPaths struct {
-	rebuild, src, upstream, diffr, stabilize string
+	rebuild, src, upstream, diffr, stabilize, checks string
 }
 
 func (r *ScratchRunner) vmPaths(runID string) vmPaths {
@@ -264,53 +281,45 @@ func (r *ScratchRunner) vmPaths(runID string) vmPaths {
 		upstream:  path.Join(workDir, "upstream", path.Base(r.Target.Artifact)),
 		diffr:     path.Join(workDir, "tools", string(build.DiffrTool)),
 		stabilize: path.Join(workDir, "tools", string(build.StabilizeTool)),
+		checks:    path.Join(workDir, "checks"),
 	}
 }
 
 // toolURL is the fetchable URL of a prebuilt tool in the prebuild bucket.
 func (r *ScratchRunner) toolURL(tool build.ToolType) (string, error) {
-	return build.ConvertURLForRuntime("gs://" + path.Join(r.PrebuildConfig.Bucket, r.PrebuildConfig.Dir, string(tool)))
+	u, err := build.ConvertURLForRuntime("gs://" + path.Join(r.PrebuildConfig.Bucket, r.PrebuildConfig.Dir, string(tool)))
+	return u, errors.Wrapf(err, "resolving the %s URL", tool)
 }
 
-// diffScriptTpl compares the build's artifact against upstream on the VM.
-// The tools and the upstream artifact are fetched once per session, each
-// artifact is stabilized beside itself, and diffr runs on the stabilized
-// forms. Inputs are spliced unquoted, so diffScript admits only shellWord
-// values. wget is busybox's: the worker image has no curl. AUTH_HEADER is
-// the job's bucket credential, so only the tool fetches carry it.
-var diffScriptTpl = template.Must(template.New("diff").Parse(`set -eu
+// scriptPrelude defines the helpers the comparison scripts share.
+const scriptPrelude = `set -eu
 die() { echo "$*"; exit {{.ExitSetupFailed}}; }
-fetch() { [ -e "$1" ] || { wget -q ${3:+--header "$3"} -O "$1.part" "$2" && mv "$1.part" "$1"; } || die "fetching $2 failed"; }
 stab() { out=$({{.Stabilize}} --ecosystem {{.Ecosystem}} --artifact {{.Artifact}} --infile "$1" --outfile "$2.part" 2>&1) && mv "$2.part" "$2" || die "stabilizing $1 failed: $out"; }
+`
+
+// compareScriptTpl stages the tools and upstream once, then diffs the
+// stabilized forms.
+var compareScriptTpl = template.Must(template.New("compare").Parse(scriptPrelude + `fetch() { [ -e "$1" ] || { wget -q ${3:+--header "$3"} -O "$1.part" "$2" && mv "$1.part" "$1"; } || die "fetching $2 failed"; }
 mkdir -p {{.Tools}} {{.UpstreamDir}}
 fetch {{.Diffr}} {{.DiffrURL}} "${AUTH_HEADER:-}"
 fetch {{.Stabilize}} {{.StabilizeURL}} "${AUTH_HEADER:-}"
 fetch {{.Upstream}} {{.UpstreamURL}}
 chmod +x {{.Diffr}} {{.Stabilize}}
 [ -e {{.Upstream}}.stabilized ] || stab {{.Upstream}} {{.Upstream}}.stabilized
-stab {{.Rebuild}} {{.Rebuild}}.stabilized
+{{if .Rebuild}}stab {{.Rebuild}} {{.Rebuild}}.stabilized
 exec {{.Diffr}} --summary --label rebuild --label upstream {{.Rebuild}}.stabilized {{.Upstream}}.stabilized
-`))
+{{end}}`))
 
 // shellWord matches what the comparison script's inputs may contain: the
 // path, URL and package-name characters, and none that the shell interprets.
 var shellWord = regexp.MustCompile(`^[A-Za-z0-9./_@+:%~-]+$`)
 
-// diffScript renders diffScriptTpl for the comparison inputs on the VM.
-func (r *ScratchRunner) diffScript(p vmPaths, diffrURL, stabilizeURL, upstreamURI string) (string, error) {
-	args := map[string]any{
-		"Tools":        path.Dir(p.diffr),
-		"Diffr":        p.diffr,
-		"DiffrURL":     diffrURL,
-		"Stabilize":    p.stabilize,
-		"StabilizeURL": stabilizeURL,
-		"UpstreamDir":  path.Dir(p.upstream),
-		"Upstream":     p.upstream,
-		"UpstreamURL":  upstreamURI,
-		"Rebuild":      p.rebuild,
-		"Ecosystem":    string(r.Target.Ecosystem),
-		"Artifact":     r.Target.Artifact,
-	}
+// renderScript executes tpl with args plus the tool, upstream, and target
+// inputs every comparison script takes. The inputs are spliced unquoted, so
+// each must be a shellWord.
+func (r *ScratchRunner) renderScript(tpl *template.Template, p vmPaths, args map[string]any) (string, error) {
+	args["Diffr"], args["Stabilize"], args["Upstream"] = p.diffr, p.stabilize, p.upstream
+	args["Ecosystem"], args["Artifact"] = string(r.Target.Ecosystem), r.Target.Artifact
 	for k, v := range args {
 		if !shellWord.MatchString(v.(string)) {
 			return "", errors.Errorf("%s %q is not a shell word", k, v)
@@ -318,64 +327,108 @@ func (r *ScratchRunner) diffScript(p vmPaths, diffrURL, stabilizeURL, upstreamUR
 	}
 	args["ExitSetupFailed"] = exitDiffSetupFailed
 	var b strings.Builder
-	err := diffScriptTpl.Execute(&b, args)
+	err := tpl.Execute(&b, args)
 	return b.String(), err
 }
 
-// diffOnVM runs diffScript on the VM and returns diffr's file-level summary
-// of the stabilized artifacts, capped like tool output. The comparison runs
-// where the artifact already is, so it costs no artifact round trip and
-// leaves the inputs, their stabilized forms and the tools behind for the
-// LLM's own inspection.
-func (r *ScratchRunner) diffOnVM(ctx context.Context, runID, upstreamURI string) (string, error) {
-	if r.PrebuildConfig.Bucket == "" {
-		return "", errors.New("no prebuild bucket to fetch the tools from")
-	}
+// compareScript renders the script to stage, stabilize, and diff on the VM.
+// An empty rebuild only stages.
+func (r *ScratchRunner) compareScript(p vmPaths, upstreamURI, rebuild string) (string, error) {
 	diffrURL, err := r.toolURL(build.DiffrTool)
 	if err != nil {
-		return "", errors.Wrap(err, "resolving diffr URL")
+		return "", err
 	}
 	stabilizeURL, err := r.toolURL(build.StabilizeTool)
 	if err != nil {
-		return "", errors.Wrap(err, "resolving stabilize URL")
+		return "", err
 	}
-	script, err := r.diffScript(r.vmPaths(runID), diffrURL, stabilizeURL, upstreamURI)
-	if err != nil {
-		return "", errors.Wrap(err, "rendering diff script")
+	args := map[string]any{
+		"Tools":        path.Dir(p.diffr),
+		"DiffrURL":     diffrURL,
+		"StabilizeURL": stabilizeURL,
+		"UpstreamDir":  path.Dir(p.upstream),
+		"UpstreamURL":  upstreamURI,
 	}
+	if rebuild != "" {
+		args["Rebuild"] = rebuild
+	}
+	return r.renderScript(compareScriptTpl, p, args)
+}
+
+// compareExec runs script on the VM, with the prebuild credential if auth.
+func (r *ScratchRunner) compareExec(ctx context.Context, script string, auth bool) (exitCode int, out []byte, err error) {
 	req := schema.ScratchExecRequest{
 		ScratchID:      r.ScratchID,
 		Cmd:            []string{"/bin/sh", "-c", script},
 		TimeoutSeconds: int(diffTimeout.Seconds()),
 	}
-	if r.AuthHeader != nil {
+	if auth && r.AuthHeader != nil {
 		header, err := r.AuthHeader(ctx)
 		if err != nil {
-			return "", errors.Wrap(err, "minting prebuild auth")
+			return 0, nil, errors.Wrap(err, "minting prebuild auth")
 		}
 		req.Env = map[string]string{"AUTH_HEADER": header}
 	}
 	op, err := scratch.Exec(ctx, r.Stubs, req, 0)
 	if err != nil {
-		return "", errors.Wrap(err, "running diffr")
+		return 0, nil, errors.Wrap(err, "running the comparison")
 	}
 	if op.Error != nil {
-		return "", errors.Wrap(op.Error, "diffr exec")
+		return 0, nil, errors.Wrap(op.Error, "comparison exec")
 	}
-	out, rerr := scratch.ReadOutput(ctx, r.GCSClient, op, 0)
-	switch code := op.Result.ExitCode; code {
+	out, err = scratch.ReadOutput(ctx, r.GCSClient, op, 0)
+	return op.Result.ExitCode, out, errors.Wrap(err, "reading the comparison output")
+}
+
+// diffOnVM runs compareScript on the VM and returns diffr's file-level summary
+// of the stabilized artifacts, capped like tool output.
+func (r *ScratchRunner) diffOnVM(ctx context.Context, runID, upstreamURI string) (string, error) {
+	p := r.vmPaths(runID)
+	script, err := r.compareScript(p, upstreamURI, p.rebuild)
+	if err != nil {
+		return "", errors.Wrap(err, "rendering diff script")
+	}
+	code, out, rerr := r.compareExec(ctx, script, true)
+	switch code {
 	case 1:
 		if rerr != nil {
-			return "", errors.Wrap(rerr, "reading diffr output")
+			return "", rerr
 		}
 		return headLimit(string(out), uploadBytesLimit), nil
 	case 0:
+		if rerr != nil {
+			return "", rerr
+		}
 		return "(diffr reports no file-level differences after stabilization)\n", nil
 	case exitDiffSetupFailed:
 		return "", errors.Errorf("preparing the comparison on the VM: %s", strings.TrimSpace(string(out)))
 	default:
+		if rerr != nil {
+			return "", rerr
+		}
 		return "", errors.Errorf("diffr exited %d: %s", code, strings.TrimSpace(string(out)))
 	}
+}
+
+// PrepareCompare stages the tools and the stabilized upstream on the VM before
+// any build, so a candidate can be checked at once. Idempotent.
+func (r *ScratchRunner) PrepareCompare(ctx context.Context) error {
+	upstreamURI, err := r.upstreamURL(ctx)
+	if err != nil {
+		return errors.Wrap(err, "getting upstream url")
+	}
+	script, err := r.compareScript(r.vmPaths(""), upstreamURI, "")
+	if err != nil {
+		return errors.Wrap(err, "rendering the prepare script")
+	}
+	code, out, err := r.compareExec(ctx, script, true)
+	if err != nil {
+		return err
+	}
+	if code != 0 {
+		return errors.Errorf("preparing the comparison on the VM: %s", strings.TrimSpace(string(out)))
+	}
+	return nil
 }
 
 // headLimit keeps the first limit bytes of s, marking any cut.
@@ -439,4 +492,42 @@ func (r *ScratchRunner) RunCommand(ctx context.Context, command string, timeoutS
 		return 0, string(out), errors.New(op.Error.Message)
 	}
 	return op.Result.ExitCode, string(out), nil
+}
+
+// checkScriptTpl stabilizes a candidate into the checks directory, replacing
+// any earlier check of the same file name, and prints both sha256 with their
+// paths. On a mismatch, diffr's summary and exit follow.
+var checkScriptTpl = template.Must(template.New("check").Parse(scriptPrelude + `[ -f {{.Candidate}} ] || die "{{.Candidate}}: no such file on the VM host"
+for f in {{.Upstream}} {{.Stabilize}} {{.Diffr}}; do [ -e $f ] || die "$f is not on the VM; the job stages the upstream artifact and the tools before each session"; done
+[ -e {{.Upstream}}.stabilized ] || stab {{.Upstream}} {{.Upstream}}.stabilized
+mkdir -p {{.Checks}}
+stab {{.Candidate}} {{.Stabilized}}
+c=$(sha256sum {{.Stabilized}} | cut -c1-64)
+u=$(sha256sum {{.Upstream}}.stabilized | cut -c1-64)
+echo "$c $u {{.Stabilized}} {{.Upstream}}.stabilized"
+[ "$c" != "$u" ] || exit 0
+exec {{.Diffr}} --summary --label candidate --label upstream {{.Stabilized}} {{.Upstream}}.stabilized
+`))
+
+// checkScript renders checkScriptTpl for candidate, a path on the VM host.
+func (r *ScratchRunner) checkScript(p vmPaths, candidate string) (string, error) {
+	return r.renderScript(checkScriptTpl, p, map[string]any{
+		"Candidate":  candidate,
+		"Checks":     p.checks,
+		"Stabilized": path.Join(p.checks, path.Base(candidate)+".stabilized"),
+	})
+}
+
+// CheckArtifact compares candidate, a file on the VM host, with the staged
+// upstream artifact. exitCode is 0 on a match, 1 on a mismatch with diffr's
+// summary in out, and exitDiffSetupFailed when an input is missing or fails
+// to stabilize.
+//
+// NOTE: A mismatch is not an error. err means the check could not run.
+func (r *ScratchRunner) CheckArtifact(ctx context.Context, candidate string) (exitCode int, out []byte, err error) {
+	script, err := r.checkScript(r.vmPaths(""), candidate)
+	if err != nil {
+		return 0, nil, errors.Wrap(err, "rendering the check script")
+	}
+	return r.compareExec(ctx, script, false)
 }

@@ -79,6 +79,9 @@ func (c Config) Validate() error {
 	if c.Artifact == "" {
 		return errors.New("artifact is required")
 	}
+	if c.ScratchID != "" && c.PrebuildBucket == "" {
+		return errors.New("prebuild-bucket is required with scratch-id")
+	}
 	return nil
 }
 
@@ -262,7 +265,7 @@ func Handler(ctx context.Context, cfg Config, deps *Deps) (*act.NoOutput, error)
 func Command() *cobra.Command {
 	cfg := Config{}
 	cmd := &cobra.Command{
-		Use:   "local-agent --project <project> --agent-api <URI> --metadata-bucket <bucket> --ecosystem <ecosystem> --package <name> --version <version> --artifact <name> --logs-bucket <bucket> [--retry-session <session-id>] [--agent-iterations <max iterations>] [--scratch-id <vm> [--prebuild-bucket <bucket>]]",
+		Use:   "local-agent --project <project> --agent-api <URI> --metadata-bucket <bucket> --ecosystem <ecosystem> --package <name> --version <version> --artifact <name> --logs-bucket <bucket> [--retry-session <session-id>] [--agent-iterations <max iterations>] [--scratch-id <vm> --prebuild-bucket <bucket>]",
 		Short: "Run agent code locally",
 		Args:  cobra.NoArgs,
 		RunE: cli.RunE(
@@ -291,7 +294,7 @@ func flagSet(name string, cfg *Config) *flag.FlagSet {
 	set.StringVar(&cfg.RetrySession, "retry-session", "", "the session to retry")
 	set.IntVar(&cfg.AgentIteration, "agent-iterations", 3, "maximum number of agent iterations before giving up")
 	set.StringVar(&cfg.ScratchID, "scratch-id", "", "if provided, run iteration builds on this pre-provisioned scratch VM instead of GCB")
-	set.StringVar(&cfg.PrebuildBucket, "prebuild-bucket", "", "gcs bucket from which prebuilt build tools (e.g. timewarp) are fetched (scratch mode)")
+	set.StringVar(&cfg.PrebuildBucket, "prebuild-bucket", "", "gcs bucket from which prebuilt build tools (e.g. timewarp) are fetched (required with scratch-id)")
 	set.StringVar(&cfg.PrebuildDir, "prebuild-dir", "", "prefix within the prebuild bucket under which tools are stored (scratch mode)")
 	set.BoolVar(&cfg.PrebuildAuth, "prebuild-auth", false, "whether to authenticate requests to the prebuild tools bucket (scratch mode)")
 	set.DurationVar(&cfg.BuildTimeout, "build-timeout", time.Hour, "per-iteration build timeout for scratch execution")
