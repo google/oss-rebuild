@@ -10,6 +10,7 @@ import (
 	"strings"
 	"text/template"
 
+	"github.com/google/oss-rebuild/internal/shell"
 	"github.com/google/oss-rebuild/internal/textwrap"
 	"github.com/google/oss-rebuild/pkg/build"
 	"github.com/google/oss-rebuild/pkg/build/timing"
@@ -36,6 +37,7 @@ var dockerBuildDockerfileTpl = template.Must(
 		"indent": func(s string) string { return strings.ReplaceAll(s, "\n", "\n ") },
 		"join":   func(sep string, s []string) string { return strings.Join(s, sep) },
 		"list":   func(items ...string) []string { return items },
+		"quote":  shell.Quote,
 	}).Parse(
 		textwrap.Dedent(`
 			#syntax=docker/dockerfile:1.10
@@ -76,9 +78,9 @@ var dockerBuildDockerfileTpl = template.Must(
 			RUN sed 's/^ //' <<'EOF' >/build
 			 set -eux
 			 {{.Instructions.Build | indent}}
-			 [ -e /src/{{.Instructions.OutputPath}} ] || ls -la "$(dirname /src/{{.Instructions.OutputPath}})"
-			 chmod 444 /src/{{.Instructions.OutputPath}}
-			 mkdir -p /out && cp /src/{{.Instructions.OutputPath}} /out/
+			 [ -e /src/{{.Instructions.OutputPath | quote}} ] || ls -la "$(dirname /src/{{.Instructions.OutputPath | quote}})"
+			 chmod 444 /src/{{.Instructions.OutputPath | quote}}
+			 mkdir -p /out && cp /src/{{.Instructions.OutputPath | quote}} /out/
 			EOF
 			WORKDIR "/src"
 			ENTRYPOINT ["/bin/sh","/build"]

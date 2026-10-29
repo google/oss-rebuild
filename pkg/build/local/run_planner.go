@@ -8,6 +8,7 @@ import (
 	"strings"
 	"text/template"
 
+	"github.com/google/oss-rebuild/internal/shell"
 	"github.com/google/oss-rebuild/internal/textwrap"
 	"github.com/google/oss-rebuild/pkg/build"
 	"github.com/google/oss-rebuild/pkg/rebuild/rebuild"
@@ -43,7 +44,8 @@ type dockerRunScriptArgs struct {
 // NOTE: RPM images install netcat by path since it is packaged as nc on EL6 and nmap-ncat on EL7+.
 var dockerRunPhaseTpls = template.Must(
 	template.New("docker run phases").Funcs(template.FuncMap{
-		"list": func(items ...string) []string { return items },
+		"list":  func(items ...string) []string { return items },
+		"quote": shell.Quote,
 	}).Parse(
 		textwrap.Dedent(`
 			{{- define "setup" -}}
@@ -83,9 +85,9 @@ var dockerRunPhaseTpls = template.Must(
 			{{- define "build" -}}
 			cd /src
 			{{.Inst.Build}}
-			[ -e /src/{{.Inst.OutputPath}} ] || ls -la "$(dirname /src/{{.Inst.OutputPath}})"
-			chmod 444 /src/{{.Inst.OutputPath}}
-			cp /src/{{.Inst.OutputPath}} /out/rebuild
+			[ -e /src/{{.Inst.OutputPath | quote}} ] || ls -la "$(dirname /src/{{.Inst.OutputPath | quote}})"
+			chmod 444 /src/{{.Inst.OutputPath | quote}}
+			cp /src/{{.Inst.OutputPath | quote}} /out/rebuild
 			{{- end -}}
 			`),
 	),
