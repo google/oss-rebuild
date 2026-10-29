@@ -43,6 +43,13 @@ type ScratchExecGetDeps struct {
 	Syncer    Syncer // to sync the op output. Disabled on nil
 }
 
+// ScratchExecKillDeps wires ScratchExecKill.
+type ScratchExecKillDeps struct {
+	Scratches db.Scratch
+	Execs     db.ScratchExecs
+	Dialer    HostDialer
+}
+
 // Syncer abstracts the broker-side fetch-and-persist loop. The
 // production impl pulls /exec/op/status and /exec/op/output from the
 // host broker, overwrites the op's GCS object with the full buffer
@@ -96,15 +103,9 @@ func ProjectScratchExec(e schema.ScratchExec) longrunning.Operation[schema.Scrat
 // whose Operation.Error carries the reason. This matches the longrunning idiom
 // and matches what Get would return for the same op id.
 func ScratchExecCreate(ctx context.Context, req schema.ScratchExecRequest, deps *ScratchExecCreateDeps) (*longrunning.Operation[schema.ScratchExecResult], error) {
-	scratch, err := deps.Scratches.Get(ctx, req.ScratchID)
+	scratch, err := readyScratch(ctx, deps.Scratches, req.ScratchID)
 	if err != nil {
-		if errors.Is(err, db.ErrNotFound) {
-			return nil, api.AsStatus(codes.NotFound, errors.Errorf("scratch %q not found", req.ScratchID))
-		}
-		return nil, api.AsStatus(codes.Internal, errors.Wrap(err, "scratches get"))
-	}
-	if scratch.State != schema.ScratchReady {
-		return nil, api.AsStatus(codes.FailedPrecondition, errors.Errorf("scratch %q not ready (state=%s)", req.ScratchID, scratch.State))
+		return nil, err
 	}
 	if scratch.ObliviousID == "" {
 		return nil, api.AsStatus(codes.Internal, errors.Errorf("scratch %q missing ObliviousID", req.ScratchID))
@@ -233,12 +234,9 @@ func optimisticWait(ctx context.Context, syncer Syncer, exec schema.ScratchExec,
 // broker-to-host traffic the blip rate is low enough that an occasional false
 // Failed is the right cost vs. an exec that lingers in Pending indefinitely.
 func ScratchExecGet(ctx context.Context, req schema.GetOperationRequest, deps *ScratchExecGetDeps) (*longrunning.Operation[schema.ScratchExecResult], error) {
-	exec, err := deps.Execs.Get(ctx, req.ID)
+	exec, err := getExec(ctx, deps.Execs, req.ID)
 	if err != nil {
-		if errors.Is(err, db.ErrNotFound) {
-			return nil, api.AsStatus(codes.NotFound, errors.Errorf("op %q not found", req.ID))
-		}
-		return nil, api.AsStatus(codes.Internal, errors.Wrap(err, "execs get"))
+		return nil, err
 	}
 	if exec.State != schema.ScratchExecPending || deps.Syncer == nil || exec.ScratchID == "" {
 		return new(ProjectScratchExec(exec)), nil
@@ -291,6 +289,60 @@ func ScratchExecGet(ctx context.Context, req schema.GetOperationRequest, deps *S
 		}
 	}
 	return new(ProjectScratchExec(synced)), nil
+}
+
+// ScratchExecKill forwards a kill for a pending exec to its host broker.
+// Killing a finished op succeeds, so callers racing the command's exit need
+// not tell the cases apart. The next sync records the kill.
+func ScratchExecKill(ctx context.Context, req schema.ScratchExecKillRequest, deps *ScratchExecKillDeps) (*act.NoOutput, error) {
+	exec, err := getExec(ctx, deps.Execs, req.ID)
+	if err != nil {
+		return nil, err
+	}
+	if exec.State != schema.ScratchExecPending {
+		return &act.NoOutput{}, nil
+	}
+	scratch, err := readyScratch(ctx, deps.Scratches, exec.ScratchID)
+	if err != nil {
+		return nil, err
+	}
+	client, baseURL, err := deps.Dialer(hostOf(scratch))
+	if err != nil {
+		return nil, api.AsStatus(codes.Unavailable, errors.Wrap(err, "host dialer"))
+	}
+	killStub := api.Stub[scratchhostservice.OpRequest, act.NoOutput](client, baseURL.JoinPath("exec/op/kill"))
+	if _, err := killStub(ctx, scratchhostservice.OpRequest{ID: exec.ID}); err != nil {
+		return nil, api.AsStatus(codes.Unavailable, errors.Wrap(err, "host kill"))
+	}
+	return &act.NoOutput{}, nil
+}
+
+// getExec loads an exec record, as an API status error when it is missing.
+func getExec(ctx context.Context, execs db.ScratchExecs, id string) (schema.ScratchExec, error) {
+	exec, err := execs.Get(ctx, id)
+	if err != nil {
+		if errors.Is(err, db.ErrNotFound) {
+			return schema.ScratchExec{}, api.AsStatus(codes.NotFound, errors.Errorf("op %q not found", id))
+		}
+		return schema.ScratchExec{}, api.AsStatus(codes.Internal, errors.Wrap(err, "execs get"))
+	}
+	return exec, nil
+}
+
+// readyScratch loads a scratch record that must be Ready to serve an exec,
+// as API status errors otherwise.
+func readyScratch(ctx context.Context, scratches db.Scratch, id string) (schema.Scratch, error) {
+	scratch, err := scratches.Get(ctx, id)
+	if err != nil {
+		if errors.Is(err, db.ErrNotFound) {
+			return schema.Scratch{}, api.AsStatus(codes.NotFound, errors.Errorf("scratch %q not found", id))
+		}
+		return schema.Scratch{}, api.AsStatus(codes.Internal, errors.Wrap(err, "scratches get"))
+	}
+	if scratch.State != schema.ScratchReady {
+		return schema.Scratch{}, api.AsStatus(codes.FailedPrecondition, errors.Errorf("scratch %q not ready (state=%s)", id, scratch.State))
+	}
+	return scratch, nil
 }
 
 // SyncStep is one bucket in a SyncSchedule. Until is the upper bound on
@@ -465,6 +517,14 @@ func finalFromStatus(exec schema.ScratchExec, status *scratchhostservice.ExecSta
 		final.Error = &schema.Status{
 			Code:    int(codes.ResourceExhausted),
 			Message: errors.Errorf("output exceeded %d bytes", status.TotalBytes).Error(),
+		}
+	case status.Killed:
+		// A killed command has no exit of its own, so the op is Lost rather
+		// than Completed. Output captured before the kill remains in OutURI.
+		final.State = schema.ScratchExecLost
+		final.Error = &schema.Status{
+			Code:    int(codes.Aborted),
+			Message: "op killed",
 		}
 	case status.TimedOut:
 		// Host-enforced timeout: command was killed at its deadline.
