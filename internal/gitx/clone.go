@@ -28,13 +28,15 @@ import (
 	"github.com/google/oss-rebuild/internal/billyx"
 	"github.com/google/oss-rebuild/internal/execx"
 	"github.com/google/oss-rebuild/internal/uri"
+	"github.com/msuozzo/go-git2"
 	"github.com/pkg/errors"
 )
 
 // Repo is a cloned repository and its clone-time provenance.
 type Repo struct {
-	*git.Repository
-	FetchedAt time.Time // when the contents were fetched from the remote. Zero when unrecorded (reused local repo)
+	*git2.Repository                // reads Storer, via Open
+	Storer           storage.Storer // the object store the clone wrote
+	FetchedAt        time.Time      // when the contents were fetched from the remote. Zero when unrecorded (reused local repo)
 }
 
 // CloneFunc defines an interface for cloning a git repo.
@@ -59,7 +61,7 @@ func Clone(ctx context.Context, s storage.Storer, fs billy.Filesystem, opt *git.
 	if err != nil {
 		return nil, err
 	}
-	return &Repo{Repository: repo, FetchedAt: time.Now().UTC()}, nil
+	return &Repo{Storer: repo.Storer, FetchedAt: time.Now().UTC()}, nil
 }
 
 var _ CloneFunc = Clone
@@ -172,7 +174,7 @@ func Reuse(ctx context.Context, s storage.Storer, fs billy.Filesystem, opt *git.
 	} else if err != nil {
 		return nil, errors.Wrapf(err, "Failed to checkout")
 	}
-	return &Repo{Repository: repo}, nil
+	return &Repo{Storer: repo.Storer}, nil
 }
 
 var _ CloneFunc = Reuse
@@ -332,7 +334,7 @@ func NativeClone(ctx context.Context, s storage.Storer, fs billy.Filesystem, opt
 			return nil, errors.Wrap(err, "checking out worktree")
 		}
 	}
-	return &Repo{Repository: repo, FetchedAt: time.Now().UTC()}, nil
+	return &Repo{Storer: repo.Storer, FetchedAt: time.Now().UTC()}, nil
 }
 
 var _ CloneFunc = NativeClone

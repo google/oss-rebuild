@@ -10,10 +10,10 @@ import (
 	"slices"
 	"strings"
 
-	"github.com/go-git/go-git/v5/plumbing/object"
 	"github.com/google/oss-rebuild/pkg/rebuild/pypi/parsing"
 	"github.com/google/oss-rebuild/pkg/rebuild/pypi/platform"
 	bash "github.com/msuozzo/bonsai/bonsai-bash"
+	"github.com/msuozzo/go-git2"
 	"github.com/pkg/errors"
 	"gopkg.in/yaml.v3"
 )
@@ -44,9 +44,9 @@ type ghaWorkflow struct {
 // extractCibuildwheelSpecs returns the cibuildwheel version specs (exact
 // versions, minor series, or commit hashes) found in the GitHub Actions
 // workflows in tree.
-func extractCibuildwheelSpecs(tree *object.Tree) ([]string, error) {
+func extractCibuildwheelSpecs(tree *git2.Tree) ([]string, error) {
 	workflows, err := tree.Tree(workflowsDir)
-	if errors.Is(err, object.ErrDirectoryNotFound) {
+	if errors.Is(err, git2.ErrDirectoryNotFound) {
 		return nil, nil
 	} else if err != nil {
 		return nil, errors.Wrapf(err, "finding %s", workflowsDir)
@@ -90,10 +90,10 @@ func cibuildwheelSpecs(workflow []byte) []string {
 
 // extractCibuildwheelDependencies extracts system dependencies from
 // [tool.cibuildwheel] hooks and overrides in pyproject.toml under searchDir.
-func extractCibuildwheelDependencies(tree *object.Tree, searchDir string, libc platform.LibcImpl) ([]string, error) {
+func extractCibuildwheelDependencies(tree *git2.Tree, searchDir string, libc platform.LibcImpl) ([]string, error) {
 	pyprojPath := path.Clean(path.Join(searchDir, "pyproject.toml"))
 	f, err := tree.File(pyprojPath)
-	if errors.Is(err, object.ErrFileNotFound) {
+	if errors.Is(err, git2.ErrFileNotFound) {
 		return nil, nil
 	} else if err != nil {
 		return nil, errors.Wrapf(err, "finding %s", pyprojPath)

@@ -9,11 +9,11 @@ import (
 	"regexp"
 	"strings"
 
-	"github.com/go-git/go-git/v5/plumbing/filemode"
-	"github.com/go-git/go-git/v5/plumbing/object"
 	"github.com/google/oss-rebuild/internal/semver"
 	reg "github.com/google/oss-rebuild/pkg/registry/cratesio"
+	"github.com/msuozzo/go-git2"
 	"github.com/pelletier/go-toml/v2"
+	"github.com/pkg/errors"
 )
 
 var stableRelease = regexp.MustCompile(`^1\.\d+(\.\d+)?$`)
@@ -35,7 +35,7 @@ var allowedToolchainKeys = map[string]bool{
 // could map to nightly-<publish date> (and "nightly-<date>" to itself) once
 // the toolchain cache and rustup proxy carry nightly manifests. Until then
 // these pins fall back to the inferred stable release.
-func findPinnedStableToolchain(tree *object.Tree, dir string) (string, bool, error) {
+func findPinnedStableToolchain(tree *git2.Tree, dir string) (string, bool, error) {
 	current := path.Clean(dir)
 	if path.IsAbs(current) {
 		return "", false, nil
@@ -43,13 +43,13 @@ func findPinnedStableToolchain(tree *object.Tree, dir string) (string, bool, err
 	for {
 		for _, name := range []string{"rust-toolchain", "rust-toolchain.toml"} {
 			file, err := tree.File(path.Join(current, name))
-			if err == object.ErrFileNotFound {
+			if errors.Is(err, git2.ErrFileNotFound) {
 				continue
 			}
 			if err != nil {
 				return "", false, err
 			}
-			if file.Mode != filemode.Regular && file.Mode != filemode.Executable {
+			if file.Mode != git2.Regular && file.Mode != git2.Executable {
 				return "", false, nil
 			}
 			contents, err := file.Contents()

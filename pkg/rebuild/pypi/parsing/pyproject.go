@@ -9,7 +9,7 @@ import (
 	"path/filepath"
 	"strings"
 
-	"github.com/go-git/go-git/v5/plumbing/object"
+	"github.com/msuozzo/go-git2"
 	"github.com/pelletier/go-toml/v2"
 	"github.com/pkg/errors"
 )
@@ -52,7 +52,7 @@ type PyProject struct {
 }
 
 // ReadPyProject reads and unmarshals a pyproject.toml git object file.
-func ReadPyProject(f *object.File) (PyProject, error) {
+func ReadPyProject(f *git2.File) (PyProject, error) {
 	contents, err := f.Contents()
 	if err != nil {
 		return PyProject{}, errors.Wrap(err, "reading pyproject.toml")
@@ -64,7 +64,7 @@ func ReadPyProject(f *object.File) (PyProject, error) {
 	return pyProject, nil
 }
 
-func verifyPyProjectFile(ctx context.Context, f *object.File, name, version string) (fileVerification, error) {
+func verifyPyProjectFile(ctx context.Context, f *git2.File, name, version string) (fileVerification, error) {
 	var verificationResult fileVerification
 	verificationResult.foundF = f
 	pyProject, err := ReadPyProject(f)
@@ -102,7 +102,7 @@ func verifyPyProjectFile(ctx context.Context, f *object.File, name, version stri
 	return verificationResult, nil
 }
 
-func extractPyProjectRequirements(ctx context.Context, f *object.File) ([]string, error) {
+func extractPyProjectRequirements(ctx context.Context, f *git2.File) ([]string, error) {
 	var reqs []string
 	log.Println("Looking for additional reqs in pyproject.toml")
 	pyProject, err := ReadPyProject(f)

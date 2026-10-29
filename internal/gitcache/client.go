@@ -259,7 +259,7 @@ func (c Client) Clone(ctx context.Context, s storage.Storer, fs billy.Filesystem
 			return nil, errors.Wrap(err, "checkout error")
 		}
 	}
-	return &gitx.Repo{Repository: repo, FetchedAt: fetchedAt}, nil
+	return &gitx.Repo{Storer: repo.Storer, FetchedAt: fetchedAt}, nil
 }
 
 var _ gitx.CloneFunc = Client{}.Clone

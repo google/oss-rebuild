@@ -9,6 +9,7 @@ import (
 	"github.com/go-git/go-git/v5"
 	"github.com/go-git/go-git/v5/plumbing/object"
 	"github.com/google/oss-rebuild/internal/gitx/gitxtest"
+	"github.com/msuozzo/go-git2"
 )
 
 func TestFindPinnedStableToolchain(t *testing.T) {
@@ -86,7 +87,7 @@ func TestFindPinnedStableToolchain(t *testing.T) {
 				ID:    "target",
 				Files: tc.files,
 			}}, nil))
-			commit := must(repo.CommitObject(repo.Commits["target"]))
+			commit := must(repo.Repository.CommitObject(git2.Hash(repo.Commits["target"])))
 			tree := must(commit.Tree())
 			got, ok, err := findPinnedStableToolchain(tree, tc.dir)
 			if err != nil {
@@ -106,7 +107,7 @@ func TestFindPinnedStableToolchainIgnoresSymlink(t *testing.T) {
 			"1.84.1": "ignored\n",
 		},
 	}}, nil))
-	worktree := must(repo.Worktree())
+	worktree := must(repo.GoGit.Worktree())
 	if err := worktree.Filesystem.Symlink("1.84.1", "rust-toolchain"); err != nil {
 		t.Fatalf("creating symlink: %v", err)
 	}
@@ -116,7 +117,7 @@ func TestFindPinnedStableToolchainIgnoresSymlink(t *testing.T) {
 	hash := must(worktree.Commit("add symlink", &git.CommitOptions{
 		Author: &object.Signature{Name: "Test"},
 	}))
-	commit := must(repo.CommitObject(hash))
+	commit := must(repo.Repository.CommitObject(git2.Hash(hash)))
 	tree := must(commit.Tree())
 	if got, ok, err := findPinnedStableToolchain(tree, ""); err != nil {
 		t.Fatalf("findPinnedStableToolchain: %v", err)

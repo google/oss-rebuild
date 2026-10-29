@@ -8,13 +8,13 @@ import (
 	"log"
 	"path/filepath"
 
-	"github.com/go-git/go-git/v5/plumbing/object"
 	"github.com/google/oss-rebuild/pkg/rebuild/rebuild"
+	"github.com/msuozzo/go-git2"
 	"github.com/pkg/errors"
 )
 
 // ExtractRequirements extracts requirements from build files in the specified directory.
-func ExtractRequirements(ctx context.Context, tree *object.Tree, searchDir string) ([]string, error) {
+func ExtractRequirements(ctx context.Context, tree *git2.Tree, searchDir string) ([]string, error) {
 	var reqs []string
 	// Account for "" as base dir in the provided tree
 	if searchDir == "" {
@@ -22,7 +22,7 @@ func ExtractRequirements(ctx context.Context, tree *object.Tree, searchDir strin
 	}
 	configTypes := []struct {
 		filename string
-		extract  func(context.Context, *object.File) ([]string, error)
+		extract  func(context.Context, *git2.File) ([]string, error)
 	}{
 		{"pyproject.toml", extractPyProjectRequirements},
 		{"setup.cfg", extractSetupCfgRequirements},
@@ -30,7 +30,7 @@ func ExtractRequirements(ctx context.Context, tree *object.Tree, searchDir strin
 	}
 	for _, h := range configTypes {
 		f, err := tree.File(filepath.Join(searchDir, h.filename))
-		if err == object.ErrFileNotFound {
+		if errors.Is(err, git2.ErrFileNotFound) {
 			continue
 		} else if err != nil {
 			return nil, errors.Wrapf(err, "finding %s file", h.filename)
@@ -47,7 +47,7 @@ func ExtractRequirements(ctx context.Context, tree *object.Tree, searchDir strin
 // buildFileVerifiers pairs each build file with its per-format verifier.
 var buildFileVerifiers = []struct {
 	filename string
-	verify   func(context.Context, *object.File, string, string) (fileVerification, error)
+	verify   func(context.Context, *git2.File, string, string) (fileVerification, error)
 }{
 	{"pyproject.toml", verifyPyProjectFile},
 	{"setup.cfg", verifySetupCfgFile},
@@ -57,20 +57,20 @@ var buildFileVerifiers = []struct {
 // verifyBuildFiles verifies the build files in dir, or every build file in the
 // tree when dir is "", against name and version. Files that fail to parse are
 // logged and skipped.
-func verifyBuildFiles(ctx context.Context, tree *object.Tree, dir, name, version string) ([]fileVerification, error) {
+func verifyBuildFiles(ctx context.Context, tree *git2.Tree, dir, name, version string) ([]fileVerification, error) {
 	var verified []fileVerification
 	for _, h := range buildFileVerifiers {
-		var files []*object.File
+		var files []*git2.File
 		if dir == "" {
-			tree.Files().ForEach(func(f *object.File) error {
+			tree.Files().ForEach(func(f *git2.File) error {
 				if filepath.Base(f.Name) == h.filename {
 					files = append(files, f)
 				}
 				return nil
 			})
 		} else if f, err := tree.File(filepath.Join(dir, h.filename)); err == nil {
-			files = []*object.File{f}
-		} else if err != object.ErrFileNotFound {
+			files = []*git2.File{f}
+		} else if !errors.Is(err, git2.ErrFileNotFound) {
 			return nil, errors.Wrapf(err, "finding %s file", h.filename)
 		}
 		for _, f := range files {
@@ -87,7 +87,7 @@ func verifyBuildFiles(ctx context.Context, tree *object.Tree, dir, name, version
 
 // DiscoverBuildDir searches for the best directory for requirement extraction.
 // Returns the directory path relative to the tree root, with "" representing root.
-func DiscoverBuildDir(ctx context.Context, tree *object.Tree, name, version, hintDir string) (string, error) {
+func DiscoverBuildDir(ctx context.Context, tree *git2.Tree, name, version, hintDir string) (string, error) {
 	verified, err := verifyBuildFiles(ctx, tree, hintDir, name, version)
 	if err != nil {
 		return "", err

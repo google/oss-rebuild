@@ -12,9 +12,9 @@ import (
 	"strings"
 	"sync"
 
-	"github.com/go-git/go-git/v5/plumbing/object"
 	"github.com/msuozzo/bonsai"
 	py "github.com/msuozzo/bonsai/bonsai-python"
+	"github.com/msuozzo/go-git2"
 	"github.com/pkg/errors"
 )
 
@@ -258,7 +258,7 @@ func (a *analyzer) text(n *bonsai.Node) string {
 	return string(n.Text(a.src))
 }
 
-func verifySetupPyFile(ctx context.Context, f *object.File, name, version string) (fileVerification, error) {
+func verifySetupPyFile(ctx context.Context, f *git2.File, name, version string) (fileVerification, error) {
 	var verificationResult fileVerification
 	verificationResult.foundF = f
 	setupPyContents, err := f.Contents()
@@ -296,7 +296,7 @@ func verifySetupPyFile(ctx context.Context, f *object.File, name, version string
 	return verificationResult, nil
 }
 
-func extractSetupPyRequirements(ctx context.Context, f *object.File) ([]string, error) {
+func extractSetupPyRequirements(ctx context.Context, f *git2.File) ([]string, error) {
 	var reqs []string
 	log.Println("Looking for additional reqs in setup.py")
 	setupPyContents, err := f.Contents()

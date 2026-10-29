@@ -21,8 +21,6 @@ import (
 	"time"
 
 	"github.com/go-git/go-git/v5"
-	"github.com/go-git/go-git/v5/plumbing"
-	"github.com/go-git/go-git/v5/plumbing/object"
 	"github.com/go-git/go-git/v5/plumbing/transport"
 	"github.com/google/oss-rebuild/internal/api/cratesregistryservice"
 	"github.com/google/oss-rebuild/internal/gitx"
@@ -33,11 +31,12 @@ import (
 	"github.com/google/oss-rebuild/pkg/rebuild/rebuild"
 	reg "github.com/google/oss-rebuild/pkg/registry/cratesio"
 	"github.com/google/oss-rebuild/pkg/registry/cratesio/cargolock"
+	"github.com/msuozzo/go-git2"
 	"github.com/pelletier/go-toml/v2"
 	"github.com/pkg/errors"
 )
 
-func getCargoTOML(tree *object.Tree, path string) (ct reg.CargoTOML, err error) {
+func getCargoTOML(tree *git2.Tree, path string) (ct reg.CargoTOML, err error) {
 	f, err := tree.File(path)
 	if err != nil {
 		return ct, err
@@ -137,11 +136,11 @@ func inferRefAndDir(t rebuild.Target, vmeta *reg.CrateVersion, crateBytes []byte
 	if info.Dir != nil {
 		vcsDir = *info.Dir
 	}
-	var c *object.Commit
+	var c *git2.Commit
 	switch {
 	// Ensure the package config has the expected name and version.
 	case cargoVCSGuess != "":
-		c, err = rcfg.Repository.CommitObject(plumbing.NewHash(cargoVCSGuess))
+		c, err = rcfg.Repository.CommitObject(git2.NewHash(cargoVCSGuess))
 		if err == nil {
 			if newPath, err := findAndValidateCargoTOML(rcfg.Repository, c, t.Package, t.Version, vcsDir); err != nil {
 				log.Printf("registry ref invalid: %v", err)
@@ -151,7 +150,7 @@ func inferRefAndDir(t rebuild.Target, vmeta *reg.CrateVersion, crateBytes []byte
 				dir = rebuild.DirOf(newPath)
 				return ref, dir, nil
 			}
-		} else if err == plumbing.ErrObjectNotFound {
+		} else if errors.Is(err, git2.ErrObjectNotFound) {
 			log.Printf("cargo_vcs_info ref not found in repo")
 		} else {
 			return "", "", errors.Wrapf(err, "[INTERNAL] Failed ref resolve from cargo_vcs_info [repo=%s,ref=%s]", rcfg.URI, cargoVCSGuess)
@@ -159,7 +158,7 @@ func inferRefAndDir(t rebuild.Target, vmeta *reg.CrateVersion, crateBytes []byte
 		log.Printf("ref heuristic cargo_vcs_info not found in repo")
 		fallthrough
 	case tagGuess != "":
-		c, err = rcfg.Repository.CommitObject(plumbing.NewHash(tagGuess))
+		c, err = rcfg.Repository.CommitObject(git2.NewHash(tagGuess))
 		if err == nil {
 			if newPath, err := findAndValidateCargoTOML(rcfg.Repository, c, t.Package, t.Version, vcsDir); err != nil {
 				log.Printf("registry heuristic tag invalid: %v", err)
@@ -169,7 +168,7 @@ func inferRefAndDir(t rebuild.Target, vmeta *reg.CrateVersion, crateBytes []byte
 				dir = rebuild.DirOf(newPath)
 				return ref, dir, nil
 			}
-		} else if err == plumbing.ErrObjectNotFound {
+		} else if errors.Is(err, git2.ErrObjectNotFound) {
 			log.Printf("tag heuristic ref not found in repo")
 		} else {
 			return "", "", errors.Wrapf(err, "[INTERNAL] Failed ref resolve from tag [repo=%s,ref=%s]", rcfg.URI, tagGuess)
@@ -177,7 +176,7 @@ func inferRefAndDir(t rebuild.Target, vmeta *reg.CrateVersion, crateBytes []byte
 		log.Printf("ref heuristic tag not found in repo")
 		fallthrough
 	case cargoTOMLGuess != "":
-		c, err = rcfg.Repository.CommitObject(plumbing.NewHash(cargoTOMLGuess))
+		c, err = rcfg.Repository.CommitObject(git2.NewHash(cargoTOMLGuess))
 		if err == nil {
 			if newPath, err := findAndValidateCargoTOML(rcfg.Repository, c, t.Package, t.Version, vcsDir); err != nil {
 				log.Printf("registry heuristic git log invalid: %v", err)
@@ -187,7 +186,7 @@ func inferRefAndDir(t rebuild.Target, vmeta *reg.CrateVersion, crateBytes []byte
 				dir = rebuild.DirOf(newPath)
 				return ref, dir, nil
 			}
-		} else if err == plumbing.ErrObjectNotFound {
+		} else if errors.Is(err, git2.ErrObjectNotFound) {
 			log.Printf("git log heuristic ref not found in repo")
 		} else {
 			return "", "", errors.Wrapf(err, "[INTERNAL] Failed ref resolve from git log [repo=%s,ref=%s]", rcfg.URI, cargoTOMLGuess)
@@ -239,7 +238,7 @@ func (Rebuilder) InferStrategy(ctx context.Context, t rebuild.Target, mux rebuil
 	if lh != nil {
 		submodules = lh.Submodules
 	}
-	if c, err := rcfg.Repository.CommitObject(plumbing.NewHash(ref)); err == nil {
+	if c, err := rcfg.Repository.CommitObject(git2.NewHash(ref)); err == nil {
 		if tree, err := c.Tree(); err == nil {
 			submodules = rebuild.MergeSubmodules(submodules, rebuild.Submodules(tree, rcfg.URI))
 		}
@@ -256,7 +255,7 @@ func (Rebuilder) InferStrategy(ctx context.Context, t rebuild.Target, mux rebuil
 func inferBuild(ctx context.Context, t rebuild.Target, mux rebuild.RegistryMux, rcfg *rebuild.RepoConfig, vmeta *reg.CrateVersion, b []byte, loc rebuild.Location) (rebuild.Strategy, error) {
 	name, version := t.Package, t.Version
 	ref, dir := loc.Ref, loc.Dir
-	c, err := rcfg.Repository.CommitObject(plumbing.NewHash(ref))
+	c, err := rcfg.Repository.CommitObject(git2.NewHash(ref))
 	if err != nil {
 		return nil, err
 	}
@@ -265,7 +264,7 @@ func inferBuild(ctx context.Context, t rebuild.Target, mux rebuild.RegistryMux, 
 		return nil, errors.Wrap(err, "[INTERNAL] fetching commit tree")
 	}
 	ct, err := getCargoTOML(tree, path.Join(dir, "Cargo.toml"))
-	if err == object.ErrFileNotFound {
+	if errors.Is(err, git2.ErrFileNotFound) {
 		return nil, errors.Errorf("Cargo.toml file not found [heuristic=%s]", rcfg.Dir)
 	} else if _, ok := err.(*toml.DecodeError); ok {
 		return nil, errors.Wrapf(err, "[INTERNAL] Failed to parse Cargo.toml")
@@ -422,7 +421,7 @@ func getFileFromCrate(crate io.Reader, path string) ([]byte, error) {
 }
 
 // cargoPackageVersion resolves package.version, including workspace inheritance.
-func cargoPackageVersion(tree *object.Tree, manifestPath string, cargoTOML *reg.CargoTOML) (string, error) {
+func cargoPackageVersion(tree *git2.Tree, manifestPath string, cargoTOML *reg.CargoTOML) (string, error) {
 	version := cargoTOML.Version()
 	if version != reg.WorkspaceVersion {
 		return version, nil
@@ -445,7 +444,7 @@ func cargoPackageVersion(tree *object.Tree, manifestPath string, cargoTOML *reg.
 		root := cargoTOML
 		if rootPath != manifestPath {
 			candidate, err := getCargoTOML(tree, rootPath)
-			if err != nil && err != object.ErrFileNotFound {
+			if err != nil && !errors.Is(err, git2.ErrFileNotFound) {
 				return "", errors.Wrapf(err, "reading workspace manifest [path=%s]", rootPath)
 			}
 			if err == nil {
@@ -468,7 +467,7 @@ func cargoPackageVersion(tree *object.Tree, manifestPath string, cargoTOML *reg.
 }
 
 // findAndValidateCargoTOML ensures the package config has the expected name and version, or finds a new version if necessary.
-func findAndValidateCargoTOML(repo *git.Repository, c *object.Commit, name, version, guess string) (string, error) {
+func findAndValidateCargoTOML(repo *git2.Repository, c *git2.Commit, name, version, guess string) (string, error) {
 	t, err := c.Tree()
 	if err != nil {
 		return "", errors.Wrap(err, "fetching commit tree")
@@ -480,7 +479,7 @@ func findAndValidateCargoTOML(repo *git.Repository, c *object.Commit, name, vers
 	if err != nil || cargoTOML.Name != name || versionErr != nil || actualVersion != version {
 		cargoTOML, path, err = findCargoTOML(repo, c, name)
 	}
-	if err == object.ErrFileNotFound {
+	if errors.Is(err, git2.ErrFileNotFound) {
 		return path, errors.Errorf("Cargo.toml file not found [path=%s]", guess)
 	} else if _, ok := err.(*toml.DecodeError); ok {
 		return path, errors.Wrapf(err, "failed to parse Cargo.toml")
@@ -498,14 +497,14 @@ func findAndValidateCargoTOML(repo *git.Repository, c *object.Commit, name, vers
 	return path, nil
 }
 
-func findCargoTOML(repo *git.Repository, c *object.Commit, pkg string) (*reg.CargoTOML, string, error) {
+func findCargoTOML(repo *git2.Repository, c *git2.Commit, pkg string) (*reg.CargoTOML, string, error) {
 	t, err := c.Tree()
 	if err != nil {
 		return nil, "", errors.Wrap(err, "fetching commit tree")
 	}
 	path := "Cargo.toml"
 	ct, err := getCargoTOML(t, path)
-	if err == object.ErrFileNotFound {
+	if errors.Is(err, git2.ErrFileNotFound) {
 		log.Printf("Searching repo after ./Cargo.toml not found")
 	} else if _, ok := err.(*toml.DecodeError); ok {
 		log.Printf("Searching repo after ./Cargo.toml decode error: %v", err)
@@ -516,7 +515,7 @@ func findCargoTOML(repo *git.Repository, c *object.Commit, pkg string) (*reg.Car
 	} else {
 		log.Printf("Searching repo after ./Cargo.toml name mismatch")
 	}
-	grs, err := repo.Grep(&git.GrepOptions{
+	grs, err := repo.Grep(&git2.GrepOptions{
 		CommitHash: c.Hash,
 		PathSpecs:  []*regexp.Regexp{regexp.MustCompile(".*/Cargo.toml$")},
 		Patterns:   []*regexp.Regexp{regexp.MustCompile(fmt.Sprintf(`name\s*=\s*"%s"`, pkg))},
@@ -545,10 +544,13 @@ func findCargoTOML(repo *git.Repository, c *object.Commit, pkg string) (*reg.Car
 	return nil, "", errors.Errorf("Cargo.toml heuristic found no matches")
 }
 
-func cargoTOMLSearch(pkg, path string, repo *git.Repository) (tm map[string]string, err error) {
+func cargoTOMLSearch(pkg, path string, repo *git2.Repository) (tm map[string]string, err error) {
 	tm = make(map[string]string)
-	commitIter, err := repo.Log(&git.LogOptions{
-		Order:      git.LogOrderCommitterTime,
+	if path == "" {
+		return tm, nil // no path matches
+	}
+	commitIter, err := repo.Log(&git2.LogOptions{
+		Order:      git2.LogOrderCommitterTime,
 		PathFilter: func(s string) bool { return s == path || strings.HasSuffix(s, "Cargo.toml") },
 		All:        true,
 	})
@@ -556,7 +558,7 @@ func cargoTOMLSearch(pkg, path string, repo *git.Repository) (tm map[string]stri
 		return nil, err
 	}
 	duplicates := make(map[string]string)
-	err = commitIter.ForEach(func(c *object.Commit) error {
+	err = commitIter.ForEach(func(c *git2.Commit) error {
 		t, err := c.Tree()
 		if err != nil {
 			return err
@@ -564,7 +566,7 @@ func cargoTOMLSearch(pkg, path string, repo *git.Repository) (tm map[string]stri
 		ct, err := getCargoTOML(t, path)
 		if _, ok := err.(*toml.DecodeError); ok {
 			return nil
-		} else if errors.Is(err, object.ErrFileNotFound) {
+		} else if errors.Is(err, git2.ErrFileNotFound) {
 			return nil
 		} else if err != nil {
 			return err
@@ -580,7 +582,7 @@ func cargoTOMLSearch(pkg, path string, repo *git.Repository) (tm map[string]stri
 		}
 		// If any are the same, return nil. (merges would create duplicates.)
 		var foundMatch bool
-		err = c.Parents().ForEach(func(c *object.Commit) error {
+		err = c.Parents().ForEach(func(c *git2.Commit) error {
 			t, err := c.Tree()
 			if err != nil {
 				return err

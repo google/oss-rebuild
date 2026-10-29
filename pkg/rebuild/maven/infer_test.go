@@ -14,6 +14,7 @@ import (
 	"github.com/google/oss-rebuild/pkg/archive"
 	"github.com/google/oss-rebuild/pkg/rebuild/rebuild"
 	"github.com/google/oss-rebuild/pkg/registry/maven"
+	"github.com/msuozzo/go-git2"
 )
 
 type artifactCoordinates struct{ PackageName, VersionID, FileType string }
@@ -351,8 +352,8 @@ func TestBuildToolInference(t *testing.T) {
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			repo := must(gitxtest.CreateRepoFromYAML(tc.repo, nil))
-			head := must(repo.Head())
-			headCommit := must(repo.CommitObject(head.Hash()))
+			head := must(repo.Repository.Head())
+			headCommit := must(repo.Repository.CommitObject(head.Hash()))
 			buildTool, err := inferBuildTool(headCommit)
 			if tc.wantErr {
 				if err == nil {
@@ -493,7 +494,7 @@ func TestGitIndexScan(t *testing.T) {
 				if err != nil {
 					t.Fatalf("unexpected error: %v", err)
 				}
-				if sourceCommit.Hash != repo.Commits[tc.expectedCommitID] {
+				if sourceCommit.Hash != git2.Hash(repo.Commits[tc.expectedCommitID]) {
 					t.Errorf("sourceJarGuess() = %v, want %v", sourceCommit.Hash, repo.Commits[tc.expectedCommitID])
 				}
 			}

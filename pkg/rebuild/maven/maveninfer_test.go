@@ -16,12 +16,14 @@ import (
 
 	"github.com/go-git/go-billy/v5/memfs"
 	"github.com/go-git/go-git/v5"
+	"github.com/go-git/go-git/v5/plumbing/cache"
 	"github.com/go-git/go-git/v5/plumbing/object"
-	"github.com/go-git/go-git/v5/storage/memory"
+	"github.com/go-git/go-git/v5/storage/filesystem"
 	"github.com/google/oss-rebuild/internal/gitx/gitxtest"
 	"github.com/google/oss-rebuild/pkg/archive"
 	"github.com/google/oss-rebuild/pkg/rebuild/rebuild"
 	"github.com/google/oss-rebuild/pkg/registry/maven"
+	"github.com/msuozzo/go-git2"
 )
 
 func TestFindPomXMLHeuristic(t *testing.T) {
@@ -59,7 +61,8 @@ func TestFindPomXMLHeuristic(t *testing.T) {
 	for _, tc := range testCases {
 		t.Run(tc.name, func(t *testing.T) {
 			fs := memfs.New()
-			repo, _ := git.Init(memory.NewStorage(), fs)
+			repo, _ := git.Init(filesystem.NewStorage(memfs.New(), cache.NewObjectLRUDefault()), fs)
+			g2 := must(gitxtest.Open(repo.Storer))
 			w, _ := repo.Worktree()
 			for _, pomPath := range tc.poms {
 				dir := path.Dir(pomPath)
@@ -86,7 +89,7 @@ func TestFindPomXMLHeuristic(t *testing.T) {
 					When:  time.Now(),
 				},
 			})
-			commit, _ := repo.CommitObject(commitHash)
+			commit, _ := g2.CommitObject(git2.Hash(commitHash))
 			_, name, err := findPomXML(commit, "group:artifact")
 			if err != nil {
 				t.Fatalf("findPomXML() error = %v", err)
@@ -350,6 +353,7 @@ func TestMavenInfer(t *testing.T) {
             commits:
               - id: initial-commit
               - id: orphan-commit
+                branch: orphan # a clone holds only commits some ref reaches
                 files:
                   pom.xml: |
                     <project>
@@ -569,6 +573,7 @@ func TestMavenInfer(t *testing.T) {
 				t.Fatalf("CreateRepoFromYAML() error = %v", err)
 			}
 			repoConfig.Repository = repo.Repository
+			repoConfig.Storer = repo.Storer
 			mockRegistry := &mockMavenRegistry{
 				artifactCoordinates: make(map[artifactCoordinates][]byte),
 				releaseFileError:    tc.jarError,

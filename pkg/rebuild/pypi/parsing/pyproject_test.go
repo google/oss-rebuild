@@ -10,6 +10,7 @@ import (
 	"github.com/google/go-cmp/cmp"
 	"github.com/google/go-cmp/cmp/cmpopts"
 	"github.com/google/oss-rebuild/internal/gitx/gitxtest"
+	"github.com/msuozzo/go-git2"
 )
 
 func TestExtractPyProjectRequirements(t *testing.T) {
@@ -101,7 +102,7 @@ commits:
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			repo := must(gitxtest.CreateRepoFromYAML(tc.repoYAML, nil))
-			commit := must(repo.CommitObject(repo.Commits["initial-commit"]))
+			commit := must(repo.Repository.CommitObject(git2.Hash(repo.Commits["initial-commit"])))
 			tree := must(commit.Tree())
 			f := must(tree.File("pyproject.toml"))
 			got, err := extractPyProjectRequirements(context.Background(), f)

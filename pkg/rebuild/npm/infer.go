@@ -14,18 +14,17 @@ import (
 	"time"
 
 	"github.com/go-git/go-git/v5"
-	"github.com/go-git/go-git/v5/plumbing"
-	"github.com/go-git/go-git/v5/plumbing/object"
 	"github.com/go-git/go-git/v5/plumbing/transport"
 	"github.com/google/oss-rebuild/internal/gitx"
 	"github.com/google/oss-rebuild/internal/semver"
 	"github.com/google/oss-rebuild/internal/uri"
 	"github.com/google/oss-rebuild/pkg/rebuild/rebuild"
 	npmreg "github.com/google/oss-rebuild/pkg/registry/npm"
+	"github.com/msuozzo/go-git2"
 	"github.com/pkg/errors"
 )
 
-func getPackageJSON(tree *object.Tree, path string) (pkgJSON npmreg.PackageJSON, err error) {
+func getPackageJSON(tree *git2.Tree, path string) (pkgJSON npmreg.PackageJSON, err error) {
 	f, err := tree.File(path)
 	if err != nil {
 		return pkgJSON, err
@@ -207,11 +206,11 @@ func InferLocation(t rebuild.Target, vmeta *npmreg.NPMVersion, rcfg *rebuild.Rep
 	if err != nil {
 		return loc, "", errors.Wrapf(err, "[INTERNAL] tag heuristic error")
 	}
-	var c *object.Commit
+	var c *git2.Commit
 	var badVersionRef string
 	switch {
 	case registryRef != "":
-		c, err = rcfg.Repository.CommitObject(plumbing.NewHash(registryRef))
+		c, err = rcfg.Repository.CommitObject(git2.NewHash(registryRef))
 		if err == nil {
 			if newPath, err := findAndValidatePackageJSON(rcfg.Repository, c, t.Package, t.Version, loc.Dir); err != nil {
 				log.Printf("registry ref invalid: %v", err)
@@ -224,14 +223,14 @@ func InferLocation(t rebuild.Target, vmeta *npmreg.NPMVersion, rcfg *rebuild.Rep
 				loc.Dir = rebuild.DirOf(newPath)
 				return loc, "", nil
 			}
-		} else if err == plumbing.ErrObjectNotFound {
+		} else if errors.Is(err, git2.ErrObjectNotFound) {
 			log.Printf("registry ref not found in repo")
 		} else {
 			return loc, "", errors.Wrapf(err, "[INTERNAL] Failed ref resolve from registry [repo=%s,ref=%s]", rcfg.URI, registryRef)
 		}
 		fallthrough
 	case tagGuess != "":
-		c, err = rcfg.Repository.CommitObject(plumbing.NewHash(tagGuess))
+		c, err = rcfg.Repository.CommitObject(git2.NewHash(tagGuess))
 		if err == nil {
 			if newPath, err := findAndValidatePackageJSON(rcfg.Repository, c, t.Package, t.Version, loc.Dir); err != nil {
 				log.Printf("registry heuristic tag invalid: %v", err)
@@ -244,14 +243,14 @@ func InferLocation(t rebuild.Target, vmeta *npmreg.NPMVersion, rcfg *rebuild.Rep
 				loc.Dir = rebuild.DirOf(newPath)
 				return loc, "", nil
 			}
-		} else if err == plumbing.ErrObjectNotFound {
+		} else if errors.Is(err, git2.ErrObjectNotFound) {
 			log.Printf("tag heuristic ref not found in repo")
 		} else {
 			return loc, "", errors.Wrapf(err, "[INTERNAL] Failed ref resolve from tag [repo=%s,ref=%s]", rcfg.URI, tagGuess)
 		}
 		fallthrough
 	case pkgJSONGuess != "":
-		c, err = rcfg.Repository.CommitObject(plumbing.NewHash(pkgJSONGuess))
+		c, err = rcfg.Repository.CommitObject(git2.NewHash(pkgJSONGuess))
 		if err == nil {
 			if newPath, err := findAndValidatePackageJSON(rcfg.Repository, c, t.Package, t.Version, loc.Dir); err != nil {
 				log.Printf("registry heuristic git log invalid: %v", err)
@@ -263,7 +262,7 @@ func InferLocation(t rebuild.Target, vmeta *npmreg.NPMVersion, rcfg *rebuild.Rep
 				loc.Dir = rebuild.DirOf(newPath)
 				return loc, "", nil
 			}
-		} else if err == plumbing.ErrObjectNotFound {
+		} else if errors.Is(err, git2.ErrObjectNotFound) {
 			log.Printf("git log heuristic ref not found in repo")
 		} else {
 			return loc, "", errors.Wrapf(err, "[INTERNAL] Failed ref resolve from git log [repo=%s,ref=%s]", rcfg.URI, pkgJSONGuess)
@@ -317,7 +316,7 @@ func (Rebuilder) InferStrategy(ctx context.Context, t rebuild.Target, mux rebuil
 	if lh != nil {
 		loc.Submodules = lh.Submodules
 	}
-	if c, err := rcfg.Repository.CommitObject(plumbing.NewHash(loc.Ref)); err == nil {
+	if c, err := rcfg.Repository.CommitObject(git2.NewHash(loc.Ref)); err == nil {
 		if tree, err := c.Tree(); err == nil {
 			loc.Submodules = rebuild.MergeSubmodules(loc.Submodules, rebuild.Submodules(tree, loc.Repo))
 		}
@@ -335,7 +334,7 @@ func inferBuild(rcfg *rebuild.RepoConfig, vmeta *npmreg.NPMVersion, loc rebuild.
 	if err != nil {
 		return nil, err
 	}
-	c, err := rcfg.Repository.CommitObject(plumbing.NewHash(loc.Ref))
+	c, err := rcfg.Repository.CommitObject(git2.NewHash(loc.Ref))
 	if err != nil {
 		return nil, err
 	}
@@ -389,7 +388,7 @@ func inferBuild(rcfg *rebuild.RepoConfig, vmeta *npmreg.NPMVersion, loc rebuild.
 
 // findAndValidatePackageJSON ensures the package config has the expected name and version,
 // or finds a new version if necessary.
-func findAndValidatePackageJSON(repo *git.Repository, c *object.Commit, name, version, guess string) (string, error) {
+func findAndValidatePackageJSON(repo *git2.Repository, c *git2.Commit, name, version, guess string) (string, error) {
 	t, err := c.Tree()
 	if err != nil {
 		return "", errors.Wrap(err, "fetching commit tree")
@@ -400,7 +399,7 @@ func findAndValidatePackageJSON(repo *git.Repository, c *object.Commit, name, ve
 	if err != nil || pkgJSON.Name != name {
 		pkgJSON, path, err = findPackageJSON(repo, c, name)
 	}
-	if err == object.ErrFileNotFound {
+	if errors.Is(err, git2.ErrFileNotFound) {
 		return path, errors.Errorf("package.json file not found [path=%s]", guess)
 	} else if _, ok := err.(*json.SyntaxError); ok {
 		return path, errors.Wrapf(err, "failed to parse package.json")
@@ -414,7 +413,7 @@ func findAndValidatePackageJSON(repo *git.Repository, c *object.Commit, name, ve
 	return path, nil
 }
 
-func findPackageJSON(repo *git.Repository, c *object.Commit, pkg string) (*npmreg.PackageJSON, string, error) {
+func findPackageJSON(repo *git2.Repository, c *git2.Commit, pkg string) (*npmreg.PackageJSON, string, error) {
 	t, err := c.Tree()
 	if err != nil {
 		return nil, "", errors.Wrap(err, "fetching commit tree")
@@ -426,7 +425,7 @@ func findPackageJSON(repo *git.Repository, c *object.Commit, pkg string) (*npmre
 	for _, path := range wellKnownPaths {
 		pkgJSON, err := getPackageJSON(t, path)
 		if err != nil {
-			if err == object.ErrFileNotFound {
+			if errors.Is(err, git2.ErrFileNotFound) {
 				continue
 			}
 			if _, ok := err.(*json.SyntaxError); ok {
@@ -438,7 +437,7 @@ func findPackageJSON(repo *git.Repository, c *object.Commit, pkg string) (*npmre
 			return &pkgJSON, path, nil
 		}
 	}
-	grs, err := repo.Grep(&git.GrepOptions{
+	grs, err := repo.Grep(&git2.GrepOptions{
 		CommitHash: c.Hash,
 		PathSpecs:  []*regexp.Regexp{regexp.MustCompile(".*/package.json$")},
 		Patterns:   []*regexp.Regexp{regexp.MustCompile(fmt.Sprintf(`"name":\s*"%s"`, pkg))},
@@ -467,18 +466,21 @@ func findPackageJSON(repo *git.Repository, c *object.Commit, pkg string) (*npmre
 	return nil, "", errors.Errorf("package.json heuristic found no matches")
 }
 
-func pkgJSONSearch(pkg, pkgJSONPath string, repo *git.Repository) (tm map[string]string, err error) {
+func pkgJSONSearch(pkg, pkgJSONPath string, repo *git2.Repository) (tm map[string]string, err error) {
 	tm = make(map[string]string)
-	commitIter, err := repo.Log(&git.LogOptions{
-		Order:      git.LogOrderCommitterTime,
-		PathFilter: func(s string) bool { return s == pkgJSONPath },
-		All:        true,
+	if pkgJSONPath == "" {
+		return tm, nil // no path matches
+	}
+	commitIter, err := repo.Log(&git2.LogOptions{
+		Order:    git2.LogOrderCommitterTime,
+		FileName: &pkgJSONPath,
+		All:      true,
 	})
 	if err != nil {
 		return nil, errors.Wrapf(err, "searching for commits touching package.json")
 	}
 	duplicates := make(map[string]string)
-	err = commitIter.ForEach(func(c *object.Commit) error {
+	err = commitIter.ForEach(func(c *git2.Commit) error {
 		t, err := c.Tree()
 		if err != nil {
 			return errors.Wrapf(err, "fetching tree")
@@ -486,7 +488,7 @@ func pkgJSONSearch(pkg, pkgJSONPath string, repo *git.Repository) (tm map[string
 		pkgJSON, err := getPackageJSON(t, pkgJSONPath)
 		if _, ok := err.(*json.SyntaxError); ok {
 			return nil // unable to parse
-		} else if errors.Is(err, object.ErrFileNotFound) {
+		} else if errors.Is(err, git2.ErrFileNotFound) {
 			return nil // file deleted at this commit
 		} else if err != nil {
 			return errors.Wrapf(err, "fetching package.json")
@@ -502,7 +504,7 @@ func pkgJSONSearch(pkg, pkgJSONPath string, repo *git.Repository) (tm map[string
 		}
 		// If any are the same, return nil. (merges would create duplicates.)
 		var foundMatch bool
-		err = c.Parents().ForEach(func(c *object.Commit) error {
+		err = c.Parents().ForEach(func(c *git2.Commit) error {
 			t, err := c.Tree()
 			if err != nil {
 				return errors.Wrapf(err, "fetching tree")

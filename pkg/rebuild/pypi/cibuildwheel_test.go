@@ -10,6 +10,7 @@ import (
 	"github.com/google/oss-rebuild/internal/gitx/gitxtest"
 	"github.com/google/oss-rebuild/internal/textwrap"
 	"github.com/google/oss-rebuild/pkg/rebuild/pypi/platform"
+	"github.com/msuozzo/go-git2"
 )
 
 func TestCibuildwheelSpecs(t *testing.T) {
@@ -143,7 +144,7 @@ func TestExtractCibuildwheelSpecs(t *testing.T) {
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
 			repo := must(gitxtest.CreateRepo([]gitxtest.Commit{{ID: "initial-commit", Files: tc.files}}, nil))
-			commit := must(repo.CommitObject(repo.Commits["initial-commit"]))
+			commit := must(repo.Repository.CommitObject(git2.Hash(repo.Commits["initial-commit"])))
 			got, err := extractCibuildwheelSpecs(must(commit.Tree()))
 			if err != nil {
 				t.Fatalf("extractCibuildwheelSpecs() returned error: %v", err)
@@ -245,7 +246,7 @@ func TestExtractCibuildwheelDependencies(t *testing.T) {
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
 			repo := must(gitxtest.CreateRepo([]gitxtest.Commit{{ID: "initial-commit", Files: tc.files}}, nil))
-			commit := must(repo.CommitObject(repo.Commits["initial-commit"]))
+			commit := must(repo.Repository.CommitObject(git2.Hash(repo.Commits["initial-commit"])))
 			got, err := extractCibuildwheelDependencies(must(commit.Tree()), tc.searchDir, tc.libc)
 			if err != nil {
 				t.Fatalf("extractCibuildwheelDependencies() unexpected error: %v", err)

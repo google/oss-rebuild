@@ -12,13 +12,12 @@ import (
 	"time"
 
 	"github.com/go-git/go-git/v5"
-	"github.com/go-git/go-git/v5/plumbing"
-	"github.com/go-git/go-git/v5/plumbing/object"
 	"github.com/go-git/go-git/v5/plumbing/transport"
 	"github.com/google/oss-rebuild/internal/gitx"
 	"github.com/google/oss-rebuild/internal/uri"
 	"github.com/google/oss-rebuild/pkg/rebuild/rebuild"
 	registry "github.com/google/oss-rebuild/pkg/registry/rubygems"
+	"github.com/msuozzo/go-git2"
 	"github.com/pkg/errors"
 )
 
@@ -113,8 +112,8 @@ func (Rebuilder) InferStrategy(ctx context.Context, t rebuild.Target, mux rebuil
 
 	// Locate the gemspec file within the repo tree, unless dir was set explicitly.
 	var gemspec string
-	var commitTree *object.Tree
-	if hash, err := rcfg.Repository.ResolveRevision(plumbing.Revision(ref)); err != nil {
+	var commitTree *git2.Tree
+	if hash, err := rcfg.Repository.ResolveRevision(git2.Revision(ref)); err != nil {
 		log.Printf("warning: failed to resolve ref %s for gemspec search: %v", ref, err)
 	} else if commit, err := rcfg.Repository.CommitObject(*hash); err != nil {
 		log.Printf("warning: failed to get commit for ref %s: %v", ref, err)
@@ -187,7 +186,7 @@ func (Rebuilder) InferStrategy(ctx context.Context, t rebuild.Target, mux rebuil
 
 // findGemspec locates the gemspec file for the given package in the repo tree.
 // It first checks well-known paths, then falls back to a content-based grep.
-func findGemspec(repo *git.Repository, c *object.Commit, pkg string) (gemspecPath string, err error) {
+func findGemspec(repo *git2.Repository, c *git2.Commit, pkg string) (gemspecPath string, err error) {
 	t, err := c.Tree()
 	if err != nil {
 		return "", errors.Wrap(err, "getting commit tree")
@@ -203,7 +202,7 @@ func findGemspec(repo *git.Repository, c *object.Commit, pkg string) (gemspecPat
 		}
 	}
 	// Fallback: grep for .gemspec files containing the gem name.
-	grs, err := repo.Grep(&git.GrepOptions{
+	grs, err := repo.Grep(&git2.GrepOptions{
 		CommitHash: c.Hash,
 		PathSpecs:  []*regexp.Regexp{regexp.MustCompile(`\.gemspec$`)},
 		Patterns:   []*regexp.Regexp{regexp.MustCompile(fmt.Sprintf(`\.name\s*=\s*['"]%s['"]`, regexp.QuoteMeta(pkg)))},

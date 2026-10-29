@@ -8,6 +8,7 @@ import (
 	"testing"
 
 	"github.com/google/oss-rebuild/internal/gitx/gitxtest"
+	"github.com/msuozzo/go-git2"
 )
 
 func must[T any](t T, err error) T {
@@ -272,7 +273,7 @@ commits:
 		t.Run(tc.name, func(t *testing.T) {
 			// Setup the commit tree using repo yaml
 			repo := must(gitxtest.CreateRepoFromYAML(tc.repoYAML, nil))
-			commit := must(repo.CommitObject(repo.Commits["initial-commit"]))
+			commit := must(repo.Repository.CommitObject(git2.Hash(repo.Commits["initial-commit"])))
 			tree := must(commit.Tree())
 			ctx := context.Background()
 
@@ -470,7 +471,7 @@ commits:
 		t.Run(tc.name, func(t *testing.T) {
 			// Setup the commit tree using repo yaml
 			repo := must(gitxtest.CreateRepoFromYAML(tc.repoYAML, nil))
-			commit := must(repo.CommitObject(repo.Commits["initial-commit"]))
+			commit := must(repo.Repository.CommitObject(git2.Hash(repo.Commits["initial-commit"])))
 			tree := must(commit.Tree())
 			ctx := context.Background()
 

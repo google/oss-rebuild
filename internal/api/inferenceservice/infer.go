@@ -43,6 +43,7 @@ func doInfer(ctx context.Context, rebuilder rebuild.Rebuilder, t rebuild.Target,
 	}
 	rcfg, err = rebuilder.CloneRepo(ctx, t, repo, ropt)
 	if err != nil {
+		rcfg.Close() // a failed clone can still hold an open repository
 		return nil, rebuild.RepoConfig{}, err
 	}
 	s, err = rebuilder.InferStrategy(ctx, t, mux, &rcfg, hint)
@@ -72,7 +73,7 @@ func recordRepoMetrics(ctx context.Context, store db.RepoMetrics, rcfg rebuild.R
 	if rcfg.Repository == nil {
 		return errors.New("nil repository")
 	}
-	ref, err := rcfg.Head()
+	ref, err := rcfg.Repository.Head()
 	if err != nil {
 		return errors.Wrap(err, "resolving head")
 	}
@@ -134,8 +135,9 @@ func Infer(ctx context.Context, req schema.InferenceRequest, deps *InferDeps) (*
 	}
 	// Deferring a closure releases memory doInfer took before it panicked.
 	release := func() {}
-	defer func() { release() }()
+	defer func() { release() }() // runs after rcfg.Close
 	s, rcfg, err := doInfer(ctx, rebuilder, t, mux, req.LocationHint(), repoOpt, deps, &release)
+	defer rcfg.Close()
 	// TODO: Move before doInfer so we record metrics even when inference fails.
 	if deps.RepoMetrics != nil && rcfg.Repository != nil {
 		if err := recordRepoMetrics(ctx, deps.RepoMetrics, rcfg); err != nil {

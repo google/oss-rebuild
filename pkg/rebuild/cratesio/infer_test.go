@@ -25,6 +25,7 @@ import (
 	"github.com/google/oss-rebuild/pkg/archive/archivetest"
 	"github.com/google/oss-rebuild/pkg/rebuild/rebuild"
 	"github.com/google/oss-rebuild/pkg/registry/cratesio"
+	"github.com/msuozzo/go-git2"
 )
 
 const (
@@ -1339,7 +1340,7 @@ version = 3
 				URLValidator: httpxtest.NewURLValidator(t),
 			}}}
 			s, err := Rebuilder{}.InferStrategy(ctx, target, mux, &rebuild.RepoConfig{
-				Repo:   gitx.Repo{Repository: repo.Repository},
+				Repo:   gitx.Repo{Repository: repo.Repository, Storer: repo.Storer},
 				URI:    "https://github.com/serde-rs/serde",
 				Dir:    "",
 				RefMap: map[string]string{"1.0.150": repo.Commits["version-bump"].String()},
@@ -1403,7 +1404,7 @@ func TestInferRefAndDirUsesVCSPathForFallback(t *testing.T) {
 				rebuild.Target{Package: "serde", Version: "1.0.150"},
 				&cratesio.CrateVersion{Version: cratesio.Version{Version: "1.0.150"}},
 				crate.Bytes(),
-				&rebuild.RepoConfig{Repo: gitx.Repo{Repository: repo.Repository}, Dir: "current", RefMap: refMap},
+				&rebuild.RepoConfig{Repo: gitx.Repo{Repository: repo.Repository, Storer: repo.Storer}, Dir: "current", RefMap: refMap},
 			)
 			if err != nil {
 				t.Fatal(err)
@@ -1433,7 +1434,7 @@ func TestGetCargoTOMLAllowsMultilineInlineTables(t *testing.T) {
           features = ["derive"],
         }
 `, nil))
-	commit := must(repo.CommitObject(repo.Commits["target"]))
+	commit := must(repo.Repository.CommitObject(git2.Hash(repo.Commits["target"])))
 	tree := must(commit.Tree())
 	ct, err := getCargoTOML(tree, "Cargo.toml")
 	if err != nil {
@@ -1492,7 +1493,7 @@ func TestFindAndValidateCargoTOMLWorkspaceVersion(t *testing.T) {
 
         [workspace]
 `, nil))
-	commit := must(repo.CommitObject(repo.Commits["target"]))
+	commit := must(repo.Repository.CommitObject(git2.Hash(repo.Commits["target"])))
 	for _, tc := range []struct {
 		name    string
 		pkg     string
@@ -1566,7 +1567,7 @@ func TestFindAndValidateCargoTOMLStripsManifestBOM(t *testing.T) {
         name = "member"
         version.workspace = true
 `, nil))
-	commit := must(repo.CommitObject(repo.Commits["target"]))
+	commit := must(repo.Repository.CommitObject(git2.Hash(repo.Commits["target"])))
 	got, err := findAndValidateCargoTOML(repo.Repository, commit, "member", "1.2.3", "member")
 	if err != nil {
 		t.Fatalf("findAndValidateCargoTOML with BOM workspace root: %v", err)

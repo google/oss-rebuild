@@ -563,7 +563,7 @@ commits:
 	beforeRepo.Close()
 
 	// Add the new-package commit to upstream
-	wt := must(repo.Worktree())
+	wt := must(repo.GoGit.Worktree())
 	f := must(wt.Filesystem.Create(fname))
 	must(io.WriteString(f, `{"name":"new-package","vers":"1.0.0","deps":[],"cksum":"xyz789...","features":{},"yanked":false}`))
 	must1(f.Close())
@@ -962,7 +962,7 @@ commits:
 		if err != nil {
 			return nil, err
 		}
-		return &gitx.Repo{Repository: repo}, nil
+		return &gitx.Repo{Storer: repo.Storer}, nil
 	}
 	mgr := NewIndexManager(IndexManagerConfig{
 		Filesystem:            safememfs.New(),

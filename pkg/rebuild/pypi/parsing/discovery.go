@@ -8,11 +8,11 @@ import (
 	"sort"
 	"strings"
 
-	"github.com/go-git/go-git/v5/plumbing/object"
+	"github.com/msuozzo/go-git2"
 )
 
 type fileVerification struct {
-	foundF       *object.File
+	foundF       *git2.File
 	main         bool
 	nameMatch    bool
 	versionMatch bool

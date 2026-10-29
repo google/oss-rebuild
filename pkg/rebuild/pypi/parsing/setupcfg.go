@@ -9,8 +9,8 @@ import (
 	"path/filepath"
 	"strings"
 
-	"github.com/go-git/go-git/v5/plumbing/object"
 	"github.com/google/oss-rebuild/pkg/ini"
+	"github.com/msuozzo/go-git2"
 	"github.com/pkg/errors"
 )
 
@@ -33,7 +33,7 @@ func splitRequiresList(value string) []string {
 	return result
 }
 
-func verifySetupCfgFile(ctx context.Context, f *object.File, name, version string) (fileVerification, error) {
+func verifySetupCfgFile(ctx context.Context, f *git2.File, name, version string) (fileVerification, error) {
 	var verificationResult fileVerification
 	verificationResult.foundF = f
 
@@ -79,7 +79,7 @@ func verifySetupCfgFile(ctx context.Context, f *object.File, name, version strin
 	return verificationResult, nil
 }
 
-func extractSetupCfgRequirements(ctx context.Context, f *object.File) ([]string, error) {
+func extractSetupCfgRequirements(ctx context.Context, f *git2.File) ([]string, error) {
 	log.Println("Looking for additional reqs in setup.cfg")
 	cfgContents, err := f.Contents()
 	if err != nil {

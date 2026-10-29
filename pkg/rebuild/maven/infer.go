@@ -15,14 +15,13 @@ import (
 	"strings"
 
 	"github.com/go-git/go-git/v5"
-	"github.com/go-git/go-git/v5/plumbing"
-	"github.com/go-git/go-git/v5/plumbing/object"
 	"github.com/go-git/go-git/v5/plumbing/transport"
 	"github.com/google/oss-rebuild/internal/gitx"
 	"github.com/google/oss-rebuild/internal/uri"
 	"github.com/google/oss-rebuild/pkg/rebuild/rebuild"
 	"github.com/google/oss-rebuild/pkg/registry/maven"
 	"github.com/google/oss-rebuild/pkg/vcs/gitscan"
+	"github.com/msuozzo/go-git2"
 	"github.com/pkg/errors"
 )
 
@@ -107,7 +106,7 @@ func (Rebuilder) InferStrategy(ctx context.Context, t rebuild.Target, mux rebuil
 // It checks for the presence of "pom.xml" (Maven) and "gradlew" (Gradle) files, prioritizing the tool found in the shallowest directory.
 // The build tool located in the directory closest to the repository root is chosen, as it likely represents the primary build system.
 // The deeper the file is in the directory structure, it is more likely to be a red herring (e.g., examples, test resources).
-func inferBuildTool(commit *object.Commit) (string, error) {
+func inferBuildTool(commit *git2.Commit) (string, error) {
 	var bestBuildTool string
 	minDepth := math.MaxInt
 
@@ -115,7 +114,7 @@ func inferBuildTool(commit *object.Commit) (string, error) {
 	if err != nil {
 		return "", errors.Wrap(err, "listing commit files")
 	}
-	err = fileIter.ForEach(func(f *object.File) error {
+	err = fileIter.ForEach(func(f *git2.File) error {
 		currentDepth := strings.Count(f.Name, "/")
 		if currentDepth >= minDepth {
 			// No need to check deeper files if we already have a shallower candidate
@@ -305,7 +304,7 @@ func getClassFileMajorVersion(classBytes []byte) (int, error) {
 }
 
 // findClosestCommitToSource attempts to find the git commit that best matches the contents of a source JAR.
-func findClosestCommitToSource(ctx context.Context, t rebuild.Target, mux rebuild.RegistryMux, repo *git.Repository) (*object.Commit, error) {
+func findClosestCommitToSource(ctx context.Context, t rebuild.Target, mux rebuild.RegistryMux, repo *git2.Repository) (*git2.Commit, error) {
 	sourceJar, err := mux.Maven.ReleaseFile(ctx, t.Package, t.Version, maven.TypeSources)
 	if err != nil {
 		return nil, err
@@ -323,8 +322,12 @@ func findClosestCommitToSource(ctx context.Context, t rebuild.Target, mux rebuil
 	if err != nil {
 		return nil, errors.Wrap(err, "hashing source jar contents")
 	}
-	searchStrategy := gitscan.ExactTreeCount{}
-	closest, matched, total, err := searchStrategy.Search(ctx, repo, hashes)
+	blobs := make([]git2.Hash, len(hashes))
+	for i, h := range hashes {
+		blobs[i] = git2.Hash(h)
+	}
+	searchStrategy := gitscan.ReachableTreeCount{}
+	closest, matched, total, err := searchStrategy.Search(ctx, repo, blobs)
 	if err != nil {
 		return nil, errors.Wrap(err, "searching for matching commit based on source jar")
 	}
@@ -339,7 +342,7 @@ func findClosestCommitToSource(ctx context.Context, t rebuild.Target, mux rebuil
 	// TODO: use a better heuristic here like using commit time
 	commitString := closest[0]
 	// Verify if commit exists in the repository
-	commitHash := plumbing.NewHash(commitString)
+	commitHash := git2.NewHash(commitString)
 	commitObject, err := repo.CommitObject(commitHash)
 	if err != nil {
 		return nil, errors.Wrapf(err, "resolving commit %s", commitString)

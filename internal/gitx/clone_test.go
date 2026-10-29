@@ -8,6 +8,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/go-git/go-billy/v5"
 	"github.com/go-git/go-billy/v5/memfs"
 	"github.com/go-git/go-billy/v5/osfs"
 	"github.com/go-git/go-git/v5"
@@ -172,16 +173,17 @@ commits:
 			if err != nil {
 				t.Fatalf("NativeClone failed: %v", err)
 			}
+			g := gogit(t, repo, nil)
 			// Verify the returned repo uses the same storer we passed in
 			if repo.Storer != storer {
 				t.Error("repo.Storer is not the same instance as the passed-in storer")
 			}
 			// Verify HEAD exists and points to second commit
-			head, err := repo.Head()
+			head, err := g.Head()
 			if err != nil {
 				t.Fatalf("failed to get HEAD: %v", err)
 			}
-			commit, err := repo.CommitObject(head.Hash())
+			commit, err := g.CommitObject(head.Hash())
 			if err != nil {
 				t.Fatalf("failed to get commit: %v", err)
 			}
@@ -190,7 +192,7 @@ commits:
 			}
 			// Verify we got the expected commit graph
 			commitCount := 0
-			iter, err := repo.Log(&git.LogOptions{From: head.Hash()})
+			iter, err := g.Log(&git.LogOptions{From: head.Hash()})
 			if err != nil {
 				t.Fatalf("failed to get log: %v", err)
 			}
@@ -205,7 +207,7 @@ commits:
 				t.Errorf("expected 2 commits, got %d", commitCount)
 			}
 			// Verify config has remote
-			cfg, err := repo.Config()
+			cfg, err := g.Config()
 			if err != nil {
 				t.Fatalf("failed to get config: %v", err)
 			}
@@ -240,11 +242,12 @@ commits:
 	if err != nil {
 		t.Fatalf("NativeClone failed: %v", err)
 	}
-	head, err := repo.Head()
+	g := gogit(t, repo, nil)
+	head, err := g.Head()
 	if err != nil {
 		t.Fatalf("failed to get HEAD: %v", err)
 	}
-	if _, err := repo.CommitObject(head.Hash()); err != nil {
+	if _, err := g.CommitObject(head.Hash()); err != nil {
 		t.Fatalf("failed to get commit: %v", err)
 	}
 }
@@ -275,11 +278,12 @@ commits:
 	if err != nil {
 		t.Fatalf("NativeClone failed: %v", err)
 	}
-	head, err := repo.Head()
+	g := gogit(t, repo, nil)
+	head, err := g.Head()
 	if err != nil {
 		t.Fatalf("failed to get HEAD: %v", err)
 	}
-	commit, err := repo.CommitObject(head.Hash())
+	commit, err := g.CommitObject(head.Hash())
 	if err != nil {
 		t.Fatalf("failed to get commit: %v", err)
 	}
@@ -330,6 +334,7 @@ commits:
 	if err != nil {
 		t.Fatalf("NativeClone failed: %v", err)
 	}
+	g := gogit(t, repo, nil)
 	// Verify remote tracking refs exist
 	expectedRefs := []string{
 		"refs/remotes/origin/master",
@@ -337,7 +342,7 @@ commits:
 		"refs/remotes/origin/develop",
 	}
 	for _, refName := range expectedRefs {
-		ref, err := repo.Reference(plumbing.ReferenceName(refName), false)
+		ref, err := g.Reference(plumbing.ReferenceName(refName), false)
 		if err != nil {
 			t.Errorf("failed to get reference %s: %v", refName, err)
 			continue
@@ -347,7 +352,7 @@ commits:
 		}
 	}
 	// Verify we can list all references
-	refs, err := repo.References()
+	refs, err := g.References()
 	if err != nil {
 		t.Fatalf("failed to list references: %v", err)
 	}
@@ -407,10 +412,11 @@ commits:
 		if err != nil {
 			t.Fatalf("NativeClone failed: %v", err)
 		}
+		g := gogit(t, repo, nil)
 		// With depth=1, we should only get the tip commit
-		head, _ := repo.Head()
+		head, _ := g.Head()
 		commitCount := 0
-		iter, _ := repo.Log(&git.LogOptions{From: head.Hash()})
+		iter, _ := g.Log(&git.LogOptions{From: head.Hash()})
 		iter.ForEach(func(c *object.Commit) error {
 			commitCount++
 			return nil
@@ -431,13 +437,14 @@ commits:
 		if err != nil {
 			t.Fatalf("NativeClone failed: %v", err)
 		}
+		g := gogit(t, repo, nil)
 		// With single branch, we should only have master tracking ref
-		_, err = repo.Reference("refs/remotes/origin/master", false)
+		_, err = g.Reference("refs/remotes/origin/master", false)
 		if err != nil {
 			t.Errorf("expected master tracking ref: %v", err)
 		}
 		// Feature branch should not exist
-		_, err = repo.Reference("refs/remotes/origin/feature", false)
+		_, err = g.Reference("refs/remotes/origin/feature", false)
 		if err == nil {
 			t.Error("expected feature branch to not exist with SingleBranch")
 		}
@@ -454,12 +461,13 @@ commits:
 		if err != nil {
 			t.Fatalf("NativeClone failed: %v", err)
 		}
+		g := gogit(t, repo, nil)
 		// HEAD should point to feature branch
-		head, err := repo.Head()
+		head, err := g.Head()
 		if err != nil {
 			t.Fatalf("failed to get HEAD: %v", err)
 		}
-		commit, _ := repo.CommitObject(head.Hash())
+		commit, _ := g.CommitObject(head.Hash())
 		if commit.Message != "Feature commit" {
 			t.Errorf("expected feature commit, got: %q", commit.Message)
 		}
@@ -499,12 +507,13 @@ commits:
 		if err != nil {
 			t.Fatalf("NativeClone failed: %v", err)
 		}
+		g := gogit(t, repo, nil)
 		// HEAD should point to the tagged commit
-		head, err := repo.Head()
+		head, err := g.Head()
 		if err != nil {
 			t.Fatalf("failed to get HEAD: %v", err)
 		}
-		commit, err := repo.CommitObject(head.Hash())
+		commit, err := g.CommitObject(head.Hash())
 		if err != nil {
 			t.Fatalf("failed to get commit: %v", err)
 		}
@@ -512,7 +521,7 @@ commits:
 			t.Errorf("expected tagged commit message %q, got: %q", "Commit 2", commit.Message)
 		}
 		// Tag ref should exist
-		_, err = repo.Reference("refs/tags/v2.0", false)
+		_, err = g.Reference("refs/tags/v2.0", false)
 		if err != nil {
 			t.Errorf("expected tag ref refs/tags/v2.0: %v", err)
 		}
@@ -552,8 +561,9 @@ commits:
 	if err != nil {
 		t.Fatalf("NativeClone failed: %v", err)
 	}
+	g := gogit(t, repo, wtFS)
 	// Verify worktree has files
-	wt, err := repo.Worktree()
+	wt, err := g.Worktree()
 	if err != nil {
 		t.Fatalf("failed to get worktree: %v", err)
 	}
@@ -599,10 +609,12 @@ commits:
 	if err := upstream.Storer.RemoveReference(plumbing.Master); err != nil {
 		t.Fatalf("failed to remove master: %v", err)
 	}
-	repo, err := NativeClone(ctx, memory.NewStorage(), memfs.New(), &git.CloneOptions{URL: "file://" + upstreamDir})
+	wtFS := memfs.New()
+	repo, err := NativeClone(ctx, memory.NewStorage(), wtFS, &git.CloneOptions{URL: "file://" + upstreamDir})
 	if err != nil {
 		t.Fatalf("NativeClone failed: %v", err)
 	}
+	g := gogit(t, repo, wtFS)
 	head, err := repo.Storer.Reference(plumbing.HEAD)
 	if err != nil {
 		t.Fatalf("failed to read HEAD: %v", err)
@@ -610,7 +622,7 @@ commits:
 	if head.Type() != plumbing.SymbolicReference || head.Target() != plumbing.Main {
 		t.Errorf("HEAD = %v, want symbolic ref to %s", head, plumbing.Main)
 	}
-	wt, err := repo.Worktree()
+	wt, err := g.Worktree()
 	if err != nil {
 		t.Fatalf("failed to get worktree: %v", err)
 	}
@@ -656,12 +668,13 @@ commits:
 	if err != nil {
 		t.Fatalf("NativeClone failed: %v", err)
 	}
+	g := gogit(t, repo, nil)
 
 	// Get initial HEAD
-	initialHead, _ := repo.Head()
+	initialHead, _ := g.Head()
 
 	// Add a new commit to upstream
-	wt, _ := upstreamRepo.Worktree()
+	wt, _ := upstreamRepo.GoGit.Worktree()
 	f, _ := wt.Filesystem.Create("new-file.txt")
 	f.Write([]byte("new content"))
 	f.Close()
@@ -674,19 +687,19 @@ commits:
 	}
 
 	// Fetch from upstream
-	err = repo.FetchContext(ctx, &git.FetchOptions{})
+	err = g.FetchContext(ctx, &git.FetchOptions{})
 	if err != nil {
 		t.Fatalf("Fetch failed: %v", err)
 	}
 
 	// Verify new commit is available
-	_, err = repo.CommitObject(newCommitHash)
+	_, err = g.CommitObject(newCommitHash)
 	if err != nil {
 		t.Errorf("new commit not found after fetch: %v", err)
 	}
 
 	// Verify tracking ref is updated
-	originMaster, err := repo.Reference("refs/remotes/origin/master", false)
+	originMaster, err := g.Reference("refs/remotes/origin/master", false)
 	if err != nil {
 		t.Fatalf("failed to get origin/master: %v", err)
 	}
@@ -759,4 +772,14 @@ func TestClassifyCloneError(t *testing.T) {
 			}
 		})
 	}
+}
+
+// gogit opens go-git over r's store, for the clone checks go-git2 cannot make.
+func gogit(t *testing.T, r *Repo, wt billy.Filesystem) *git.Repository {
+	t.Helper()
+	g, err := git.Open(r.Storer, wt)
+	if err != nil {
+		t.Fatalf("git.Open: %v", err)
+	}
+	return g
 }

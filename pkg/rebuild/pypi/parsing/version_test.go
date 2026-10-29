@@ -7,17 +7,17 @@ import (
 	"context"
 	"testing"
 
-	"github.com/go-git/go-git/v5/plumbing/object"
 	"github.com/google/oss-rebuild/internal/gitx/gitxtest"
+	"github.com/msuozzo/go-git2"
 )
 
 // headTree returns the tree of the single commit in a one-commit repo built
 // from repoYAML.
-func headTree(t *testing.T, repoYAML string) *object.Tree {
+func headTree(t *testing.T, repoYAML string) *git2.Tree {
 	t.Helper()
 	repo := must(gitxtest.CreateRepoFromYAML(repoYAML, nil))
-	head := must(repo.Head())
-	commit := must(repo.CommitObject(head.Hash()))
+	head := must(repo.Repository.Head())
+	commit := must(repo.Repository.CommitObject(head.Hash()))
 	return must(commit.Tree())
 }
 
