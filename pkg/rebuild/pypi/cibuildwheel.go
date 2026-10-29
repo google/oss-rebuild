@@ -349,19 +349,38 @@ func shellWord(n *bash.Node, src []byte) string {
 	return ""
 }
 
+// cleanPackageToken returns the package spec to install or "" when the token
+// is not a plain package operand. Version pins are kept verbatim because apk
+// and yum/dnf accept them as install operands and a looser spec would not
+// rebuild the same artifact. Tokens with an "@" tag are rejected rather than
+// truncated for the same reason.
 func cleanPackageToken(tok string) string {
-	if strings.Contains(tok, "/") {
-		return ""
-	}
 	switch path.Ext(tok) {
 	case ".rpm", ".deb", ".apk":
 		return ""
 	}
-	if idx := strings.IndexAny(tok, "=<>~@"); idx > 0 {
-		tok = tok[:idx]
-	}
-	if strings.ContainsAny(tok, "$`<>;&|*{}! \t") {
+	if strings.ContainsAny(tok, "/$`@;&|*{}! \t\r\n") || !hasValidVersionPin(tok) {
 		return ""
 	}
 	return tok
+}
+
+// hasValidVersionPin reports whether tok is either unpinned or of the form
+// "<name><op><version>" with a single comparison operator and a non-empty
+// version.
+func hasValidVersionPin(tok string) bool {
+	idx := strings.IndexAny(tok, "=<>~")
+	if idx < 0 {
+		return true
+	}
+	if idx == 0 {
+		return false
+	}
+	rest := tok[idx:]
+	for _, op := range []string{">=", "<=", "~=", "=~", "==", "=", "<", ">", "~"} {
+		if ver, ok := strings.CutPrefix(rest, op); ok {
+			return ver != "" && !strings.ContainsAny(ver, "=<>~")
+		}
+	}
+	return false
 }
