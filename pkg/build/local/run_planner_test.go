@@ -58,7 +58,7 @@ func TestDockerRunPlanner(t *testing.T) {
 				OutputPath: "/out/rebuild",
 				Setup: textwrap.Dedent(`
 			apk update
-			apk add 'npm' 'git'`[1:]),
+			apk add npm git`[1:]),
 				Source: textwrap.Dedent(`
 			mkdir -p /src && cd /src
 			git clone https://github.com/example/test-package .
@@ -109,11 +109,11 @@ func TestDockerRunPlanner(t *testing.T) {
 				WorkingDir: "/workspace",
 				OutputPath: "/out/rebuild",
 				Setup: textwrap.Dedent(`
-			apk add 'curl'
+			apk add curl
 			curl -f https://example.com/timewarp > /timewarp
 			chmod +x /timewarp
 			apk update
-			apk add 'git'`[1:]),
+			apk add git`[1:]),
 				Source: textwrap.Dedent(`
 			mkdir -p /src && cd /src
 			git clone https://github.com/example/test-package .
@@ -164,7 +164,7 @@ func TestDockerRunPlanner(t *testing.T) {
 				WorkingDir: "/workspace",
 				OutputPath: "/out/rebuild",
 				Setup: textwrap.Dedent(`
-			apk add 'curl'
+			apk add curl
 			curl -f https://example.com/timewarp > /timewarp
 			chmod +x /timewarp
 			apk update
@@ -178,6 +178,46 @@ func TestDockerRunPlanner(t *testing.T) {
 			[ -e /src/test-package-1.0.0.tgz ] || ls -la "$(dirname /src/test-package-1.0.0.tgz)"
 			chmod 444 /src/test-package-1.0.0.tgz
 			cp /src/test-package-1.0.0.tgz /out/rebuild`[1:]),
+			},
+		},
+		{
+			name: "output path with a space",
+			input: rebuild.Input{
+				Target: rebuild.Target{
+					Ecosystem: rebuild.NPM,
+					Package:   "test-package",
+					Version:   "1.0.0",
+					Artifact:  "test-package-1.0.0.tgz",
+				},
+				Strategy: &rebuild.WorkflowStrategy{
+					Source:     []flow.Step{{Runs: "echo source"}},
+					Build:      []flow.Step{{Runs: "npm pack"}},
+					OutputPath: "out dir/test-package-1.0.0.tgz",
+				},
+			},
+			opts: build.PlanOptions{
+				Resources: build.Resources{
+					BaseImageConfig: build.BaseImageConfig{
+						Default: "alpine:3.19",
+					},
+				},
+			},
+			expected: &DockerRunPlan{
+				Image:      "alpine:3.19",
+				WorkingDir: "/workspace",
+				OutputPath: "/out/rebuild",
+				Setup: textwrap.Dedent(`
+			apk update
+			apk add`[1:]),
+				Source: textwrap.Dedent(`
+			mkdir -p /src && cd /src
+			echo source`[1:]),
+				Build: textwrap.Dedent(`
+			cd /src
+			npm pack
+			[ -e /src/'out dir/test-package-1.0.0.tgz' ] || ls -la "$(dirname /src/'out dir/test-package-1.0.0.tgz')"
+			chmod 444 /src/'out dir/test-package-1.0.0.tgz'
+			cp /src/'out dir/test-package-1.0.0.tgz' /out/rebuild`[1:]),
 			},
 		},
 		{
@@ -214,7 +254,7 @@ func TestDockerRunPlanner(t *testing.T) {
 				OutputPath:   "/out/rebuild",
 				RequiresAuth: true,
 				Setup: textwrap.Dedent(`
-			apk add 'curl'
+			apk add curl
 			curl -f -K - https://example.com/timewarp > /timewarp <<EOF
 			header = "$AUTH_HEADER"
 			EOF
@@ -267,11 +307,11 @@ func TestDockerRunPlanner(t *testing.T) {
 				WorkingDir: "/workspace",
 				OutputPath: "/out/rebuild",
 				Setup: textwrap.Dedent(`
-			yum install -y 'curl' '/usr/bin/nc'
+			yum install -y curl /usr/bin/nc
 			curl -f https://example.com/timewarp > /timewarp
 			chmod +x /timewarp
 			yum makecache
-			yum install -y 'git'`[1:]),
+			yum install -y git`[1:]),
 				Source: textwrap.Dedent(`
 			mkdir -p /src && cd /src
 			git clone https://github.com/example/test-package .

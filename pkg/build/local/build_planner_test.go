@@ -102,7 +102,7 @@ func TestDockerBuildPlannerRPMTimewarp(t *testing.T) {
 	if err != nil {
 		t.Fatalf("GeneratePlan failed: %v", err)
 	}
-	if !strings.Contains(plan.Dockerfile, "yum install -y 'curl' '/usr/bin/nc'\n") {
+	if !strings.Contains(plan.Dockerfile, "yum install -y curl /usr/bin/nc\n") {
 		t.Errorf("Dockerfile missing netcat bootstrap for RPM image:\n%s", plan.Dockerfile)
 	}
 }
