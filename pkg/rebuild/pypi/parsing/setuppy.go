@@ -10,7 +10,6 @@ import (
 	"math"
 	"path/filepath"
 	"strings"
-	"sync"
 
 	"github.com/go-git/go-git/v5/plumbing/object"
 	"github.com/msuozzo/bonsai"
@@ -46,16 +45,9 @@ type pyValue struct {
 	dict map[string]pyValue // set for pyDict (non-string keys are dropped)
 }
 
-// pythonParsers pools parsers across calls. A bonsai parser is not
-// goroutine-safe, and instantiating its wasm module costs far more than parsing
-// any one setup.py.
-var pythonParsers = sync.Pool{New: func() any { return py.NewParser() }}
-
 // setupPyArgs returns the keyword arguments of every setup() call in src.
 func setupPyArgs(src []byte) ([]map[string]pyValue, error) {
-	parser := pythonParsers.Get().(*bonsai.Parser)
-	defer pythonParsers.Put(parser)
-	root, err := parser.Parse(src)
+	root, err := py.NewParser().Parse(src)
 	if err != nil {
 		return nil, errors.Wrap(err, "parsing python")
 	}
