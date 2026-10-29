@@ -166,30 +166,55 @@ func TestExtractCibuildwheelDependencies(t *testing.T) {
 	tests := []struct {
 		name      string
 		searchDir string
+		tags      WheelTags
 		libc      platform.LibcImpl
 		files     gitxtest.FileContent
 		want      []string
 	}{
 		{
 			name:  "TopLevelAndLinuxHooksGlibc",
+			tags:  WheelTags{Python: "cp310", ABI: "cp310"},
 			libc:  platform.Glibc,
 			files: gitxtest.FileContent{"pyproject.toml": hooks},
 			want:  []string{"libffi-devel", "zlib-devel"},
 		},
 		{
 			name:  "TopLevelAndLinuxHooksMusl",
+			tags:  WheelTags{Python: "cp310", ABI: "cp310"},
 			libc:  platform.Musl,
 			files: gitxtest.FileContent{"pyproject.toml": hooks},
 			want:  []string{"graphviz-dev"},
 		},
 		{
 			name: "OverridesFilteringManylinuxTarget",
+			tags: WheelTags{Python: "cp310", ABI: "abi3"},
 			libc: platform.Glibc,
 			files: gitxtest.FileContent{
 				"pyproject.toml": textwrap.Dedent(`
 					[[tool.cibuildwheel.overrides]]
 					select = "*-macosx* *-manylinux*"
 					before-all = "dnf install -y gd-devel cairo-devel"
+					[[tool.cibuildwheel.overrides]]
+					select = "cp310-manylinux_x86_64"
+					before-all = "dnf install -y pango-devel"
+					[[tool.cibuildwheel.overrides]]
+					select = "cp{39,310,311}-manylinux*"
+					before-all = "dnf install -y brace-devel"
+					[[tool.cibuildwheel.overrides]]
+					select = "cp31[!1]-manylinux*"
+					before-all = "dnf install -y negated-class-devel"
+					[[tool.cibuildwheel.overrides]]
+					select = "cp31[!0]-manylinux*"
+					before-all = "dnf install -y negated-current-python-ignored"
+					[[tool.cibuildwheel.overrides]]
+					select = "*-manylinux_{aarch64,ppc64le}"
+					before-all = "dnf install -y brace-other-arch-ignored"
+					[[tool.cibuildwheel.overrides]]
+					select = "   "
+					before-all = "dnf install -y blank-select-ignored"
+					[[tool.cibuildwheel.overrides]]
+					select = "pp* cp36-* cp313t-*"
+					before-all = "dnf install -y wrong-python-should-be-skipped"
 					[[tool.cibuildwheel.overrides]]
 					select = "*-musllinux*"
 					before-all = "dnf install -y musl-only-should-be-skipped"
@@ -203,10 +228,26 @@ func TestExtractCibuildwheelDependencies(t *testing.T) {
 					select = ["*-win*", "*-android*"]
 					before-all = "dnf install -y windows-and-android-ignored"`),
 			},
-			want: []string{"gd-devel", "cairo-devel"},
+			want: []string{"gd-devel", "cairo-devel", "pango-devel", "brace-devel", "negated-class-devel"},
+		},
+		{
+			name: "OverridesFilteringFreeThreadedTarget",
+			tags: WheelTags{Python: "cp313", ABI: "cp313t"},
+			libc: platform.Glibc,
+			files: gitxtest.FileContent{
+				"pyproject.toml": textwrap.Dedent(`
+					[[tool.cibuildwheel.overrides]]
+					select = "cp313t-manylinux_*"
+					before-all = "dnf install -y freethreaded-devel"
+					[[tool.cibuildwheel.overrides]]
+					select = "cp313-manylinux_*"
+					before-all = "dnf install -y gil-only-devel"`),
+			},
+			want: []string{"freethreaded-devel"},
 		},
 		{
 			name: "OverridesFilteringMusllinuxTarget",
+			tags: WheelTags{Python: "cp310", ABI: "cp310"},
 			libc: platform.Musl,
 			files: gitxtest.FileContent{
 				"pyproject.toml": textwrap.Dedent(`
@@ -225,6 +266,7 @@ func TestExtractCibuildwheelDependencies(t *testing.T) {
 		{
 			name:      "SubdirectorySearch",
 			searchDir: "python",
+			tags:      WheelTags{Python: "cp310", ABI: "cp310"},
 			libc:      platform.Glibc,
 			files: gitxtest.FileContent{
 				"pyproject.toml": textwrap.Dedent(`
@@ -238,6 +280,7 @@ func TestExtractCibuildwheelDependencies(t *testing.T) {
 		},
 		{
 			name:  "NoPyprojectToml",
+			tags:  WheelTags{Python: "cp310", ABI: "cp310"},
 			libc:  platform.Glibc,
 			files: gitxtest.FileContent{"setup.py": "from setuptools import setup\nsetup(name='legacy', version='0.1.0')\n"},
 			want:  nil,
@@ -247,7 +290,7 @@ func TestExtractCibuildwheelDependencies(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			repo := must(gitxtest.CreateRepo([]gitxtest.Commit{{ID: "initial-commit", Files: tc.files}}, nil))
 			commit := must(repo.Repository.CommitObject(git2.Hash(repo.Commits["initial-commit"])))
-			got, err := extractCibuildwheelDependencies(must(commit.Tree()), tc.searchDir, tc.libc)
+			got, err := extractCibuildwheelDependencies(must(commit.Tree()), tc.searchDir, tc.tags, tc.libc)
 			if err != nil {
 				t.Fatalf("extractCibuildwheelDependencies() unexpected error: %v", err)
 			}
