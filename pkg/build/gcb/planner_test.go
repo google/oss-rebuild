@@ -43,7 +43,7 @@ func TestMakeDockerfile(t *testing.T) {
 			input: rebuild.Input{
 				Target: rebuild.Target{},
 				Strategy: &rebuild.ManualStrategy{
-					Location: rebuild.Location{Repo: "github.com/example", Ref: "main", Dir: "/src"},
+					Location: rebuild.Location{Repo: "github.com/example", Ref: "main", Dir: "src"},
 					Requires: rebuild.RequiredEnv{
 						SystemDeps: []string{"git", "make"},
 					},
@@ -240,7 +240,7 @@ ENTRYPOINT ["/bin/sh","/build"]
 			input: rebuild.Input{
 				Target: rebuild.Target{},
 				Strategy: &rebuild.ManualStrategy{
-					Location: rebuild.Location{Repo: "github.com/example", Ref: "main", Dir: "/src"},
+					Location: rebuild.Location{Repo: "github.com/example", Ref: "main", Dir: "src"},
 					Requires: rebuild.RequiredEnv{
 						SystemDeps: []string{"git", "make"},
 					},
@@ -295,7 +295,7 @@ ENTRYPOINT ["/bin/sh","/build"]
 			input: rebuild.Input{
 				Target: rebuild.Target{},
 				Strategy: &rebuild.ManualStrategy{
-					Location: rebuild.Location{Repo: "github.com/example", Ref: "main", Dir: "/src"},
+					Location: rebuild.Location{Repo: "github.com/example", Ref: "main", Dir: "src"},
 					Requires: rebuild.RequiredEnv{
 						SystemDeps: []string{"git", "make"},
 					},
@@ -351,7 +351,7 @@ ENTRYPOINT ["/bin/sh","/build"]
 			input: rebuild.Input{
 				Target: rebuild.Target{},
 				Strategy: &rebuild.ManualStrategy{
-					Location: rebuild.Location{Repo: "github.com/example", Ref: "main", Dir: "/src"},
+					Location: rebuild.Location{Repo: "github.com/example", Ref: "main", Dir: "src"},
 					Requires: rebuild.RequiredEnv{
 						SystemDeps: []string{"git", "make"},
 					},
@@ -407,7 +407,7 @@ ENTRYPOINT ["/bin/sh","/build"]
 			input: rebuild.Input{
 				Target: rebuild.Target{},
 				Strategy: &rebuild.ManualStrategy{
-					Location: rebuild.Location{Repo: "github.com/example", Ref: "main", Dir: "/src"},
+					Location: rebuild.Location{Repo: "github.com/example", Ref: "main", Dir: "src"},
 					Requires: rebuild.RequiredEnv{
 						SystemDeps: []string{"git", "make"},
 					},
@@ -464,7 +464,7 @@ ENTRYPOINT ["/bin/sh","/build"]
 			input: rebuild.Input{
 				Target: rebuild.Target{},
 				Strategy: &rebuild.ManualStrategy{
-					Location: rebuild.Location{Repo: "github.com/example", Ref: "main", Dir: "/src"},
+					Location: rebuild.Location{Repo: "github.com/example", Ref: "main", Dir: "src"},
 					Requires: rebuild.RequiredEnv{
 						SystemDeps: []string{"git", "make"},
 					},
@@ -565,7 +565,7 @@ func TestGCBPlannerGeneratePlan(t *testing.T) {
 			Artifact:  "test-package-1.0.0.tgz",
 		},
 		Strategy: &rebuild.ManualStrategy{
-			Location: rebuild.Location{Repo: "github.com/example", Ref: "main", Dir: "/src"},
+			Location: rebuild.Location{Repo: "github.com/example", Ref: "main", Dir: "src"},
 			Requires: rebuild.RequiredEnv{
 				SystemDeps: []string{"git", "node", "npm"},
 			},
@@ -655,7 +655,7 @@ func TestGCBPlannerNoSaveWhenFlagFalse(t *testing.T) {
 			Artifact:  "test-package-1.0.0.tgz",
 		},
 		Strategy: &rebuild.ManualStrategy{
-			Location: rebuild.Location{Repo: "github.com/example", Ref: "main", Dir: "/src"},
+			Location: rebuild.Location{Repo: "github.com/example", Ref: "main", Dir: "src"},
 			Requires: rebuild.RequiredEnv{
 				SystemDeps: []string{"git", "node", "npm"},
 			},
@@ -714,7 +714,7 @@ func TestGCBPlannerBuildScriptWithSyscallMonitor(t *testing.T) {
 			Artifact:  "test-package-1.0.0.tgz",
 		},
 		Strategy: &rebuild.ManualStrategy{
-			Location: rebuild.Location{Repo: "github.com/example", Ref: "main", Dir: "/src"},
+			Location: rebuild.Location{Repo: "github.com/example", Ref: "main", Dir: "src"},
 			Requires: rebuild.RequiredEnv{
 				SystemDeps: []string{"git", "node", "npm"},
 			},
@@ -782,7 +782,7 @@ func TestGCBPlannerBuildScriptWithSysgraph(t *testing.T) {
 			Artifact:  "test-package-1.0.0.tgz",
 		},
 		Strategy: &rebuild.ManualStrategy{
-			Location: rebuild.Location{Repo: "github.com/example", Ref: "main", Dir: "/src"},
+			Location: rebuild.Location{Repo: "github.com/example", Ref: "main", Dir: "src"},
 			Requires: rebuild.RequiredEnv{
 				SystemDeps: []string{"git", "node", "npm"},
 			},
@@ -1025,7 +1025,7 @@ func TestGCBPlannerSavePostBuildContainer(t *testing.T) {
 			Artifact:  "test-package-1.0.0.tgz",
 		},
 		Strategy: &rebuild.ManualStrategy{
-			Location: rebuild.Location{Repo: "github.com/example", Ref: "main", Dir: "/src"},
+			Location: rebuild.Location{Repo: "github.com/example", Ref: "main", Dir: "src"},
 			Requires: rebuild.RequiredEnv{
 				SystemDeps: []string{"git", "node", "npm"},
 			},
@@ -1101,7 +1101,7 @@ func TestGCBPlannerLayers(t *testing.T) {
 	input := rebuild.Input{
 		Target: rebuild.Target{Ecosystem: rebuild.NPM, Package: "test-package", Version: "1.0.0", Artifact: "test-package-1.0.0.tgz"},
 		Strategy: &rebuild.ManualStrategy{
-			Location:   rebuild.Location{Repo: "github.com/example", Ref: "main", Dir: "/src"},
+			Location:   rebuild.Location{Repo: "github.com/example", Ref: "main", Dir: "src"},
 			Deps:       "npm install",
 			Build:      "npm run build",
 			OutputPath: "dist/test-package-1.0.0.tgz",
