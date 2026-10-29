@@ -12,6 +12,7 @@ import (
 	"text/template"
 
 	"github.com/google/oss-rebuild/internal/semver"
+	"github.com/google/oss-rebuild/internal/shell"
 	"github.com/pkg/errors"
 )
 
@@ -43,6 +44,7 @@ func resolveTemplate(buf *bytes.Buffer, tmpl string, data any) error {
 				return string(re.ReplaceAll([]byte(src), []byte(repl))), nil
 			}
 		},
+		"quote": shell.Quote,
 	}).Parse(tmpl)
 	if err != nil {
 		return errors.Wrap(err, "parsing template")
