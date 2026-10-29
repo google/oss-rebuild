@@ -5,11 +5,13 @@
 package gcsxtest
 
 import (
+	"encoding/json"
 	"fmt"
 	"io"
 	"maps"
 	"net/http"
 	"net/http/httptest"
+	"sort"
 	"strconv"
 	"strings"
 	"sync"
@@ -19,8 +21,9 @@ import (
 	"google.golang.org/api/option"
 )
 
-// Server serves object reads from memory to a real storage client. Objects
-// are keyed "bucket/object", and a missing key is a missing object.
+// Server serves object reads and listings from memory to a real storage
+// client. Objects are keyed "bucket/object", and a missing key is a missing
+// object.
 type Server struct {
 	// Client reads from the server.
 	Client *storage.Client
@@ -59,11 +62,18 @@ func (s *Server) Put(key, body string) {
 	s.objects[key] = body
 }
 
-// ServeHTTP answers byte ranges as GCS does.
+// ServeHTTP answers byte ranges as GCS does, and a bucket's /o listing by
+// prefix in one page.
 func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodGet {
 		http.Error(w, "gcsxtest serves object reads only", http.StatusNotImplemented)
 		return
+	}
+	if dir, ok := strings.CutSuffix(r.URL.Path, "/o"); ok {
+		if i := strings.LastIndex(dir, "/b/"); i >= 0 {
+			s.list(w, dir[i+3:], r.URL.Query().Get("prefix"))
+			return
+		}
 	}
 	s.mu.Lock()
 	body, ok := s.objects[strings.TrimPrefix(r.URL.Path, "/")]
@@ -101,4 +111,23 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusPartialContent)
 	}
 	io.WriteString(w, body[start:end+1])
+}
+
+// list writes the bucket's objects under prefix in name order.
+func (s *Server) list(w http.ResponseWriter, bucket, prefix string) {
+	s.mu.Lock()
+	var names []string
+	for key := range s.objects {
+		if name, ok := strings.CutPrefix(key, bucket+"/"); ok && strings.HasPrefix(name, prefix) {
+			names = append(names, name)
+		}
+	}
+	s.mu.Unlock()
+	sort.Strings(names)
+	items := make([]map[string]string, 0, len(names))
+	for _, name := range names {
+		items = append(items, map[string]string{"name": name, "bucket": bucket})
+	}
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(map[string]any{"items": items})
 }
