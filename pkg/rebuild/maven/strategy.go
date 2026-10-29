@@ -90,7 +90,7 @@ func (b *GradleBuild) ToWorkflow() *rebuild.WorkflowStrategy {
 		deps = append(deps, flow.Step{
 			Uses: "maven/setup-gradle",
 			With: map[string]string{
-				"version": gradleVersion,
+				"version": b.SystemGradle,
 			},
 		})
 	}

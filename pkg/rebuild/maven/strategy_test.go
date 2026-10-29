@@ -89,7 +89,7 @@ func TestStrategies(t *testing.T) {
 					Dir:  "dir",
 				},
 				JDKVersion:   "11.0.1",
-				SystemGradle: gradleVersion,
+				SystemGradle: "7.6.4",
 			},
 			want: rebuild.Instructions{
 				Location: rebuild.Location{
@@ -104,8 +104,8 @@ func TestStrategies(t *testing.T) {
 				Deps: textwrap.Dedent(`
 					mkdir -p /opt/jdk
 					wget -q -O - "https://github.com/AdoptOpenJDK/openjdk11-binaries/releases/download/jdk-11.0.1%2B13/OpenJDK11U-jdk_x64_linux_hotspot_11.0.1_13.tar.gz" | tar -xzf - --strip-components=1 -C /opt/jdk
-					wget -q -O tmp.zip https://services.gradle.org/distributions/gradle-8.14.3-bin.zip
-					unzip -q tmp.zip -d /opt/ && mv /opt/gradle-8.14.3 /opt/gradle
+					wget -q -O tmp.zip https://services.gradle.org/distributions/gradle-7.6.4-bin.zip
+					unzip -q tmp.zip -d /opt/ && mv /opt/gradle-7.6.4 /opt/gradle
 					rm tmp.zip`)[1:],
 				Build: textwrap.Dedent(`
 					export JAVA_HOME=/opt/jdk
