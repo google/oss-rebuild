@@ -63,7 +63,7 @@ func TestMakeDockerfile(t *testing.T) {
 FROM docker.io/library/alpine:3.19
 RUN sed 's/^ //' <<'EOF' | sh
  set -eux
- apk add 'git' 'make'
+ apk add git make
 EOF
 RUN sed 's/^ //' <<'EOF' | sh
  set -eux
@@ -116,6 +116,37 @@ RUN sed 's/^ //' <<'EOF' >/build
  set -eux
  
  mkdir /out && cp /src/output/foo.tgz /out/
+EOF
+WORKDIR "/src"
+ENTRYPOINT ["/bin/sh","/build"]
+`,
+		},
+		{
+			name: "Output Path With A Space",
+			input: rebuild.Input{
+				Target: rebuild.Target{},
+				Strategy: &rebuild.WorkflowStrategy{
+					OutputPath: "output dir/foo.tgz",
+				},
+			},
+			opts: build.PlanOptions{
+				Resources: build.Resources{
+					BaseImageConfig: baseImageConfig,
+				},
+			},
+			expected: `#syntax=docker/dockerfile:1.10
+FROM docker.io/library/alpine:3.19
+RUN sed 's/^ //' <<'EOF' | sh
+ set -eux
+EOF
+RUN sed 's/^ //' <<'EOF' | sh
+ set -eux
+ mkdir /src && cd /src
+EOF
+RUN sed 's/^ //' <<'EOF' >/build
+ set -eux
+ 
+ mkdir /out && cp /src/'output dir/foo.tgz' /out/
 EOF
 WORKDIR "/src"
 ENTRYPOINT ["/bin/sh","/build"]
@@ -180,7 +211,7 @@ ENTRYPOINT ["/bin/sh","/build"]
 FROM docker.io/library/alpine:3.19
 RUN sed 's/^ //' <<'EOF' | sh
  set -eux
- apk add 'make'
+ apk add make
 EOF
 RUN sed 's/^ //' <<'EOF' | sh
  set -eux
@@ -263,10 +294,10 @@ ENTRYPOINT ["/bin/sh","/build"]
 FROM docker.io/library/alpine:3.19
 RUN sed 's/^ //' <<'EOF' | sh
  set -eux
- apk add 'curl'
+ apk add curl
  curl -f https://my-bucket.storage.googleapis.com/timewarp > timewarp
  chmod +x timewarp
- apk add 'git' 'make'
+ apk add git make
 EOF
 RUN sed 's/^ //' <<'EOF' | sh
  set -eux
@@ -319,10 +350,10 @@ ENTRYPOINT ["/bin/sh","/build"]
 FROM docker.io/library/alpine:3.19
 RUN --mount=type=secret,id=auth_header sed 's/^ //' <<'EOF' | sh
  set -eux
- apk add 'curl'
+ apk add curl
  curl -f -H @/run/secrets/auth_header https://my-bucket.storage.googleapis.com/timewarp > timewarp
  chmod +x timewarp
- apk add 'git' 'make'
+ apk add git make
 EOF
 RUN sed 's/^ //' <<'EOF' | sh
  set -eux
@@ -375,10 +406,10 @@ FROM docker.io/library/debian:stable-20251103-slim
 RUN sed 's/^ //' <<'EOF' | sh
  set -eux
  apt update
- apt install -y 'curl' 'netcat-openbsd'
+ apt install -y curl netcat-openbsd
  curl -f https://my-bucket.storage.googleapis.com/timewarp > timewarp
  chmod +x timewarp
- apt install -y 'git' 'make'
+ apt install -y git make
 EOF
 RUN sed 's/^ //' <<'EOF' | sh
  set -eux
@@ -432,10 +463,10 @@ FROM docker.io/library/debian:stable-20251103-slim
 RUN --mount=type=secret,id=auth_header sed 's/^ //' <<'EOF' | sh
  set -eux
  apt update
- apt install -y 'curl' 'netcat-openbsd'
+ apt install -y curl netcat-openbsd
  curl -f -H @/run/secrets/auth_header https://my-bucket.storage.googleapis.com/timewarp > timewarp
  chmod +x timewarp
- apt install -y 'git' 'make'
+ apt install -y git make
 EOF
 RUN sed 's/^ //' <<'EOF' | sh
  set -eux
@@ -489,10 +520,10 @@ ENTRYPOINT ["/bin/sh","/build"]
 FROM quay.io/pypa/manylinux2014_x86_64
 RUN sed 's/^ //' <<'EOF' | sh
  set -eux
- yum install -y 'curl' '/usr/bin/nc'
+ yum install -y curl /usr/bin/nc
  curl -f https://my-bucket.storage.googleapis.com/timewarp > timewarp
  chmod +x timewarp
- yum install -y 'git' 'make'
+ yum install -y git make
 EOF
 RUN sed 's/^ //' <<'EOF' | sh
  set -eux

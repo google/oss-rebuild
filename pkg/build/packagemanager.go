@@ -6,6 +6,8 @@ package build
 import (
 	"slices"
 	"strings"
+
+	"github.com/google/oss-rebuild/internal/shell"
 )
 
 // OS represents a supported operating system/distribution
@@ -29,7 +31,7 @@ type PackageManagerCommands struct {
 func (p PackageManagerCommands) InstallCommand(packages []string) string {
 	quoted := make([]string, len(packages))
 	for i, pkg := range packages {
-		quoted[i] = "'" + strings.ReplaceAll(pkg, "'", `'\''`) + "'"
+		quoted[i] = shell.Quote(pkg)
 	}
 	cmdArgs := slices.Concat([]string{p.InstallCmd}, p.InstallArgs, quoted)
 	return strings.Join(cmdArgs, " ")
