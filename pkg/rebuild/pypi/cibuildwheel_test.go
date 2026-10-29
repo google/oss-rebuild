@@ -285,7 +285,7 @@ func TestParsePackageManagerCommands(t *testing.T) {
 			name:   "ApkAddWithVirtualFlagAndVersionPin",
 			script: "apk --no-cache add --virtual .build-deps graphviz-dev=14.1.5-r0 'cairo-dev>=1.18' pango-dev@edge !ignored-pkg",
 			libc:   platform.Musl,
-			want:   []string{"graphviz-dev", "cairo-dev", "pango-dev"},
+			want:   []string{"graphviz-dev=14.1.5-r0", "cairo-dev>=1.18"},
 		},
 		{
 			name:   "FiltersByTargetLibc",
@@ -307,7 +307,7 @@ func TestParsePackageManagerCommands(t *testing.T) {
 		},
 		{
 			name:   "SkipsVariablesLocalFilesQuotedSpacesAndComments",
-			script: "yum install -y $EXTRA_PKGS /tmp/custom.rpm ./local.rpm 'bad >= 1.0' valid-devel # comment with yum install fake-pkg",
+			script: "yum install -y $EXTRA_PKGS /tmp/custom.rpm ./local.rpm 'bad >= 1.0' '=1.0' 'broken=' 'dup>=<1.0' valid-devel # comment with yum install fake-pkg",
 			libc:   platform.Glibc,
 			want:   []string{"valid-devel"},
 		},
