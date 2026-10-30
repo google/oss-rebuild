@@ -1,0 +1,17 @@
+#!/bin/sh
+# Copyright 2026 Google LLC
+# SPDX-License-Identifier: Apache-2.0
+
+# Installs the broker's public key from the kernel command line as root's
+# authorized_keys, and this boot's host key as sshd's only one. The values
+# are base64, since a cmdline value cannot hold spaces.
+set -eu -o pipefail
+
+param() {
+    tr ' ' '\n' < /proc/cmdline | grep "^$1=" | tail -1 | cut -d= -f2-
+}
+
+umask 077
+install -d -m 0700 /root/.ssh
+param mvm_ssh_authorized_key | base64 -d > /root/.ssh/authorized_keys
+param mvm_ssh_host_key | base64 -d > /etc/ssh/ssh_host_ed25519_key

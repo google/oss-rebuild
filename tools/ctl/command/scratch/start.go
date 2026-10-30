@@ -37,16 +37,16 @@ func (d *startDeps) SetIO(io cli.IO) { d.IO = io }
 
 func initStartDeps(context.Context) (*startDeps, error) { return &startDeps{}, nil }
 
-// startHandler mints a scratch VM via /scratch/create. It blocks until the
-// broker reports the VM Ready (or fails), then prints the scratch ID to
-// stdout (so it can be captured) and human-readable details to stderr.
+// startHandler mints a scratch session via /scratch/create. It blocks
+// until the broker reports it Ready (or fails), then prints the scratch ID
+// to stdout (so it can be captured) and human-readable details to stderr.
 func startHandler(ctx context.Context, cfg startConfig, deps *startDeps) (*act.NoOutput, error) {
 	client, apiURL, err := dialAPI(ctx, cfg.API)
 	if err != nil {
 		return nil, err
 	}
 	stub := api.Stub[schema.ScratchCreateRequest, schema.Scratch](client, apiURL.JoinPath("scratch", "create"))
-	fmt.Fprintf(deps.IO.Err, "minting %s scratch VM (this can take a minute)...\n", cfg.MachineClass)
+	fmt.Fprintf(deps.IO.Err, "minting %s scratch (this can take a minute)...\n", cfg.MachineClass)
 	s, err := stub(ctx, schema.ScratchCreateRequest{
 		BuildID:      cfg.BuildID,
 		MachineClass: schema.MachineClass(cfg.MachineClass),
@@ -54,8 +54,8 @@ func startHandler(ctx context.Context, cfg startConfig, deps *startDeps) (*act.N
 	if err != nil {
 		return nil, errors.Wrap(err, "creating scratch")
 	}
-	fmt.Fprintf(deps.IO.Err, "ready: vm=%s zone=%s ip=%s class=%s state=%s\n",
-		s.VMName, s.Zone, s.InternalIP, s.MachineClass, s.State)
+	fmt.Fprintf(deps.IO.Err, "ready: host=%s zone=%s ip=%s class=%s state=%s\n",
+		s.Host, s.Zone, s.InternalIP, s.MachineClass, s.State)
 	fmt.Fprintf(deps.IO.Err, "\n  exec: ctl scratch exec --api %s --scratch-id %s -- <cmd>...\n", cfg.API, s.ID)
 	fmt.Fprintf(deps.IO.Err, "  kill: ctl scratch kill --api %s --scratch-id %s\n", cfg.API, s.ID)
 	fmt.Fprintln(deps.IO.Out, s.ID)
@@ -71,7 +71,7 @@ func startCommand() *cobra.Command {
 		RunE:  cli.RunE(&cfg, cli.SkipArgs[startConfig], initStartDeps, startHandler),
 	}
 	cmd.Flags().StringVar(&cfg.API, "api", "", "agent-api broker endpoint URI")
-	cmd.Flags().StringVar(&cfg.MachineClass, "machine-class", "standard", "VM machine class: standard or jumbo")
+	cmd.Flags().StringVar(&cfg.MachineClass, "machine-class", "standard", "machine class: standard or jumbo")
 	cmd.Flags().StringVar(&cfg.BuildID, "build-id", "manual", "build_id recorded on the scratch (arbitrary for manual use)")
 	return cmd
 }

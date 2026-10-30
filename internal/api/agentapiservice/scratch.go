@@ -4,7 +4,9 @@
 package agentapiservice
 
 import (
+	"cmp"
 	"context"
+	"fmt"
 	"log"
 	"time"
 
@@ -16,18 +18,14 @@ import (
 	"google.golang.org/grpc/codes"
 )
 
-// ClassConfig is the per-machine-class GCE shape used by ScratchCreate.
+// ClassConfig is the per-machine-class scratch host shape used by
+// ScratchCreate.
 type ClassConfig struct {
-	// InstanceTemplate is the full Compute Engine resource name of the
-	// instance template to clone from (e.g.
-	// projects/foo/global/instanceTemplates/builder-standard). The template
-	// supplies the boot disk and any local SSD partitions used as scratch.
-	InstanceTemplate string
+	InstanceTemplate string // full name of the host template
 }
 
-// selectClass returns the ClassConfig for the given machine class.
-// Jumbo is optional (nil means "jumbo not configured for this
-// deployment"); standard is always required.
+// selectClass returns the host class serving a machine class. Jumbo is
+// optional and standard required.
 func selectClass(class schema.MachineClass, standard ClassConfig, jumbo *ClassConfig) (ClassConfig, error) {
 	switch class {
 	case schema.MachineClassStandard:
@@ -42,24 +40,14 @@ func selectClass(class schema.MachineClass, standard ClassConfig, jumbo *ClassCo
 	}
 }
 
-// HealthProbe pings the worker at ip and returns nil when /healthz responds.
-// Injected so tests can drive the polling deterministically.
-//
-// /healthz is a plain unauthenticated GET (outside the act framework) so the
-// broker can probe before any caller context exists and so external health
-// checkers (LB, MIG) can hit it without minting tokens. Could be folded into
-// act if those constraints stop mattering.
-type HealthProbe func(ctx context.Context, internalIP string) error
-
 // ScratchCreateDeps wires ScratchCreate.
 type ScratchCreateDeps struct {
-	Scratches db.Scratch
-	GCE       GCE
-	// Standard is the required class config for MachineClassStandard.
-	Standard ClassConfig
-	// Jumbo is the optional class config for MachineClassJumbo. nil
-	// means jumbo isn't available and requsts returns InvalidArgument.
-	Jumbo *ClassConfig
+	Scratches         db.Scratch
+	GCE               GCE
+	Standard          ClassConfig   // required, and serves micro too
+	Jumbo             *ClassConfig  // optional. nil refuses jumbo
+	Hosts             *HostClient   // required
+	HostHealthTimeout time.Duration // new host wait. Zero means 10m
 	// Zones is the ordered list of GCE zones to try for instance
 	// creation. The first listed zone is preferred; subsequent zones
 	// are used only when an earlier zone returns a stockout / quota
@@ -70,11 +58,8 @@ type ScratchCreateDeps struct {
 	// pay an extra round-trip on each request during sustained outages.
 	// Must be a singleton shared across requests (the binary, not deps,
 	// owns its lifecycle); nil disables the cool-down.
-	Cooldown *ZoneCooldown
-	// HealthProbe is called until it returns nil or HealthTimeout elapses.
-	HealthProbe HealthProbe
-	// HealthTimeout bounds the polling loop. Zero means 90 seconds.
-	HealthTimeout time.Duration
+	Cooldown      *ZoneCooldown
+	HealthTimeout time.Duration // guest wait. Zero means 90s
 	// HealthInterval is the gap between probe attempts. Zero means 500ms.
 	HealthInterval time.Duration
 	// IDGen mints scratch IDs. nil falls back to uuid.New().String().
@@ -89,16 +74,14 @@ type ScratchGetDeps struct {
 // ScratchDeleteDeps wires ScratchDelete.
 type ScratchDeleteDeps struct {
 	Scratches db.Scratch
-	GCE       GCE
+	Hosts     *HostClient // required
+	GCE       GCE         // per-VM-era records, optional
 }
 
-// ScratchCreate provisions a new build environment synchronously. Steps:
-//
-//	Scratches.Insert(state=Starting) -> InsertInstance -> Update with
-//	InternalIP -> poll HealthProbe -> UpdateState(Ready) -> return.
-//
-// If any step fails after the record is written, deleteScratch runs as
-// best-effort cleanup.
+// ScratchCreate provisions a build environment synchronously: insert the
+// record as Starting, admit the session on a host (admitAnywhere), wait for
+// its guest, and mark it Ready. A failure after the insert cleans up with
+// deleteScratch.
 func ScratchCreate(ctx context.Context, req schema.ScratchCreateRequest, deps *ScratchCreateDeps) (*schema.Scratch, error) {
 	class, err := selectClass(req.MachineClass, deps.Standard, deps.Jumbo)
 	if err != nil {
@@ -113,51 +96,39 @@ func ScratchCreate(ctx context.Context, req schema.ScratchCreateRequest, deps *S
 		BuildID:      req.BuildID,
 		ObliviousID:  obliviousID,
 		MachineClass: req.MachineClass,
-		VMName:       "scratch-" + scratchID,
 		State:        schema.ScratchStarting,
 		Created:      now,
 		Updated:      now,
-		// Zone is set after the fallthrough loop is able to allocate.
+		// place writes Host, Zone and InternalIP before each admission.
 	}
 	if err := deps.Scratches.Insert(ctx, scratch); err != nil {
 		return nil, api.AsStatus(codes.Internal, errors.Wrap(err, "scratches insert"))
 	}
-
-	// insertWithFallthrough sets scratch.Zone whenever a VM may exist and
-	// leaves it "" when none can (every zone stocked out), so cleanup
-	// needs no zone sweep.
+	// Best-effort teardown on failure. A host that refused the session answers
+	// its release with NotFound.
 	cleanup := func() {
-		if err := deleteScratch(context.Background(), deps.Scratches, deps.GCE, scratch, nil); err != nil {
+		if err := deleteScratch(context.Background(), deps.Scratches, deps.GCE, deps.Hosts, scratch, nil); err != nil {
 			log.Printf("scratch %s teardown: %v", scratchID, err)
 		}
 	}
-
-	inst, cleanupZone, err := insertWithFallthrough(ctx, deps.GCE, deps.Zones, deps.Cooldown, scratch.VMName, class.InstanceTemplate)
-	scratch.Zone = cleanupZone
+	host, err := admitAnywhere(ctx, deps, &scratch, class)
 	if err != nil {
 		cleanup()
 		if errors.Is(err, errCapacity) {
-			return nil, api.AsStatus(codes.ResourceExhausted, errors.Wrap(err, "insert instance"))
+			return nil, api.AsStatus(codes.ResourceExhausted, errors.Wrap(err, "admitting guest"))
 		}
-		return nil, api.AsStatus(codes.Internal, errors.Wrap(err, "insert instance"))
+		return nil, api.AsStatus(codes.Internal, errors.Wrap(err, "admitting guest"))
 	}
-
-	scratch.InternalIP = inst.InternalIP
-	scratch.Updated = time.Now().UTC()
-	// Seed LastUsed at provisioning so the reaper's ListIdleSince doesn't
-	// pick up a brand-new scratch whose zero-time LastUsed satisfies the
-	// "last_used < cutoff" filter.
-	scratch.LastUsed = scratch.Updated
-	if err := deps.Scratches.Update(ctx, scratch); err != nil {
+	// The session is ready once its guest's sshd answers.
+	if err := pollHealthy(ctx, deps.healthTimeout(), deps.healthInterval(), func(ctx context.Context) error {
+		return deps.Hosts.GuestHealthz(ctx, host, scratchID)
+	}); err != nil {
 		cleanup()
-		return nil, api.AsStatus(codes.Internal, errors.Wrap(err, "scratches update with IP"))
+		if errors.Is(err, ErrGuestExited) {
+			return nil, api.AsStatus(codes.Internal, errors.Wrap(err, "guest healthz"))
+		}
+		return nil, api.AsStatus(codes.DeadlineExceeded, errors.Wrap(err, "guest healthz"))
 	}
-
-	if err := waitHealthy(ctx, deps, scratch.InternalIP); err != nil {
-		cleanup()
-		return nil, api.AsStatus(codes.DeadlineExceeded, errors.Wrap(err, "worker healthz"))
-	}
-
 	if err := deps.Scratches.UpdateState(ctx, scratchID, schema.ScratchReady); err != nil {
 		cleanup()
 		return nil, api.AsStatus(codes.Internal, errors.Wrap(err, "scratches update state ready"))
@@ -178,9 +149,9 @@ func ScratchGet(ctx context.Context, req schema.ScratchGetRequest, deps *Scratch
 	return &scratch, nil
 }
 
-// ScratchDelete tears down the scratch's VM and records it as Deleted.
-// The record is kept for audit. A failed VM delete leaves it Deleting for
-// the reaper to retry.
+// ScratchDelete releases the scratch's guest, or deletes a per-VM-era
+// record's VM, and marks it Deleted, keeping the record for audit. A failed
+// VM delete leaves it Deleting for the reaper.
 func ScratchDelete(ctx context.Context, req schema.ScratchDeleteRequest, deps *ScratchDeleteDeps) (*schema.ScratchDeleteResponse, error) {
 	scratch, err := deps.Scratches.Get(ctx, req.ScratchID)
 	if err != nil {
@@ -189,23 +160,23 @@ func ScratchDelete(ctx context.Context, req schema.ScratchDeleteRequest, deps *S
 		}
 		return nil, api.AsStatus(codes.Internal, errors.Wrap(err, "scratches get"))
 	}
-	if err := deleteScratch(ctx, deps.Scratches, deps.GCE, scratch, nil); err != nil {
+	if err := deleteScratch(ctx, deps.Scratches, deps.GCE, deps.Hosts, scratch, nil); err != nil {
 		return nil, api.AsStatus(codes.Internal, err)
 	}
 	return &schema.ScratchDeleteResponse{ScratchID: scratch.ID, State: schema.ScratchDeleted}, nil
 }
 
-// deleteScratch is the only path into Deleting and Deleted. The record is
-// marked Deleting, the VM is deleted, and only once the VM is confirmed
-// gone does the record advance to Deleted, so any failure leaves it
-// Deleting for the reaper's stuck sweep. The Deleting write bumps Updated,
-// which keeps the record out of that sweep for IdleThreshold while this
-// delete runs.
+// deleteScratch is the only path to Deleting and Deleted. It marks the
+// record Deleting, deletes a per-VM-era record's VM or releases a host-era
+// record's guest, then marks it Deleted. A failed VM delete stays Deleting
+// for the reaper's stuck sweep. A failed guest release advances anyway,
+// since the host sweep destroys guests of Deleting and Deleted records.
+// Marking Deleting bumps Updated, which keeps the stuck sweep away while
+// this runs.
 //
-// zones is where the VM may sit when the record carries no zone, which
-// only a create that died before persisting placement produces. Callers
-// whose record has a zone, or never had a VM, pass nil.
-func deleteScratch(ctx context.Context, scratches db.Scratch, gce GCE, scratch schema.Scratch, zones []string) error {
+// zones is where to look for a VM when the record has no zone. gce may be
+// nil for callers that never meet per-VM-era records.
+func deleteScratch(ctx context.Context, scratches db.Scratch, gce GCE, hosts *HostClient, scratch schema.Scratch, zones []string) error {
 	if err := scratches.UpdateState(ctx, scratch.ID, schema.ScratchDeleting); err != nil {
 		return errors.Wrap(err, "marking deleting")
 	}
@@ -213,11 +184,19 @@ func deleteScratch(ctx context.Context, scratches db.Scratch, gce GCE, scratch s
 		zones = []string{scratch.Zone}
 	}
 	if scratch.VMName != "" {
+		if gce == nil {
+			return errors.Errorf("scratch %s names VM %s but no GCE client is configured", scratch.ID, scratch.VMName)
+		}
 		for _, zone := range zones {
 			if err := gce.DeleteInstance(ctx, zone, scratch.VMName); err != nil {
 				return errors.Wrapf(err, "deleting instance %s/%s", zone, scratch.VMName)
 			}
 		}
+	}
+	// A failed release is only logged: sweepHosts destroys guests whose record
+	// is Deleting or Deleted.
+	if err := releaseScratch(ctx, hosts, scratch); err != nil {
+		log.Printf("releasing scratch %s: %v", scratch.ID, err)
 	}
 	if err := scratches.UpdateState(ctx, scratch.ID, schema.ScratchDeleted); err != nil {
 		return errors.Wrap(err, "marking deleted")
@@ -225,32 +204,119 @@ func deleteScratch(ctx context.Context, scratches db.Scratch, gce GCE, scratch s
 	return nil
 }
 
-func waitHealthy(ctx context.Context, deps *ScratchCreateDeps, ip string) error {
-	timeout := deps.HealthTimeout
-	if timeout <= 0 {
-		timeout = 3 * time.Minute
-	}
-	interval := deps.HealthInterval
-	if interval <= 0 {
-		interval = 500 * time.Millisecond
-	}
+func (d *ScratchCreateDeps) healthTimeout() time.Duration {
+	return cmp.Or(d.HealthTimeout, 90*time.Second)
+}
+
+// hostHealthTimeout is minutes: a host fetches its image before the broker listens.
+func (d *ScratchCreateDeps) hostHealthTimeout() time.Duration {
+	return cmp.Or(d.HostHealthTimeout, 10*time.Minute)
+}
+
+func (d *ScratchCreateDeps) healthInterval() time.Duration {
+	return cmp.Or(d.HealthInterval, 500*time.Millisecond)
+}
+
+// probeTimeout bounds one health probe, so a blackholed target costs one
+// interval rather than the kernel's connect retries.
+const probeTimeout = 10 * time.Second
+
+// pollHealthy calls probe until it succeeds or timeout elapses.
+func pollHealthy(ctx context.Context, timeout, interval time.Duration, probe func(context.Context) error) error {
 	probeCtx, cancel := context.WithTimeout(ctx, timeout)
 	defer cancel()
-	if err := deps.HealthProbe(probeCtx, ip); err == nil {
-		return nil
+	try := func() error {
+		ctx, cancel := context.WithTimeout(probeCtx, probeTimeout)
+		defer cancel()
+		return probe(ctx)
 	}
 	t := time.NewTicker(interval)
 	defer t.Stop()
 	for {
+		if err := try(); err == nil || errors.Is(err, ErrGuestExited) {
+			return err
+		}
 		select {
 		case <-probeCtx.Done():
 			return probeCtx.Err()
 		case <-t.C:
-			if err := deps.HealthProbe(probeCtx, ip); err == nil {
-				return nil
-			}
 		}
 	}
+}
+
+// admitAnywhere places a session on an existing host of its class, else on
+// a new one. Any refusal falls through, since a fresh host can serve it.
+// Each host is named on the record before admission, so no guest exists
+// without a record naming its host.
+func admitAnywhere(ctx context.Context, deps *ScratchCreateDeps, scratch *schema.Scratch, class ClassConfig) (Instance, error) {
+	labels := hostLabels(scratch.MachineClass)
+	now := time.Now().UTC()
+	for _, host := range listHosts(ctx, deps.GCE, deps.Zones, labels) {
+		if !admissible(host, now, hostMaxAge) {
+			continue
+		}
+		if err := place(ctx, deps.Scratches, scratch, host); err != nil {
+			return Instance{}, err
+		}
+		err := deps.Hosts.Admit(ctx, host, scratch.ID)
+		if err == nil {
+			return host, nil
+		}
+		log.Printf("scratch %s: admit on %s: %v", scratch.ID, host.Name, err)
+	}
+	// Cold path: create and boot a host.
+	name := fmt.Sprintf("scratch-host-%s", uuid.New().String()[:8])
+	host, zone, err := insertWithFallthrough(ctx, deps.GCE, deps.Zones, deps.Cooldown, name, class.InstanceTemplate, labels)
+	if err != nil {
+		if zone != "" {
+			// Proactively delete a host that exists but is unusable.
+			if derr := deps.GCE.DeleteInstance(context.Background(), zone, name); derr != nil {
+				log.Printf("deleting failed host %s/%s: %v", zone, name, derr)
+			}
+		}
+		return Instance{}, errors.Wrap(err, "creating host")
+	}
+	if err := pollHealthy(ctx, deps.hostHealthTimeout(), deps.healthInterval(), func(ctx context.Context) error {
+		return deps.Hosts.Healthz(ctx, host)
+	}); err != nil {
+		if derr := deps.GCE.DeleteInstance(context.Background(), zone, name); derr != nil {
+			log.Printf("deleting unhealthy host %s/%s: %v", zone, name, derr)
+		}
+		return Instance{}, errors.Wrapf(err, "host %s never became healthy", name)
+	}
+	if err := place(ctx, deps.Scratches, scratch, host); err != nil {
+		return Instance{}, err
+	}
+	if err := deps.Hosts.Admit(ctx, host, scratch.ID); err != nil {
+		return Instance{}, errors.Wrapf(err, "admit on fresh host %s", name)
+	}
+	return host, nil
+}
+
+// place names host on the record and persists it, with its address, since
+// the host serves the session's exec API. LastUsed is seeded so the idle
+// listing never reads a new record's zero LastUsed as ancient.
+func place(ctx context.Context, scratches db.Scratch, scratch *schema.Scratch, host Instance) error {
+	scratch.Host, scratch.Zone, scratch.InternalIP = host.Name, host.Zone, host.InternalIP
+	scratch.Updated = time.Now().UTC()
+	scratch.LastUsed = scratch.Updated
+	return errors.Wrap(scratches.Update(ctx, *scratch), "scratches update with host")
+}
+
+// releaseScratch destroys the guest a record names. No-op without a Host.
+func releaseScratch(ctx context.Context, hosts *HostClient, s schema.Scratch) error {
+	if s.Host == "" {
+		return nil
+	}
+	if hosts == nil {
+		return errors.Errorf("scratch %s on host %s: no host client configured", s.ID, s.Host)
+	}
+	return hosts.Delete(ctx, hostOf(s), s.ID)
+}
+
+// hostOf is the host a record names, as the host client addresses it.
+func hostOf(s schema.Scratch) Instance {
+	return Instance{Name: s.Host, Zone: s.Zone, InternalIP: s.InternalIP}
 }
 
 func mintID(gen func() string) string {

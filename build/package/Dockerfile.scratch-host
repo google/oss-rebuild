@@ -1,0 +1,148 @@
+# syntax=docker/dockerfile:1
+# The scratch host image: the broker, QEMU, and the golden guest kernel,
+# initrd and rootfs, pinned together by one digest. Container-Optimized OS
+# (COS) hosts run it privileged with host networking and /dev/kvm.
+
+FROM golang:1.26-alpine AS binary
+ARG DEBUG=false
+WORKDIR /src
+COPY . .
+RUN CGO_ENABLED=0 go build \
+    -ldflags="$([ ${DEBUG} = "true" ] || printf '-s -w')" \
+    -gcflags="-l=4" \
+    -o scratch-host \
+    ./cmd/scratch-host
+
+# Guest kernel: the Debian cloud kernel, unpacked so no postinst touches a
+# bootloader, and an initrd with the virtio modules. ext4 is built in.
+FROM debian:13-slim AS kernel
+ENV DEBIAN_FRONTEND=noninteractive
+RUN <<EOF
+ set -eux
+ apt-get update -qq
+ apt-get install -qq -y --no-install-recommends initramfs-tools kmod zstd
+
+ # Resolve the metapackage to the versioned image, which carries the
+ # modules.
+ kpkg=$(apt-cache depends linux-image-cloud-amd64 | sed -n 's/ *Depends: \(linux-image-.*\)/\1/p' | head -1)
+ kver=${kpkg#linux-image-}
+ cd /tmp
+ apt-get download -qq "$kpkg"
+ mkdir /x
+ for deb in *.deb; do dpkg-deb -x "$deb" /x; done
+ moddir=/x/usr/lib/modules
+ [ -d "$moddir" ] || moddir=/x/lib/modules
+
+ # mkinitramfs wants the module tree installed where depmod looks.
+ mkdir -p /usr/lib/modules
+ cp -a "$moddir/$kver" /usr/lib/modules/
+ depmod -a "$kver"
+ conf=$(mktemp -d)
+ cp -a /etc/initramfs-tools/. "$conf/"
+ sed -i 's/^MODULES=.*/MODULES=list/' "$conf/initramfs.conf"
+ printf 'virtio_mmio\nvirtio_blk\nvirtio_net\nvirtio_rng\n' > "$conf/modules"
+
+ mkdir /out
+ mkinitramfs -d "$conf" -o /out/initrd.img "$kver"
+ cp "/x/boot/vmlinuz-$kver" /out/vmlinuz
+ cp -a "$moddir" /out/modules
+ echo "$kver" > /out/kernel-version.txt
+EOF
+
+# Golden guest rootfs, flattened into rootfs.raw. It holds no repo
+# binaries: the broker reaches in over ssh. scratch-host-guest/ supplies the
+# boot units and the sshd, docker and mount config. udev lets systemd see
+# /dev/vdb.
+FROM debian:13-slim AS guest
+ENV DEBIAN_FRONTEND=noninteractive
+RUN <<EOF
+ set -eux
+ apt-get update
+ apt-get install -y --no-install-recommends \
+     systemd-sysv udev dbus openssh-server ca-certificates curl wget gnupg \
+     iproute2 iptables kmod e2fsprogs procps xz-utils
+ rm -rf /var/lib/apt/lists/*
+EOF
+# docker-ce from Docker's repo, to track its releases. Docker and containerd
+# keep their data on the scratch disk (daemon.json, config.toml), and Docker
+# Hub pulls go through mirror.gcr.io.
+ARG DOCKER_APT_SUITE=trixie
+RUN <<EOF
+ set -eux
+ install -m 0755 -d /etc/apt/keyrings
+ curl -fsSL https://download.docker.com/linux/debian/gpg -o /etc/apt/keyrings/docker.asc
+ echo "deb [signed-by=/etc/apt/keyrings/docker.asc] https://download.docker.com/linux/debian ${DOCKER_APT_SUITE} stable" \
+     > /etc/apt/sources.list.d/docker.list
+ apt-get update
+ apt-get install -y --no-install-recommends docker-ce docker-ce-cli containerd.io docker-buildx-plugin
+ rm -rf /var/lib/apt/lists/*
+EOF
+COPY build/package/scratch-host-guest/ /
+RUN <<EOF
+ set -eux
+ # Build state lives on the scratch disk: the home is a symlink there,
+ # created at boot by tmpfiles.
+ useradd --no-create-home --home-dir /home/builder --shell /bin/bash builder
+ usermod -aG docker builder
+ ln -s /scratch/home /home/builder
+
+ # microvm-net configures eth0, so nothing waits on the network.
+ systemctl enable containerd docker ssh microvm-net microvm-authkey
+ systemctl mask systemd-networkd-wait-online systemd-networkd systemd-resolved \
+     apt-daily.timer apt-daily-upgrade.timer e2scrub_all.timer
+ # No host keys: microvm-authkey installs each boot's own from the cmdline.
+ rm -f /etc/ssh/ssh_host_*
+ # Empty, so systemd generates a fresh machine-id per guest on first boot.
+ : > /etc/machine-id
+EOF
+
+# Pack the guest into rootfs.raw with mkfs.ext4 -d, needing no loop device
+# or privilege. A separate stage keeps the tools out of the guest tree.
+FROM debian:13-slim AS pack
+RUN apt-get update && apt-get install -y --no-install-recommends e2fsprogs kmod && rm -rf /var/lib/apt/lists/*
+COPY --from=guest / /rootfs
+COPY --from=kernel /out /kout
+RUN <<EOF
+ set -eux
+ # Docker bind-mounts these during a build, so set them here. microvm-net
+ # rewrites them at boot.
+ echo 'nameserver 8.8.8.8' > /rootfs/etc/resolv.conf
+ echo guest > /rootfs/etc/hostname
+ echo '127.0.0.1 localhost' > /rootfs/etc/hosts
+
+ # Device nodes for early userspace, before devtmpfs.
+ for spec in 'null 1 3' 'zero 1 5' 'random 1 8' 'urandom 1 9' 'console 5 1'; do
+     set -- $spec
+     [ -e "/rootfs/dev/$1" ] || mknod -m 666 "/rootfs/dev/$1" c "$2" "$3"
+ done
+ chmod 600 /rootfs/dev/console
+
+ # Module tree for the kernel this same build produced.
+ kver=$(cat /kout/kernel-version.txt)
+ mkdir -p /rootfs/usr/lib/modules
+ cp -a "/kout/modules/$kver" /rootfs/usr/lib/modules/
+ depmod -a -b /rootfs "$kver"
+
+ # Build state lives on the scratch disk. The headroom covers what a
+ # session writes elsewhere.
+ size_mb=$(( $(du -sm /rootfs | cut -f1) + 512 ))
+ mkdir /golden
+ mke2fs -q -F -t ext4 -m 0 -d /rootfs /golden/rootfs.raw "${size_mb}M"
+ e2fsck -fn /golden/rootfs.raw
+
+ # Check the files the boot chain depends on.
+ debugfs -R 'stat /usr/local/sbin/microvm-authkey' /golden/rootfs.raw 2>&1 | grep -q 'Type: regular'
+ debugfs -R "ls /usr/lib/modules/$kver/kernel" /golden/rootfs.raw 2>&1 | grep -q drivers
+ debugfs -R 'stat /etc/systemd/system/multi-user.target.wants/docker.service' /golden/rootfs.raw 2>&1 | grep -q 'Type: symlink'
+ debugfs -R 'stat /home/builder' /golden/rootfs.raw 2>&1 | grep -q 'Type: symlink'
+ cp /kout/vmlinuz /kout/initrd.img /golden/
+EOF
+
+FROM debian:13-slim
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    qemu-system-x86 qemu-utils iproute2 e2fsprogs ca-certificates \
+    && rm -rf /var/lib/apt/lists/*
+COPY --from=pack /golden /golden
+COPY --from=binary /src/scratch-host /scratch-host
+COPY build/package/scratch-host-entrypoint.sh /entrypoint.sh
+ENTRYPOINT ["/entrypoint.sh"]

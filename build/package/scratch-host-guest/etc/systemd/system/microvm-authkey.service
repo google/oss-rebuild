@@ -1,0 +1,13 @@
+[Unit]
+Description=Install the ssh keys from the kernel cmdline
+DefaultDependencies=no
+Before=ssh.service
+After=systemd-tmpfiles-setup.service
+
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+ExecStart=/usr/local/sbin/microvm-authkey
+
+[Install]
+WantedBy=sysinit.target
