@@ -63,7 +63,7 @@ func TestInitializeFromIterationRejectsInvalidRef(t *testing.T) {
 	if err == nil {
 		t.Fatal("InitializeFromIteration succeeded with a ref absent from the repository")
 	}
-	if !strings.Contains(err.Error(), "checkout") {
+	if !strings.Contains(err.Error(), "resolving") {
 		t.Fatalf("InitializeFromIteration returned an unrelated error: %v", err)
 	}
 }

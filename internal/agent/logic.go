@@ -21,7 +21,6 @@ import (
 	"github.com/go-git/go-billy/v5"
 	"github.com/go-git/go-billy/v5/memfs"
 	"github.com/go-git/go-git/v5"
-	"github.com/go-git/go-git/v5/plumbing"
 	"github.com/go-git/go-git/v5/storage"
 	"github.com/google/oss-rebuild/internal/api/inferenceservice"
 	"github.com/google/oss-rebuild/internal/buildpolicy"
@@ -33,6 +32,7 @@ import (
 	"github.com/google/oss-rebuild/pkg/rebuild/flow"
 	"github.com/google/oss-rebuild/pkg/rebuild/rebuild"
 	"github.com/google/oss-rebuild/pkg/rebuild/schema"
+	"github.com/msuozzo/go-git2"
 	"github.com/pkg/errors"
 	"google.golang.org/genai"
 	"google.golang.org/grpc/status"
@@ -77,7 +77,7 @@ func locationFromStrategyOneOf(oneof *schema.StrategyOneOf) (*rebuild.Location, 
 type defaultAgent struct {
 	t                rebuild.Target
 	deps             *AgentDeps
-	repo             *git.Repository
+	repo             *git2.Repository
 	loc              rebuild.Location
 	iterHistory      []*schema.AgentIteration
 	thoughts         []thoughtData
@@ -119,7 +119,7 @@ func NewDefaultAgent(t rebuild.Target, deps *AgentDeps) *defaultAgent {
 
 // repoProvider gives the git tools the repo and the current ref, read live so
 // a ref move applies.
-func (a *defaultAgent) repoProvider() (*git.Repository, string) {
+func (a *defaultAgent) repoProvider() (*git2.Repository, string) {
 	return a.repo, a.loc.Ref
 }
 
@@ -128,24 +128,16 @@ func (a *defaultAgent) InitializeFromIteration(ctx context.Context, initialItera
 	if err != nil {
 		return errors.Wrap(err, "parsing previous iteration")
 	}
-	wt := memfs.New()
-	repo, err := rebuild.LoadRepo(ctx, a.t.Package, gitx.NewInMemoryStorer(), wt, git.CloneOptions{URL: loc.Repo, RecurseSubmodules: git.DefaultSubmoduleRecursionDepth})
+	// The git tools read trees by ref, so nothing is checked out.
+	repo, err := rebuild.LoadRepo(ctx, a.t.Package, gitx.NewInMemoryStorer(), memfs.New(), git.CloneOptions{URL: loc.Repo, NoCheckout: true})
 	if err != nil {
 		return errors.Wrap(err, "loading repo")
 	}
-	if a.repo, err = git.Open(repo.Storer, wt); err != nil {
-		return errors.Wrap(err, "opening repo")
+	if _, err := repo.Repository.CommitObject(git2.NewHash(loc.Ref)); err != nil {
+		repo.Repository.Close()
+		return errors.Wrapf(err, "resolving %s", loc.Ref)
 	}
-	w, err := a.repo.Worktree()
-	if err != nil {
-		return errors.Wrap(err, "getting worktree")
-	}
-	err = w.Checkout(&git.CheckoutOptions{
-		Hash: plumbing.NewHash(loc.Ref),
-	})
-	if err != nil {
-		return errors.Wrap(err, "checkout")
-	}
+	a.repo = repo.Repository
 	a.RecordIteration(initialIteration)
 	a.loc = *loc
 	return nil
@@ -645,9 +637,9 @@ func (a *defaultAgent) proposeHeuristicInference(ctx context.Context) (*schema.S
 			return nil, errors.Wrap(err, "AI-assisted inference failed")
 		}
 	}
-	a.repo, err = git.Open(str, wt)
+	a.repo, err = gitx.Open(str)
 	if err != nil {
-		return nil, errors.Wrap(err, "opening infered repo")
+		return nil, errors.Wrap(err, "opening the inferred repo")
 	}
 	l, err := locationFromStrategyOneOf(s)
 	if err != nil {

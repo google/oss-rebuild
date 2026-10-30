@@ -11,12 +11,12 @@ import (
 	"time"
 
 	"github.com/go-git/go-billy/v5/memfs"
-	"github.com/go-git/go-git/v5/plumbing"
 	"github.com/google/oss-rebuild/internal/api/inferenceservice"
 	"github.com/google/oss-rebuild/internal/gitx"
 	"github.com/google/oss-rebuild/pkg/llm"
 	"github.com/google/oss-rebuild/pkg/rebuild/rebuild"
 	"github.com/google/oss-rebuild/pkg/rebuild/schema"
+	"github.com/msuozzo/go-git2"
 	"github.com/pkg/errors"
 	"google.golang.org/genai"
 )
@@ -83,7 +83,7 @@ func (a *defaultAgent) setSourceRef(ref, reason string) (string, error) {
 	if a.repo == nil {
 		return "", errors.New("no repository is loaded")
 	}
-	hash, err := a.repo.ResolveRevision(plumbing.Revision(ref))
+	hash, err := a.repo.ResolveRevision(git2.Revision(ref))
 	if err != nil {
 		// A publish commit is often never pushed (.cargo_vcs_info.json, gitHead), so
 		// point at the nearest commit the repository has.
