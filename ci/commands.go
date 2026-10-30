@@ -36,7 +36,7 @@ func (fn taskFn) failIfOutput(msg string) taskFn {
 // --- Task definitions ---
 
 var (
-	buildTask = run("go", "build", "./...")
+	buildTask = run("go", "build", "-ldflags=-w", "./...") // skip DWARF as binaries are discarded
 	testTask  = run("go", "test", "./...")
 	lintTask  = run("go", "vet", "./...")
 
