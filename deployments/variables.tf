@@ -126,17 +126,17 @@ variable "agent_api_max_instances" {
 }
 variable "scratch_machine_type" {
   type        = string
-  description = "Machine type for agent scratch VMs. Smaller types fit more concurrent sessions under the regional CPU quota. Heavy builds may need a larger type."
-  default     = "e2-standard-4"
+  description = "Machine type for scratch hosts. Each host serves one agent session as a KVM microVM guest sized to the host, so the type must support nested virtualization (Intel N2, C3 and C4 shapes do; E2 and AMD shapes do not)."
+  default     = "n2-standard-4"
 }
 variable "scratch_jumbo_machine_type" {
   type        = string
-  description = "Machine type for the jumbo scratch class. Empty leaves the class unavailable. A type from another family draws on that family's CPU quota, which keeps evals off the standard pool."
+  description = "Machine type for jumbo-class scratch hosts, under the same constraints as scratch_machine_type. Empty disables the jumbo class. A type from another family draws on that family's CPU quota, which keeps evals off the standard pool."
   default     = ""
 }
 variable "scratch_disk_gb" {
   type        = number
-  description = "Boot/pd-ssd disk size for scratch VMs. Sized to hold build containers and clones which is small enough that concurrency is CPU-bound, not SSD-quota-bound."
+  description = "Boot/pd-ssd disk size for scratch hosts. Holds the host image, the golden guest images and the guest's disks."
   default     = 100
 }
 variable "enable_internal_ingress" {
