@@ -63,9 +63,12 @@ func isZoneExhausted(err error) bool {
 // Instance summarizes the fields the broker reads back from Compute Engine
 // after creating or looking up an instance.
 type Instance struct {
-	Name       string
-	Zone       string
-	InternalIP string
+	Name             string
+	Zone             string
+	InternalIP       string
+	Labels           map[string]string
+	LabelFingerprint string    // makes racing SetLabels fail
+	Created          time.Time // zero reads as too old to admit
 }
 
 // GCE abstracts the Compute Engine operations the broker uses for env
@@ -73,24 +76,18 @@ type Instance struct {
 // for tests, and a real Compute-backed impl can be wired at binary boot
 // without leaking SDK types upward.
 type GCE interface {
-	// InsertInstanceFromTemplate creates a VM with the given labels and
-	// returns its summary (including InternalIP) once it is observable to
-	// the API. labels may be nil for ad-hoc instances; pool replenishment
-	// passes pool labels so ListStoppedInstances can find them later.
+	// InsertInstanceFromTemplate creates a VM with the given labels and returns
+	// its summary (including InternalIP) once it is observable to the API.
 	InsertInstanceFromTemplate(ctx context.Context, zone, name, templateURL string, labels map[string]string) (Instance, error)
 	// DeleteInstance removes the VM and waits for the delete to finish. A
 	// VM that no longer exists counts as deleted, so a retried teardown
 	// converges.
 	DeleteInstance(ctx context.Context, zone, name string) error
-	// ListStoppedInstances returns terminated VMs whose labels match every
-	// entry in labels (subset match).
-	ListStoppedInstances(ctx context.Context, zone string, labels map[string]string) ([]Instance, error)
-	// StartInstance brings a terminated VM up and returns its summary
-	// (including the (possibly new) InternalIP).
-	StartInstance(ctx context.Context, zone, name string) (Instance, error)
-	// StopInstance terminates a running VM (used at replenishment to
-	// return a freshly-inserted VM to stopped state).
-	StopInstance(ctx context.Context, zone, name string) error
+	// ListRunningInstances returns running VMs whose labels include labels.
+	ListRunningInstances(ctx context.Context, zone string, labels map[string]string) ([]Instance, error)
+	// SetLabels replaces an instance's labels. fingerprint is the one read with
+	// them, so a concurrent write makes this fail instead of being lost.
+	SetLabels(ctx context.Context, zone, name string, labels map[string]string, fingerprint string) error
 }
 
 // computeGCE implements GCE against google.golang.org/api/compute.
@@ -142,12 +139,12 @@ func (g *computeGCE) InsertInstanceFromTemplate(ctx context.Context, zone, name,
 	if err != nil {
 		return Instance{}, errors.Wrap(err, "instances.get")
 	}
-	return Instance{Name: inst.Name, Zone: zone, InternalIP: instanceInternalIP(inst)}, nil
+	return summarize(inst, zone), nil
 }
 
-func (g *computeGCE) ListStoppedInstances(ctx context.Context, zone string, labels map[string]string) ([]Instance, error) {
+func (g *computeGCE) ListRunningInstances(ctx context.Context, zone string, labels map[string]string) ([]Instance, error) {
 	var filter strings.Builder
-	filter.WriteString("status = TERMINATED")
+	filter.WriteString("status = RUNNING")
 	for k, v := range labels {
 		fmt.Fprintf(&filter, " AND labels.%s = %s", k, v)
 	}
@@ -155,9 +152,7 @@ func (g *computeGCE) ListStoppedInstances(ctx context.Context, zone string, labe
 	var out []Instance
 	if err := call.Pages(ctx, func(page *compute.InstanceList) error {
 		for _, inst := range page.Items {
-			out = append(out, Instance{
-				Name: inst.Name, Zone: zone, InternalIP: instanceInternalIP(inst),
-			})
+			out = append(out, summarize(inst, zone))
 		}
 		return nil
 	}); err != nil {
@@ -166,25 +161,13 @@ func (g *computeGCE) ListStoppedInstances(ctx context.Context, zone string, labe
 	return out, nil
 }
 
-func (g *computeGCE) StartInstance(ctx context.Context, zone, name string) (Instance, error) {
-	op, err := g.svc.Instances.Start(g.project, zone, name).Context(ctx).Do()
+func (g *computeGCE) SetLabels(ctx context.Context, zone, name string, labels map[string]string, fingerprint string) error {
+	op, err := g.svc.Instances.SetLabels(g.project, zone, name, &compute.InstancesSetLabelsRequest{
+		Labels:           labels,
+		LabelFingerprint: fingerprint,
+	}).Context(ctx).Do()
 	if err != nil {
-		return Instance{}, errors.Wrap(err, "instances.start")
-	}
-	if err := g.waitZoneOp(ctx, zone, op); err != nil {
-		return Instance{}, err
-	}
-	inst, err := g.svc.Instances.Get(g.project, zone, name).Context(ctx).Do()
-	if err != nil {
-		return Instance{}, errors.Wrap(err, "instances.get")
-	}
-	return Instance{Name: inst.Name, Zone: zone, InternalIP: instanceInternalIP(inst)}, nil
-}
-
-func (g *computeGCE) StopInstance(ctx context.Context, zone, name string) error {
-	op, err := g.svc.Instances.Stop(g.project, zone, name).Context(ctx).Do()
-	if err != nil {
-		return errors.Wrap(err, "instances.stop")
+		return errors.Wrap(err, "instances.setLabels")
 	}
 	return g.waitZoneOp(ctx, zone, op)
 }
@@ -228,6 +211,23 @@ func (g *computeGCE) waitZoneOp(ctx context.Context, zone string, op *compute.Op
 		}
 		op = next
 	}
+}
+
+// summarize projects a Compute instance onto the fields agent-api reads. An
+// unparseable creationTimestamp leaves Created zero, which reads as too old
+// to admit.
+func summarize(inst *compute.Instance, zone string) Instance {
+	out := Instance{
+		Name:             inst.Name,
+		Zone:             zone,
+		InternalIP:       instanceInternalIP(inst),
+		Labels:           inst.Labels,
+		LabelFingerprint: inst.LabelFingerprint,
+	}
+	if t, err := time.Parse(time.RFC3339, inst.CreationTimestamp); err == nil {
+		out.Created = t.UTC()
+	}
+	return out
 }
 
 func instanceInternalIP(inst *compute.Instance) string {
