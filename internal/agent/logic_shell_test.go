@@ -340,7 +340,7 @@ type fakeShell struct {
 	logs    []byte
 }
 
-func (f *fakeShell) RunCommand(_ context.Context, command string, _ int) (CommandResult, error) {
+func (f *fakeShell) RunCommand(_ context.Context, command string, _ int, _ schema.ScratchLabel) (CommandResult, error) {
 	f.scripts = append(f.scripts, command)
 	return f.result, nil
 }

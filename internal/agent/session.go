@@ -29,7 +29,7 @@ import (
 // Shell runs the model's diagnostic commands where the previous attempt's
 // container and files are, and serves that attempt's build log.
 type Shell interface {
-	RunCommand(ctx context.Context, command string, timeoutSeconds int) (CommandResult, error)
+	RunCommand(ctx context.Context, command string, timeoutSeconds int, label schema.ScratchLabel) (CommandResult, error)
 	LastBuildLogs(ctx context.Context) ([]byte, error)
 }
 

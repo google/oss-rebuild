@@ -123,6 +123,7 @@ func (e *DockerBuildExecutor) runBuild(ctx context.Context, handle *scratchHandl
 		Cmd:      buildCmd,
 		Env:      env,
 		StdinB64: base64.StdEncoding.EncodeToString([]byte(plan.Dockerfile)),
+		Label:    schema.ScratchLabelImage,
 	}, &remaining)
 	if err == nil {
 		phaseOps = append(phaseOps, op)
@@ -142,7 +143,7 @@ func (e *DockerBuildExecutor) runBuild(ctx context.Context, handle *scratchHandl
 		}
 		// Disable core dumps
 		runCmd = append(runCmd, "--ulimit", "core=0", imageTag)
-		op, err = e.phaseExec(ctx, handle, schema.ScratchExecRequest{Cmd: runCmd}, &remaining)
+		op, err = e.phaseExec(ctx, handle, schema.ScratchExecRequest{Cmd: runCmd, Label: schema.ScratchLabelRun}, &remaining)
 		if err == nil {
 			phaseOps = append(phaseOps, op)
 		}
@@ -180,7 +181,7 @@ func (e *DockerBuildExecutor) extractTimings(ctx context.Context, container, ima
 		log.Printf("Build %s timing skipped: no worker clock for the image build", container)
 		return nil
 	}
-	hist, err := e.utilityExecOutput(ctx, []string{"docker", "history", "--human=false", "--format", "{{json .}}", imageTag}, "timing history")
+	hist, err := e.utilityExecOutput(ctx, []string{"docker", "history", "--human=false", "--format", "{{json .}}", imageTag}, schema.ScratchLabelTiming, "timing history")
 	if err != nil {
 		log.Printf("Build %s: %v", container, err)
 		return nil
@@ -199,7 +200,7 @@ func (e *DockerBuildExecutor) extractTimings(ctx context.Context, container, ima
 	if runFailed {
 		in.FailedIn = rebuild.PhaseBuild
 	}
-	span, err := e.utilityExecOutput(ctx, []string{"docker", "inspect", container, "-f", "{{.State.StartedAt}} {{.State.FinishedAt}}"}, "timing inspect")
+	span, err := e.utilityExecOutput(ctx, []string{"docker", "inspect", container, "-f", "{{.State.StartedAt}} {{.State.FinishedAt}}"}, schema.ScratchLabelTiming, "timing inspect")
 	if err != nil {
 		log.Printf("Build %s: %v", container, err)
 	} else if buildDur, err := timing.ContainerSpan(span); err != nil {
@@ -229,7 +230,7 @@ func (e *DockerBuildExecutor) cleanupBuild(ctx context.Context, container, image
 	}
 	cctx, cancel := context.WithTimeout(context.WithoutCancel(ctx), utilityTimeout)
 	defer cancel()
-	if err := e.utilityExec(cctx, []string{"/bin/sh", "-c", strings.Join(script, "\n")}, nil, "cleaning up build"); err != nil {
+	if err := e.utilityExec(cctx, []string{"/bin/sh", "-c", strings.Join(script, "\n")}, nil, schema.ScratchLabelCleanup, "cleaning up build"); err != nil {
 		log.Printf("build %s: %v", container, err)
 	}
 }

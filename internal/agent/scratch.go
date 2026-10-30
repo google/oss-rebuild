@@ -370,12 +370,14 @@ func (r *ScratchRunner) compareScript(p vmPaths, upstreamURI, rebuild string) (s
 	return r.renderScript(compareScriptTpl, p, args)
 }
 
-// compareExec runs script on the VM, with the prebuild credential if auth.
-func (r *ScratchRunner) compareExec(ctx context.Context, script string, auth bool) (exitCode int, out []byte, err error) {
+// compareExec runs script on the VM, with the prebuild credential if auth,
+// labeled on the ledger as label.
+func (r *ScratchRunner) compareExec(ctx context.Context, script string, auth bool, label schema.ScratchLabel) (exitCode int, out []byte, err error) {
 	req := schema.ScratchExecRequest{
 		ScratchID:      r.ScratchID,
 		Cmd:            []string{"/bin/sh", "-c", script},
 		TimeoutSeconds: int(diffTimeout.Seconds()),
+		Label:          label,
 	}
 	if auth && r.AuthHeader != nil {
 		header, err := r.AuthHeader(ctx)
@@ -403,7 +405,7 @@ func (r *ScratchRunner) diffOnVM(ctx context.Context, runID, upstreamURI string)
 	if err != nil {
 		return "", errors.Wrap(err, "rendering diff script")
 	}
-	code, out, rerr := r.compareExec(ctx, script, true)
+	code, out, rerr := r.compareExec(ctx, script, true, schema.ScratchLabelCompare)
 	switch code {
 	case 1:
 		if rerr != nil {
@@ -436,7 +438,7 @@ func (r *ScratchRunner) PrepareCompare(ctx context.Context) error {
 	if err != nil {
 		return errors.Wrap(err, "rendering the prepare script")
 	}
-	code, out, err := r.compareExec(ctx, script, true)
+	code, out, err := r.compareExec(ctx, script, true, schema.ScratchLabelPrepareCompare)
 	if err != nil {
 		return err
 	}
@@ -472,6 +474,7 @@ func (r *ScratchRunner) StartKeepAlive(ctx context.Context) (stop func()) {
 				ScratchID:      r.ScratchID,
 				Cmd:            []string{"/bin/true"},
 				TimeoutSeconds: 60,
+				Label:          schema.ScratchLabelKeepAlive,
 			}, 0); err != nil && ctx.Err() == nil {
 				log.Printf("scratch keepalive: %v", err)
 			}
@@ -482,8 +485,9 @@ func (r *ScratchRunner) StartKeepAlive(ctx context.Context) (stop func()) {
 
 // RunCommand runs a diagnostic shell command on the scratch VM for the LLM. It
 // returns the exit code, the output's tail, and the exec and object holding
-// all of it. The error covers infrastructure failures only.
-func (r *ScratchRunner) RunCommand(ctx context.Context, command string, timeoutSeconds int) (CommandResult, error) {
+// all of it. The error covers infrastructure failures only. label says what
+// the exec is for and lands on its ledger row.
+func (r *ScratchRunner) RunCommand(ctx context.Context, command string, timeoutSeconds int, label schema.ScratchLabel) (CommandResult, error) {
 	if timeoutSeconds <= 0 {
 		timeoutSeconds = int(defaultCommandTimeout.Seconds())
 	}
@@ -491,6 +495,7 @@ func (r *ScratchRunner) RunCommand(ctx context.Context, command string, timeoutS
 		ScratchID:      r.ScratchID,
 		Cmd:            []string{"/bin/sh", "-c", command},
 		TimeoutSeconds: timeoutSeconds,
+		Label:          label,
 	}, 0)
 	if err != nil {
 		return CommandResult{}, err
@@ -555,5 +560,5 @@ func (r *ScratchRunner) CheckArtifact(ctx context.Context, candidate string) (ex
 	if err != nil {
 		return 0, nil, errors.Wrap(err, "rendering the check script")
 	}
-	return r.compareExec(ctx, script, false)
+	return r.compareExec(ctx, script, false, schema.ToolLabel("check_artifact"))
 }
