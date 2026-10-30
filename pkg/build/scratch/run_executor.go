@@ -94,7 +94,11 @@ func (e *DockerRunExecutor) Start(ctx context.Context, input rebuild.Input, opts
 func (e *DockerRunExecutor) runBuild(ctx context.Context, handle *scratchHandle, plan *local.DockerRunPlan, t rebuild.Target, opts build.Options, timeout time.Duration) (*rebuild.BuildTimings, error) {
 	dir := BuildDir(e.workDir, handle.id)
 	container := "rb-" + handle.id
-	if err := e.prepareBuild(ctx, dir, "build.sh", []byte(plan.CombinedScript()), prepareSourceMount(e.workDir, handle.id)); err != nil {
+	prep := []string{prepareSourceMount(e.workDir, handle.id)}
+	if e.singleEnv {
+		prep = append(prep, fmt.Sprintf("mkdir -p %q %q", ToolsDir(e.workDir), UpstreamDir(e.workDir)))
+	}
+	if err := e.prepareBuild(ctx, dir, "build.sh", []byte(plan.CombinedScript()), prep...); err != nil {
 		return nil, err
 	}
 	argOpts := local.RunArgsOpts{
@@ -103,6 +107,9 @@ func (e *DockerRunExecutor) runBuild(ctx context.Context, handle *scratchHandle,
 		SourceMountSrc:  SourcePath(e.workDir, handle.id),
 		Remove:          !e.retainContainer,
 		AllowPrivileged: e.allowPrivileged,
+	}
+	if e.singleEnv {
+		argOpts.ReadOnlyMounts = singleEnvMounts(e.workDir)
 	}
 	if plan.Privileged && !e.allowPrivileged {
 		log.Println("Warning: plan requested privileged execution but this executor does not allow privileged builds.")

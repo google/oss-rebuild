@@ -50,6 +50,7 @@ type Config struct {
 	PrebuildBucket string
 	PrebuildDir    string
 	PrebuildAuth   bool
+	SingleEnv      bool
 	BuildTimeout   time.Duration
 	FreeForm       bool // see --freeform. Requires ScratchID
 }
@@ -237,6 +238,7 @@ func Handler(ctx context.Context, cfg Config, deps *Deps) (*act.NoOutput, error)
 				// Retain the most recent build container so run_in_container can
 				// exec into the build environment, matching the deployed agent.
 				RetainContainer: true,
+				SingleEnv:       cfg.SingleEnv,
 			},
 		})
 		if err != nil {
@@ -252,6 +254,7 @@ func Handler(ctx context.Context, cfg Config, deps *Deps) (*act.NoOutput, error)
 			PrebuildConfig: rebuild.PrebuildConfig{Bucket: cfg.PrebuildBucket, Dir: cfg.PrebuildDir, Auth: cfg.PrebuildAuth},
 			AuthHeader:     authHeader,
 			BuildTimeout:   cfg.BuildTimeout,
+			SingleEnv:      cfg.SingleEnv,
 		}
 		runDeps.FreeForm = cfg.FreeForm
 	}
@@ -302,6 +305,7 @@ func flagSet(name string, cfg *Config) *flag.FlagSet {
 	set.StringVar(&cfg.PrebuildBucket, "prebuild-bucket", "", "gcs bucket from which prebuilt build tools (e.g. timewarp) are fetched (required with scratch-id)")
 	set.StringVar(&cfg.PrebuildDir, "prebuild-dir", "", "prefix within the prebuild bucket under which tools are stored (scratch mode)")
 	set.BoolVar(&cfg.PrebuildAuth, "prebuild-auth", false, "whether to authenticate requests to the prebuild tools bucket (scratch mode)")
+	set.BoolVar(&cfg.SingleEnv, "single-env", false, "run the agent entirely in the build container (scratch mode)")
 	set.DurationVar(&cfg.BuildTimeout, "build-timeout", time.Hour, "per-iteration build timeout for scratch execution")
 	set.BoolVar(&cfg.FreeForm, "freeform", false, "the model works in the retained container until the artifact matches, then the job formalizes the commands into a build (scratch mode)")
 	return set

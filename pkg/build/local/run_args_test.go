@@ -79,6 +79,16 @@ func TestComposeDockerStartArgs(t *testing.T) {
 			want: []string{"run", "--detach", "--name", "b1", "-v", "/tmp/b1:/out", "--privileged", "-v", "/var/run/docker.sock:/var/run/docker.sock", "--ulimit", "core=0", "alpine:3.19", "sleep", "infinity"},
 		},
 		{
+			name: "read-only mounts",
+			plan: runArgsTestPlan(),
+			opts: RunArgsOpts{
+				ContainerName:  "b1",
+				OutputMountSrc: "/tmp/b1/out",
+				ReadOnlyMounts: []Mount{{HostPath: "/tmp/tools", ContainerPath: "/tools"}, {HostPath: "/tmp/upstream", ContainerPath: "/upstream"}},
+			},
+			want: []string{"run", "--detach", "--name", "b1", "-v", "/tmp/b1/out:/out", "-v", "/tmp/tools:/tools:ro", "-v", "/tmp/upstream:/upstream:ro", "-w", "/workspace", "--ulimit", "core=0", "alpine:3.19", "sleep", "infinity"},
+		},
+		{
 			name: "privileged denied",
 			plan: &DockerRunPlan{Image: "alpine:3.19", Build: "true", OutputPath: "/out/rebuild", Privileged: true},
 			opts: RunArgsOpts{

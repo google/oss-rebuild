@@ -380,6 +380,29 @@ func TestMismatchMessage(t *testing.T) {
 	}
 }
 
+func TestMismatchMessageSingleEnv(t *testing.T) {
+	r := testRunner(&fakeExecutor{})
+	r.SingleEnv = true
+	got := r.mismatchMessage("iter-1", "~ package/index.js\n")
+	for _, want := range []string{
+		"~ package/index.js",
+		"run diffr with run_in_container",
+		"/tools/diffr /out/rebuild.stabilized /upstream/lodash-4.17.21.tgz.stabilized",
+		"/tools/stabilize --ecosystem npm --artifact lodash-4.17.21.tgz --infile <file> --outfile <file>.stabilized",
+		"Your rebuild is at /out/rebuild",
+		"/builds holds this and every earlier attempt",
+	} {
+		if !strings.Contains(got, want) {
+			t.Errorf("single-env message lacks %q:\n%s", want, got)
+		}
+	}
+	for _, unwanted := range []string{"run_on_host", "/home/builder"} {
+		if strings.Contains(got, unwanted) {
+			t.Errorf("single-env message should not mention %q:\n%s", unwanted, got)
+		}
+	}
+}
+
 func TestCompareScriptRejectsShellCharacters(t *testing.T) {
 	r := testRunner(&fakeExecutor{})
 	r.Target.Artifact = "it's-4.17.21.tgz"

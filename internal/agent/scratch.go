@@ -78,6 +78,7 @@ type ScratchRunner struct {
 	WorkDir string
 	// BuildTimeout bounds one iteration's build. Zero uses the executor default.
 	BuildTimeout time.Duration
+	SingleEnv    bool // Mirrors the executor's single-env mode.
 
 	mu sync.Mutex
 	// lastAssets is the previous iteration's asset store (RebuildAsset,
@@ -159,6 +160,14 @@ func (r *ScratchRunner) run(ctx context.Context, runID string, oneof *schema.Str
 	if r.PrebuildConfig.Auth {
 		authRequired = append(authRequired, "gs://"+r.PrebuildConfig.Bucket)
 	}
+	// Single-env builds run diffr in the container off the /tools mount, and a
+	// failed build never reaches the comparison, so stage the inputs first. Best
+	// effort: a staging failure is not a build failure.
+	if r.SingleEnv {
+		if err := r.PrepareCompare(ctx); err != nil {
+			log.Printf("scratch run %s: staging container inputs: %v", runID, err)
+		}
+	}
 	store := rebuild.NewFilesystemAssetStore(memfs.New())
 	h, err := r.Executor.Start(ctx, input, build.Options{
 		BuildID:     runID,
@@ -217,9 +226,15 @@ func (r *ScratchRunner) mismatchMessage(runID, diffSummary string) string {
 	if diffSummary == "" {
 		return msg
 	}
+	msg += "\n\n" + verifier.DiffSummaryPreamble + "\n" + diffSummary + "\n" + verifier.MismatchGuidance
+	if r.SingleEnv {
+		return msg + fmt.Sprintf("\nBoth artifacts and the tools are in the container, the artifacts stabilized beside the originals. For content-level differences run diffr with run_in_container:\n%s %s.stabilized %s.stabilized\n(--json for machine-readable output). To compare an artifact you build yourself, stabilize it first:\n%s --ecosystem %s --artifact %s --infile <file> --outfile <file>.stabilized\nYour rebuild is at %s; %s holds this and every earlier attempt's build.sh, out/, and src/.",
+			scratch.ContainerDiffrPath(), scratch.ContainerArtifactPath(), scratch.ContainerUpstreamPath(path.Base(r.Target.Artifact)),
+			scratch.ContainerToolPath(build.StabilizeTool), r.Target.Ecosystem, r.Target.Artifact,
+			scratch.ContainerArtifactPath(), scratch.ContainerBuildsDir)
+	}
 	p := r.vmPaths(runID)
-	return msg + "\n\n" + verifier.DiffSummaryPreamble + "\n" + diffSummary +
-		"\n" + verifier.MismatchGuidance +
+	return msg +
 		fmt.Sprintf("\nBoth artifacts remain on the VM, stabilized beside the originals. For content-level differences run diffr on the host with run_on_host:\n%s %s.stabilized %s.stabilized\n(--json for machine-readable output). The retained container's /src is the host directory %s, so an artifact you build in the container can be compared the same way at that path once stabilized:\n%s --ecosystem %s --artifact %s --infile <file> --outfile <file>.stabilized\nHost tools cannot read other container paths.",
 			p.diffr, p.rebuild, p.upstream, p.src, p.stabilize, r.Target.Ecosystem, r.Target.Artifact)
 }
