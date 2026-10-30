@@ -4,6 +4,7 @@
 package llm
 
 import (
+	"context"
 	"slices"
 	"testing"
 
@@ -65,7 +66,7 @@ func TestFileTools_ReadFile(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			resp := readTool.Function(map[string]any{"path": tt.path})
+			resp := readTool.Function(context.Background(), map[string]any{"path": tt.path})
 
 			if tt.wantErr {
 				if resp.Response["error"] == "" {
@@ -133,7 +134,7 @@ func TestFileTools_ListDir(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			resp := listTool.Function(map[string]any{"path": tt.path})
+			resp := listTool.Function(context.Background(), map[string]any{"path": tt.path})
 
 			if tt.wantErr {
 				if resp.Response["error"] == "" {

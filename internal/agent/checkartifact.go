@@ -43,9 +43,9 @@ func (k *artifactCheck) tool() *llm.FunctionDefinition {
 				},
 			},
 		},
-		Function: func(args map[string]any) genai.FunctionResponse {
+		Function: func(ctx context.Context, args map[string]any) genai.FunctionResponse {
 			p, _ := args["path"].(string)
-			result, match, err := k.check(context.Background(), p)
+			result, match, err := k.check(ctx, p)
 			// An error key marks the call failed, so set it only on an error.
 			resp := map[string]any{"result": result, "match": match}
 			if err != nil {

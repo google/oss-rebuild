@@ -199,8 +199,8 @@ func (a *defaultAgent) readLogsTool() *llm.FunctionDefinition {
 				},
 			},
 		},
-		Function: func(args map[string]any) genai.FunctionResponse {
-			logs, err := a.readPreviousBuildLogs(context.Background())
+		Function: func(ctx context.Context, args map[string]any) genai.FunctionResponse {
+			logs, err := a.readPreviousBuildLogs(ctx)
 			if err != nil {
 				return genai.FunctionResponse{
 					Name: "read_logs_end", // Name must match the FunctionDeclaration
@@ -264,8 +264,8 @@ func (a *defaultAgent) runOnHostTool() *llm.FunctionDefinition {
 			Parameters:  shellCommandParams(),
 			Response:    shellCommandResponse(),
 		},
-		Function: func(args map[string]any) genai.FunctionResponse {
-			return a.runShell("run_on_host", args, nil)
+		Function: func(ctx context.Context, args map[string]any) genai.FunctionResponse {
+			return a.runShell(ctx, "run_on_host", args, nil)
 		},
 	}
 }
@@ -278,8 +278,8 @@ func (a *defaultAgent) runInContainerTool() *llm.FunctionDefinition {
 			Parameters:  shellCommandParams(),
 			Response:    shellCommandResponse(),
 		},
-		Function: func(args map[string]any) genai.FunctionResponse {
-			return a.runShell("run_in_container", args, dockerExecInContainerScript)
+		Function: func(ctx context.Context, args map[string]any) genai.FunctionResponse {
+			return a.runShell(ctx, "run_in_container", args, dockerExecInContainerScript)
 		},
 	}
 }
@@ -290,7 +290,7 @@ func (a *defaultAgent) runInContainerTool() *llm.FunctionDefinition {
 // output to its ends, and shapes the response the LLM expects.
 // NOTE: The runner fetches the last uploadBytesLimit bytes, so the head of a
 // still larger output is the head of that window.
-func (a *defaultAgent) runShell(name string, args map[string]any, wrap func(string) string) genai.FunctionResponse {
+func (a *defaultAgent) runShell(ctx context.Context, name string, args map[string]any, wrap func(string) string) genai.FunctionResponse {
 	command, _ := args["command"].(string)
 	if command == "" {
 		return shellResponse(name, "", 0, "command is required", 0)
@@ -303,7 +303,7 @@ func (a *defaultAgent) runShell(name string, args map[string]any, wrap func(stri
 		if wrap != nil {
 			script = wrap(script)
 		}
-		return a.deps.ScratchRunner.RunCommand(context.Background(), script, timeout)
+		return a.deps.ScratchRunner.RunCommand(ctx, script, timeout)
 	}
 	out := fmt.Sprintf("/tmp/.rb-tool-%016x", rand.Uint64())
 	exitCode, output, err := run(detachOutput(command, out), timeout)

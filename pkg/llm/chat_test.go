@@ -48,7 +48,7 @@ func TestSendMessageKeepsHistoryIntactAcrossToolTurns(t *testing.T) {
 	}
 	probe := &FunctionDefinition{
 		FunctionDeclaration: genai.FunctionDeclaration{Name: "probe", Parameters: &genai.Schema{Type: genai.TypeObject, Properties: map[string]*genai.Schema{"n": {Type: genai.TypeInteger}}}},
-		Function: func(args map[string]any) genai.FunctionResponse {
+		Function: func(_ context.Context, args map[string]any) genai.FunctionResponse {
 			return genai.FunctionResponse{Name: "probe", Response: map[string]any{"echo": args["n"]}}
 		},
 	}
@@ -90,7 +90,7 @@ func TestFinalTurnNudgePrecedesToolResults(t *testing.T) {
 	}
 	probe := &FunctionDefinition{
 		FunctionDeclaration: genai.FunctionDeclaration{Name: "probe", Parameters: &genai.Schema{Type: genai.TypeObject, Properties: map[string]*genai.Schema{"n": {Type: genai.TypeInteger}}}},
-		Function: func(args map[string]any) genai.FunctionResponse {
+		Function: func(_ context.Context, args map[string]any) genai.FunctionResponse {
 			return genai.FunctionResponse{Name: "probe", Response: map[string]any{"echo": args["n"]}}
 		},
 	}
@@ -140,7 +140,7 @@ func TestUnknownToolIsAnsweredInBand(t *testing.T) {
 	}
 	probe := &FunctionDefinition{
 		FunctionDeclaration: genai.FunctionDeclaration{Name: "probe"},
-		Function: func(map[string]any) genai.FunctionResponse {
+		Function: func(context.Context, map[string]any) genai.FunctionResponse {
 			return genai.FunctionResponse{Name: "probe", Response: map[string]any{}}
 		},
 	}

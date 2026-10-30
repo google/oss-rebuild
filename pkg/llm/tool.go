@@ -3,10 +3,14 @@
 
 package llm
 
-import "google.golang.org/genai"
+import (
+	"context"
+
+	"google.golang.org/genai"
+)
 
 // Function is an implementation of an LLM tool.
-type Function func(args map[string]any) genai.FunctionResponse
+type Function func(ctx context.Context, args map[string]any) genai.FunctionResponse
 
 // FunctionDefinition is a function signature (FunctionDeclaration) along with its implementation (Function).
 type FunctionDefinition struct {

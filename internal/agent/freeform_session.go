@@ -104,7 +104,7 @@ func (s *chatSession) handoffTool() *llm.FunctionDefinition {
 			},
 			Response: &genai.Schema{Type: genai.TypeObject, Properties: map[string]*genai.Schema{"result": {Type: genai.TypeString}, "error": {Type: genai.TypeString}}},
 		},
-		Function: func(args map[string]any) genai.FunctionResponse {
+		Function: func(_ context.Context, args map[string]any) genai.FunctionResponse {
 			if !s.check.matched {
 				return genai.FunctionResponse{Name: "handoff", Response: map[string]any{"error": earlyHandoffResult}}
 			}
@@ -122,8 +122,8 @@ func (s *chatSession) tracing(defs []*llm.FunctionDefinition) []*llm.FunctionDef
 	for _, def := range defs {
 		name, fn := def.Name, def.Function
 		wrapped := *def
-		wrapped.Function = func(args map[string]any) genai.FunctionResponse {
-			resp := fn(args)
+		wrapped.Function = func(ctx context.Context, args map[string]any) genai.FunctionResponse {
+			resp := fn(ctx, args)
 			argsJSON, _ := json.Marshal(args)
 			respJSON, _ := json.Marshal(resp.Response)
 			s.trace = append(s.trace, traced(name, string(argsJSON), string(respJSON), nil))
