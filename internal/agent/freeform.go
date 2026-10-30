@@ -249,9 +249,13 @@ func (f *freeFormDriver) nextCandidate(ctx context.Context, opts *ProposeOpts) (
 		}
 	}
 	if !ff.fallback {
-		ff.fallback, ff.iterations = true, len(f.a.iterHistory)
 		s := new(schema.NewStrategyOneOf(ff.fallbackStrategy(f.a.loc)))
-		if f.checkCandidate(ctx, opts, s) == "" {
+		refusal, err := f.checkCandidate(ctx, opts, s)
+		if err != nil {
+			return nil, err // the fallback stays for the next call
+		}
+		ff.fallback, ff.iterations = true, len(f.a.iterHistory)
+		if refusal == "" {
 			log.Printf("free-form: %d formalizations rejected, proposing the handoff's commands as written", ff.attempts)
 			return s, nil
 		}
@@ -305,16 +309,16 @@ func (ff *freeForm) carries(inst rebuild.Instructions) bool {
 
 // checkCandidate judges a candidate as the fresh container would run it. One
 // that carries the handoff's verdict is not reviewed again. A pass skips check.
-func (f *freeFormDriver) checkCandidate(ctx context.Context, opts *ProposeOpts, s *schema.StrategyOneOf) string {
+func (f *freeFormDriver) checkCandidate(ctx context.Context, opts *ProposeOpts, s *schema.StrategyOneOf) (string, error) {
 	st, err := s.Strategy()
 	if err != nil {
-		return ""
+		return "", nil
 	}
 	inst, err := st.GenerateFor(f.a.t, f.a.buildEnv())
 	if err != nil {
 		ms, ok := st.(*rebuild.ManualStrategy)
 		if !ok {
-			return ""
+			return "", nil
 		}
 		inst = rebuild.Instructions{Deps: ms.Deps, Build: ms.Build}
 	}
@@ -325,12 +329,12 @@ func (f *freeFormDriver) checkCandidate(ctx context.Context, opts *ProposeOpts, 
 	if ff := f.pending; ff != nil && ff.allowed != nil && ff.carries(inst) {
 		record(ff.allowed)
 	} else if refusal, err = f.a.judge(ctx, in, func(v *buildpolicy.Review) { record(v) }); err != nil {
-		log.Printf("free-form: reviewing the candidate: %v", err)
+		return "", err
 	}
 	if refusal == "" {
 		f.checked = s
 	}
-	return refusal
+	return refusal, nil
 }
 
 // restoreSource resets the container's tree to the ref. Ignored files, such as
@@ -426,7 +430,12 @@ func (f *freeFormDriver) formalize(ctx context.Context, opts *ProposeOpts) (*sch
 	}
 	ff.iterations = len(f.a.iterHistory)
 	rec.Strategy = new(schema.NewStrategyOneOf(ws))
-	if refusal := f.checkCandidate(ctx, opts, rec.Strategy); refusal != "" {
+	refusal, err := f.checkCandidate(ctx, opts, rec.Strategy)
+	if err != nil {
+		rec.Error = err.Error()
+		return nil, err
+	}
+	if refusal != "" {
 		reject("refused before any build: " + refusal)
 		return nil, nil
 	}
