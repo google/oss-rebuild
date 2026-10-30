@@ -61,3 +61,22 @@ func TestReserveIteration(t *testing.T) {
 		t.Errorf("refused reservation changed IterationCount to %d", stored.IterationCount)
 	}
 }
+
+func TestBuildTimeout(t *testing.T) {
+	for _, tc := range []struct {
+		name    string
+		seconds int
+		want    time.Duration
+	}{
+		{"Unset", 0, schema.AgentBuildTimeoutMax},
+		{"RaisedToTheFloor", 60, buildTimeoutMin},
+		{"WithinBounds", 20 * 60, 20 * time.Minute},
+		{"CappedAtTheMax", 3 * 60 * 60, schema.AgentBuildTimeoutMax},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			if got := buildTimeout(tc.seconds); got != tc.want {
+				t.Errorf("buildTimeout(%d) = %s, want %s", tc.seconds, got, tc.want)
+			}
+		})
+	}
+}

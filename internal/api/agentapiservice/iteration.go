@@ -127,7 +127,7 @@ func AgentCreateIteration(ctx context.Context, req schema.AgentCreateIterationRe
 	h, err := deps.Executor.Start(ctx, input, build.Options{
 		BuildID:     obliviousID,
 		UseTimewarp: meta.AllRebuilders[input.Target.Ecosystem].UsesTimewarp(input),
-		// TODO: Should we set a Timeout?
+		Timeout:     buildTimeout(req.BuildTimeoutSeconds),
 		Resources: build.Resources{
 			AssetStore:       store,
 			ToolURLs:         toolURLs,
@@ -228,4 +228,15 @@ func AgentCreateIteration(ctx context.Context, req schema.AgentCreateIterationRe
 		ObliviousID: obliviousID,
 		Iteration:   &iteration,
 	}, nil
+}
+
+// buildTimeoutMin keeps a build sized from a quick VM run from failing on
+// the pool's slower start.
+const buildTimeoutMin = 10 * time.Minute
+
+func buildTimeout(seconds int) time.Duration {
+	if seconds <= 0 {
+		return schema.AgentBuildTimeoutMax
+	}
+	return min(max(time.Duration(seconds)*time.Second, buildTimeoutMin), schema.AgentBuildTimeoutMax)
 }

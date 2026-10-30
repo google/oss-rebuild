@@ -210,8 +210,30 @@ func TestDoIterationScratchSuccessConfirms(t *testing.T) {
 	if confirmed.Strategy != strategy || confirmed.SessionID != "sess" {
 		t.Errorf("confirmation request = %+v, want proposed strategy for session sess", confirmed)
 	}
+	// A verified build of no measurable length still gets the allowance.
+	if want := int(confirmationAllowance.Seconds()); confirmed.BuildTimeoutSeconds < want || confirmed.BuildTimeoutSeconds > int(schema.AgentBuildTimeoutMax.Seconds()) {
+		t.Errorf("BuildTimeoutSeconds = %d, want within [%d, %d]", confirmed.BuildTimeoutSeconds, want, int(schema.AgentBuildTimeoutMax.Seconds()))
+	}
 	if iter.ID != "confirm-1" || iter.Status != schema.AgentIterationStatusSuccess {
 		t.Errorf("returned iteration = %+v, want the confirmation iteration", iter)
+	}
+}
+
+func TestConfirmationTimeout(t *testing.T) {
+	for _, tc := range []struct {
+		name           string
+		verified, want time.Duration
+	}{
+		{"NoVMBuild", 0, schema.AgentBuildTimeoutMax},
+		{"QuickVMBuild", 30 * time.Second, confirmationAllowance + time.Minute},
+		{"SlowVMBuild", 10 * time.Minute, 30 * time.Minute},
+		{"CappedAtTheMax", time.Hour, schema.AgentBuildTimeoutMax},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			if got := confirmationTimeout(tc.verified); got != tc.want {
+				t.Errorf("confirmationTimeout(%s) = %s, want %s", tc.verified, got, tc.want)
+			}
+		})
 	}
 }
 
