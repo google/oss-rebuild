@@ -16,56 +16,58 @@ import (
 	"time"
 
 	"github.com/google/go-cmp/cmp"
-	"github.com/google/oss-rebuild/internal/api/scratchworkerservice"
+	"github.com/google/oss-rebuild/internal/api/scratchhostservice"
 	"github.com/google/oss-rebuild/internal/db"
 	"github.com/google/oss-rebuild/internal/httpx"
-	"github.com/google/oss-rebuild/pkg/act/api/form"
+	"github.com/google/oss-rebuild/pkg/act"
+	"github.com/google/oss-rebuild/pkg/act/api"
 	"github.com/google/oss-rebuild/pkg/longrunning"
 	"github.com/google/oss-rebuild/pkg/rebuild/schema"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 )
 
-// fakeWorker mimics the worker's /exec/start contract: parses the
-// form, records the request, returns {}. Tests can swap in a 500 to
+// fakeWorker mimics the host broker's /exec/start and /exec/op/kill:
+// records the request and returns {}. Tests can swap in a failure to
 // exercise the POST-failure path.
 type fakeWorker struct {
-	srv        *httptest.Server
-	received   *scratchworkerservice.StartRequest
-	respStatus int
+	srv          *httptest.Server
+	received     *scratchhostservice.StartRequest
+	killReceived *scratchhostservice.OpRequest
+	respStatus   int
 }
 
 func newFakeWorker(t *testing.T) *fakeWorker {
 	t.Helper()
 	fw := &fakeWorker{respStatus: http.StatusOK}
-	fw.srv = httptest.NewServer(http.HandlerFunc(func(rw http.ResponseWriter, r *http.Request) {
-		if r.URL.Path != "/exec/start" {
-			http.NotFound(rw, r)
-			return
-		}
-		if err := r.ParseForm(); err != nil {
-			http.Error(rw, err.Error(), http.StatusBadRequest)
-			return
-		}
-		var req scratchworkerservice.StartRequest
-		if err := form.Unmarshal(r.Form, &req); err != nil {
-			http.Error(rw, err.Error(), http.StatusBadRequest)
-			return
-		}
-		fw.received = &req
+	fail := func() error {
 		if fw.respStatus != http.StatusOK {
-			http.Error(rw, "boom", fw.respStatus)
-			return
+			return api.AsStatus(codes.Internal, errors.New("boom"))
 		}
-		rw.Header().Set("Content-Type", "application/json")
-		_, _ = rw.Write([]byte("{}"))
+		return nil
+	}
+	mux := http.NewServeMux()
+	mux.Handle("/exec/start", api.Handler(api.NoDepsInit, func(_ context.Context, req scratchhostservice.StartRequest, _ *api.NoDeps) (*act.NoOutput, error) {
+		fw.received = &req
+		if err := fail(); err != nil {
+			return nil, err
+		}
+		return &act.NoOutput{}, nil
 	}))
+	mux.Handle("/exec/op/kill", api.Handler(api.NoDepsInit, func(_ context.Context, req scratchhostservice.OpRequest, _ *api.NoDeps) (*act.NoOutput, error) {
+		fw.killReceived = &req
+		if err := fail(); err != nil {
+			return nil, err
+		}
+		return &act.NoOutput{}, nil
+	}))
+	fw.srv = httptest.NewServer(mux)
 	t.Cleanup(fw.srv.Close)
 	return fw
 }
 
-func (f *fakeWorker) dialer() WorkerDialer {
-	return func(_ schema.Scratch) (httpx.BasicClient, *url.URL, error) {
+func (f *fakeWorker) dialer() HostDialer {
+	return func(Instance) (httpx.BasicClient, *url.URL, error) {
 		u, _ := url.Parse(f.srv.URL)
 		return f.srv.Client(), u, nil
 	}
@@ -77,7 +79,7 @@ func fixture(t *testing.T, opID string, fw *fakeWorker) (*ScratchExecCreateDeps,
 	t.Helper()
 	scratches := db.NewMemoryScratch()
 	if err := scratches.Insert(context.Background(), schema.Scratch{
-		ID: "s-1", State: schema.ScratchReady, VMName: "vm-1", InternalIP: "10.0.0.1",
+		ID: "s-1", State: schema.ScratchReady, Host: "h-1", InternalIP: "10.0.0.1",
 		ObliviousID: "obid-s-1",
 	}); err != nil {
 		t.Fatalf("seed scratch: %v", err)
@@ -86,9 +88,10 @@ func fixture(t *testing.T, opID string, fw *fakeWorker) (*ScratchExecCreateDeps,
 	createDeps := &ScratchExecCreateDeps{
 		Scratches:    scratches,
 		Execs:        execs,
-		WorkerDialer: fw.dialer(),
+		Dialer:       fw.dialer(),
 		OutputBucket: "test-output",
 		IDGen:        func() string { return opID },
+		OpTimeout:    time.Hour,
 	}
 	getDeps := &ScratchExecGetDeps{Scratches: scratches, Execs: execs}
 	return createDeps, getDeps, scratches, execs
@@ -129,7 +132,7 @@ func TestScratchExecCreate_HappyPath(t *testing.T) {
 	if fw.received == nil {
 		t.Fatalf("worker did not receive a request")
 	}
-	want := scratchworkerservice.StartRequest{
+	want := scratchhostservice.StartRequest{
 		OpID:           opID,
 		ScratchID:      "s-1",
 		Cmd:            []string{"sh", "-c", "echo hi"},
@@ -139,7 +142,7 @@ func TestScratchExecCreate_HappyPath(t *testing.T) {
 		TimeoutSeconds: 30,
 	}
 	if diff := cmp.Diff(want, *fw.received); diff != "" {
-		t.Errorf("worker request mismatch (-want +got):\n%s", diff)
+		t.Errorf("host request mismatch (-want +got):\n%s", diff)
 	}
 	if op.Result == nil || op.Result.OutURI == "" {
 		t.Errorf("op.Result.OutURI unset; want pre-populated")
@@ -162,9 +165,10 @@ func TestScratchExecCreate_NoObliviousIDFails(t *testing.T) {
 	deps := &ScratchExecCreateDeps{
 		Scratches:    scratches,
 		Execs:        db.NewMemoryScratchExecs(),
-		WorkerDialer: fw.dialer(),
+		Dialer:       fw.dialer(),
 		OutputBucket: "test-output",
 		IDGen:        func() string { return opID },
+		OpTimeout:    time.Hour,
 	}
 	_, err := ScratchExecCreate(context.Background(), schema.ScratchExecRequest{
 		ScratchID: "s-1", Cmd: []string{"true"},
@@ -240,11 +244,12 @@ func TestScratchExecCreate_DialerFailureReturnsAPIError(t *testing.T) {
 	deps := &ScratchExecCreateDeps{
 		Scratches: scratches,
 		Execs:     execs,
-		WorkerDialer: func(_ schema.Scratch) (httpx.BasicClient, *url.URL, error) {
+		Dialer: func(Instance) (httpx.BasicClient, *url.URL, error) {
 			return nil, nil, errors.New("dialer boom")
 		},
 		OutputBucket: "test-output",
 		IDGen:        func() string { return opID },
+		OpTimeout:    time.Hour,
 	}
 	_, err := ScratchExecCreate(context.Background(), schema.ScratchExecRequest{
 		ScratchID: "s-1", Cmd: []string{"true"},
@@ -290,9 +295,10 @@ func TestScratchExecCreate_FinalizePersistFailureSurfacesAPIError(t *testing.T) 
 	deps := &ScratchExecCreateDeps{
 		Scratches:    scratches,
 		Execs:        execs,
-		WorkerDialer: fw.dialer(),
+		Dialer:       fw.dialer(),
 		OutputBucket: "test-output",
 		IDGen:        func() string { return opID },
+		OpTimeout:    time.Hour,
 	}
 
 	_, err := ScratchExecCreate(context.Background(), schema.ScratchExecRequest{
@@ -335,6 +341,28 @@ func TestScratchExecCreate_TimeoutDefaultedAndStamped(t *testing.T) {
 	}
 	if fw.received == nil || fw.received.TimeoutSeconds != 3600 {
 		t.Errorf("worker TimeoutSeconds = %+v; want 3600", fw.received)
+	}
+}
+
+// An unbounded exec would exempt its scratch and host from reaping.
+func TestScratchExecCreate_UnboundedRejected(t *testing.T) {
+	const opID = "op-unbounded"
+	fw := newFakeWorker(t)
+	createDeps, _, _, execs := fixture(t, opID, fw)
+	createDeps.OpTimeout = 0
+
+	_, err := ScratchExecCreate(context.Background(), schema.ScratchExecRequest{
+		ScratchID: "s-1", Cmd: []string{"true"},
+	}, createDeps)
+	if status.Code(err) != codes.InvalidArgument {
+		t.Errorf("code = %s; want InvalidArgument. err=%v", status.Code(err), err)
+	}
+	// Rejection happens before Insert: no dangling record.
+	if _, gerr := execs.Get(context.Background(), opID); !errors.Is(gerr, db.ErrNotFound) {
+		t.Errorf("exec exists after rejection; want no record (gerr=%v)", gerr)
+	}
+	if fw.received != nil {
+		t.Error("worker was dispatched to; want the request refused first")
 	}
 }
 
@@ -385,9 +413,9 @@ func (stubOKClient) Do(*http.Request) (*http.Response, error) {
 	}, nil
 }
 
-func stubDialer() WorkerDialer {
-	return func(schema.Scratch) (httpx.BasicClient, *url.URL, error) {
-		u, _ := url.Parse("http://worker.invalid")
+func stubDialer() HostDialer {
+	return func(Instance) (httpx.BasicClient, *url.URL, error) {
+		u, _ := url.Parse("http://host.invalid")
 		return stubOKClient{}, u, nil
 	}
 }
@@ -419,7 +447,7 @@ func waitFixture(t *testing.T, opID string, sync Syncer) (*ScratchExecCreateDeps
 	t.Helper()
 	scratches := db.NewMemoryScratch()
 	if err := scratches.Insert(context.Background(), schema.Scratch{
-		ID: "s-1", State: schema.ScratchReady, VMName: "vm-1", InternalIP: "10.0.0.1",
+		ID: "s-1", State: schema.ScratchReady, Host: "h-1", InternalIP: "10.0.0.1",
 		ObliviousID: "obid-s-1",
 	}); err != nil {
 		t.Fatalf("seed scratch: %v", err)
@@ -428,9 +456,10 @@ func waitFixture(t *testing.T, opID string, sync Syncer) (*ScratchExecCreateDeps
 	return &ScratchExecCreateDeps{
 		Scratches:    scratches,
 		Execs:        execs,
-		WorkerDialer: stubDialer(),
+		Dialer:       stubDialer(),
 		OutputBucket: "test-output",
 		IDGen:        func() string { return opID },
+		OpTimeout:    time.Hour,
 		Syncer:       sync,
 	}, execs
 }
@@ -759,6 +788,86 @@ func TestScratchExecGet_NotFound(t *testing.T) {
 	_, err := ScratchExecGet(context.Background(), schema.GetOperationRequest{ID: "missing"}, deps)
 	if status.Code(err) != codes.NotFound {
 		t.Errorf("code = %s; want NotFound. err=%v", status.Code(err), err)
+	}
+}
+
+func TestScratchExecKill_ForwardsToHost(t *testing.T) {
+	const opID = "op-kill"
+	fw := newFakeWorker(t)
+	createDeps, _, scratches, execs := fixture(t, opID, fw)
+	if _, err := ScratchExecCreate(context.Background(), schema.ScratchExecRequest{
+		ScratchID: "s-1", Cmd: []string{"sleep", "30"},
+	}, createDeps); err != nil {
+		t.Fatalf("ScratchExecCreate: %v", err)
+	}
+	killDeps := &ScratchExecKillDeps{Scratches: scratches, Execs: execs, Dialer: fw.dialer()}
+
+	if _, err := ScratchExecKill(context.Background(), schema.ScratchExecKillRequest{ID: opID}, killDeps); err != nil {
+		t.Fatalf("ScratchExecKill: %v", err)
+	}
+	if fw.killReceived == nil || fw.killReceived.ID != opID {
+		t.Errorf("worker kill request = %+v; want ID %q", fw.killReceived, opID)
+	}
+	// The record stays pending: the next sync persists the terminal state.
+	stored, err := execs.Get(context.Background(), opID)
+	if err != nil {
+		t.Fatalf("execs.Get: %v", err)
+	}
+	if stored.State != schema.ScratchExecPending {
+		t.Errorf("persisted State = %q; want pending", stored.State)
+	}
+}
+
+func TestScratchExecKill_TerminalOpIsNoop(t *testing.T) {
+	const opID = "op-kill-done"
+	fw := newFakeWorker(t)
+	_, _, scratches, execs := fixture(t, opID, fw)
+	if err := execs.Insert(context.Background(), schema.ScratchExec{
+		ID: opID, ScratchID: "s-1", State: schema.ScratchExecCompleted,
+	}); err != nil {
+		t.Fatalf("seed exec: %v", err)
+	}
+	killDeps := &ScratchExecKillDeps{Scratches: scratches, Execs: execs, Dialer: fw.dialer()}
+
+	if _, err := ScratchExecKill(context.Background(), schema.ScratchExecKillRequest{ID: opID}, killDeps); err != nil {
+		t.Fatalf("ScratchExecKill(terminal): %v", err)
+	}
+	if fw.killReceived != nil {
+		t.Errorf("worker received kill %+v; want none (already terminal)", fw.killReceived)
+	}
+}
+
+func TestScratchExecKill_NotFound(t *testing.T) {
+	killDeps := &ScratchExecKillDeps{Execs: db.NewMemoryScratchExecs()}
+	_, err := ScratchExecKill(context.Background(), schema.ScratchExecKillRequest{ID: "missing"}, killDeps)
+	if status.Code(err) != codes.NotFound {
+		t.Errorf("code = %s; want NotFound. err=%v", status.Code(err), err)
+	}
+}
+
+func TestScratchExecKill_HostFailureUnavailable(t *testing.T) {
+	const opID = "op-kill-fail"
+	fw := newFakeWorker(t)
+	fw.respStatus = http.StatusInternalServerError
+	_, _, scratches, execs := fixture(t, opID, fw)
+	if err := execs.Insert(context.Background(), schema.ScratchExec{
+		ID: opID, ScratchID: "s-1", State: schema.ScratchExecPending,
+	}); err != nil {
+		t.Fatalf("seed exec: %v", err)
+	}
+	killDeps := &ScratchExecKillDeps{Scratches: scratches, Execs: execs, Dialer: fw.dialer()}
+
+	_, err := ScratchExecKill(context.Background(), schema.ScratchExecKillRequest{ID: opID}, killDeps)
+	if status.Code(err) != codes.Unavailable {
+		t.Errorf("code = %s; want Unavailable. err=%v", status.Code(err), err)
+	}
+	// The failed kill must not finalize the record.
+	stored, gerr := execs.Get(context.Background(), opID)
+	if gerr != nil {
+		t.Fatalf("execs.Get: %v", gerr)
+	}
+	if stored.State != schema.ScratchExecPending {
+		t.Errorf("persisted State = %q; want pending", stored.State)
 	}
 }
 

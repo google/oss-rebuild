@@ -51,35 +51,35 @@ data "google_compute_zones" "scratch" {
   project = var.project
 }
 
-# Per-class instance templates for scratch VMs.
+# Per-class scratch host templates. Guests are KVM microVMs, so nested
+# virtualization. Classes differ only in host shape.
 locals {
-  scratch_classes = merge(
+  scratch_host_classes = merge(
     { standard = var.scratch_machine_type },
     var.scratch_jumbo_machine_type != "" ? { jumbo = var.scratch_jumbo_machine_type } : {},
   )
+  # Host-only, so it need not be unique across hosts.
+  scratch_guest_subnet = "10.200.0.0/24"
 }
-
-# Instance templates for scratch VMs. The startup script fetches and runs the
-# scratch-worker binary as a systemd service. agent-api drives the worker over
-# private-IP HTTP with an ID token. Conditionally attach a service account for
-# private instances to access bootstrap tools.
-resource "google_compute_instance_template" "scratch" {
-  for_each     = var.enable_scratch ? local.scratch_classes : {}
-  name_prefix  = "${var.host}-scratch-${each.key}-"
+resource "google_compute_instance_template" "scratch-host" {
+  for_each     = var.enable_scratch ? local.scratch_host_classes : {}
+  name_prefix  = "${var.host}-scratch-host-${each.key}-"
   machine_type = each.value
   region       = "us-central1"
 
-  # NOTE: This block needs to be conditionally omitted to ensure an empty
-  # "email" field isn't interpreted as the default compute service account.
-  dynamic "service_account" {
-    for_each = var.public ? [] : [1]
-    content {
-      email  = google_service_account.scratch-worker[0].email
-      scopes = ["https://www.googleapis.com/auth/devstorage.read_only"]
-    }
+  advanced_machine_features {
+    enable_nested_virtualization = true
+  }
+
+  # Bootstrap only, to pull the broker image. IAM, not scopes, bounds it.
+  service_account {
+    email  = google_service_account.scratch-host[0].email
+    scopes = ["https://www.googleapis.com/auth/cloud-platform"]
   }
 
   disk {
+    # QEMU ships in the broker image, so COS suffices. pd-ssd, since the disk
+    # holds every guest's overlays and image pulls.
     source_image = "cos-cloud/cos-stable"
     auto_delete  = true
     boot         = true
@@ -92,17 +92,18 @@ resource "google_compute_instance_template" "scratch" {
     subnetwork = google_compute_subnetwork.subnet[0].name
   }
 
-  tags   = ["scratch"]
-  labels = { purpose = "scratch" }
+  tags   = ["scratch-host"]
+  labels = { purpose = "scratch-host", scratch_class = each.key }
 
   metadata = {
-    user-data = templatefile("${path.module}/scratch_cloudinit.yaml", {
-      // NOTE: The official docker distribution is alpine-based.
-      cli_image = "docker:29.5-cli@sha256:11e1133c30f3ceb73c6bdc7dfb78b3f9ed8e8e0d1d0400e91c5ec2eb240bf2ff"
-      caller_sa = google_service_account.orchestrator.email
+    user-data = templatefile("${path.module}/scratch_host_cos_cloudinit.yaml", {
+      host_image   = module.prebuild_images["scratch-host"].full_image_url
+      caller_sa    = google_service_account.orchestrator.email
+      audience     = "https://builder/$(hostname)"
+      guest_subnet = local.scratch_guest_subnet
     })
-    startup-script = templatefile("${path.module}/scratch_startup.sh", {
-      worker_binary_uri = "gs://${google_storage_bucket.bootstrap-tools.name}/${module.prebuild_images["scratch-worker"].image_version}/scratch-worker"
+    startup-script = templatefile("${path.module}/scratch_host_cos_startup.sh", {
+      guest_subnet = local.scratch_guest_subnet
     })
   }
 
@@ -527,15 +528,15 @@ resource "google_cloud_run_v2_service" "agent-api" {
         ], var.enable_private_build_pool ? [
         "--gcb-private-pool-name=${google_cloudbuild_worker_pool.private-pool[0].id}",
         "--gcb-private-pool-region=us-central1",
-        ] : [], var.enable_scratch ? [
-        "--scratch-enabled=true",
-        "--scratch-zones=${join(",", data.google_compute_zones.scratch[0].names)}",
-        "--scratch-worker-port=8080",
-        "--scratch-instance-standard-template=${google_compute_instance_template.scratch["standard"].self_link}",
-        "--scratch-output-bucket=${google_storage_bucket.scratch-output[0].name}",
-        ] : [], var.enable_scratch && var.scratch_jumbo_machine_type != "" ? [
-        "--scratch-instance-jumbo-template=${google_compute_instance_template.scratch["jumbo"].self_link}",
-      ] : [])
+        ] : [], var.enable_scratch ? concat([
+          "--scratch-enabled=true",
+          "--scratch-zones=${join(",", data.google_compute_zones.scratch[0].names)}",
+          "--scratch-host-standard-template=${google_compute_instance_template.scratch-host["standard"].self_link}",
+          "--scratch-host-port=8080",
+          "--scratch-output-bucket=${google_storage_bucket.scratch-output[0].name}",
+          ], contains(keys(local.scratch_host_classes), "jumbo") ? [
+          "--scratch-host-jumbo-template=${google_compute_instance_template.scratch-host["jumbo"].self_link}",
+      ] : []) : [])
       resources {
         limits = {
           cpu    = "1000m"
@@ -552,7 +553,7 @@ resource "google_cloud_run_v2_service" "agent-api" {
         failure_threshold = 90
       }
     }
-    # When scratch is enabled, agent-api reaches worker VMs on private
+    # When scratch is enabled, agent-api reaches scratch hosts on private
     # IPs via Direct VPC egress.
     dynamic "vpc_access" {
       for_each = var.enable_scratch ? [1] : []
