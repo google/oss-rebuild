@@ -15,13 +15,16 @@
 package scratch
 
 import (
+	"cmp"
 	"context"
 	"io"
+	"log"
 	"net/url"
 	"strings"
 	"time"
 
 	gcs "cloud.google.com/go/storage"
+	"github.com/google/oss-rebuild/pkg/act"
 	"github.com/google/oss-rebuild/pkg/act/api"
 	"github.com/google/oss-rebuild/pkg/longrunning"
 	"github.com/google/oss-rebuild/pkg/rebuild/schema"
@@ -40,12 +43,16 @@ const (
 	pollBackstopSlack = 10 * time.Minute
 	// maxConsecutivePollErrs bounds tolerated transient poll failures.
 	maxConsecutivePollErrs = 5
+	killDispatchTimeout    = 30 * time.Second // bounds an abandoned op's kill
+	createHold             = 20 * time.Second // a create's wait for its command
+	createTimeout          = time.Minute      // a detached create, hold included
 )
 
 // Stubs bundles the agent-api scratch exec endpoints.
 type Stubs struct {
 	ExecCreate api.StubFn[schema.ScratchExecRequest, longrunning.Operation[schema.ScratchExecResult]]
 	ExecGet    api.StubFn[schema.GetOperationRequest, longrunning.Operation[schema.ScratchExecResult]]
+	ExecKill   api.StubFn[schema.ScratchExecKillRequest, act.NoOutput] // optional
 }
 
 // Exec dispatches one exec op and polls it to a terminal state. The returned
@@ -53,8 +60,8 @@ type Stubs struct {
 // op may still describe a failure via Operation.Error or a nonzero exit code.
 // A zero pollInterval uses the package default.
 //
-// Cancelling ctx stops polling only: with no worker kill endpoint, the remote
-// command runs until its worker-enforced TimeoutSeconds.
+// Cancelling ctx stops polling and sends a best-effort kill. The
+// worker-enforced TimeoutSeconds is the backstop.
 func Exec(ctx context.Context, stubs Stubs, req schema.ScratchExecRequest, pollInterval time.Duration) (*longrunning.Operation[schema.ScratchExecResult], error) {
 	return exec(ctx, stubs, req, pollInterval, nil)
 }
@@ -66,7 +73,11 @@ func exec(ctx context.Context, stubs Stubs, req schema.ScratchExecRequest, pollI
 	if pollInterval <= 0 {
 		pollInterval = defaultPollInterval
 	}
-	op, err := stubs.ExecCreate(ctx, req)
+	req.WaitSeconds = cmp.Or(req.WaitSeconds, int(createHold.Seconds()))
+	// Detached so a caller that gives up mid-hold still gets the op id its kill needs.
+	cctx, cancel := context.WithTimeout(context.WithoutCancel(ctx), createTimeout)
+	op, err := stubs.ExecCreate(cctx, req)
+	cancel()
 	if err != nil {
 		return nil, errors.Wrap(err, "creating exec")
 	}
@@ -85,10 +96,12 @@ func exec(ctx context.Context, stubs Stubs, req schema.ScratchExecRequest, pollI
 	var pollErrs int
 	for !op.Done {
 		if time.Now().After(deadline) {
+			killAbandoned(ctx, stubs, op.ID)
 			return nil, errors.Errorf("exec %s not terminal after %s", op.ID, timeout+pollBackstopSlack)
 		}
 		select {
 		case <-ctx.Done():
+			killAbandoned(ctx, stubs, op.ID)
 			return nil, ctx.Err()
 		case <-time.After(interval):
 		}
@@ -98,11 +111,9 @@ func exec(ctx context.Context, stubs Stubs, req schema.ScratchExecRequest, pollI
 			// server-side.
 			pollErrs++
 			if pollErrs >= maxConsecutivePollErrs {
-				// NOTE: Giving up strands the remote command: with no kill
-				// endpoint it keeps running (and occupying the single-build
-				// VM) until its worker-enforced timeout, so a brief broker
-				// outage can leave an abandoned build contending with the
-				// next one dispatched.
+				// NOTE: The kill rides the broker whose polls just failed. If it is lost,
+				// the command runs to its worker-enforced timeout.
+				killAbandoned(ctx, stubs, op.ID)
 				return nil, errors.Wrap(err, "polling exec")
 			}
 			continue
@@ -121,6 +132,19 @@ func exec(ctx context.Context, stubs Stubs, req schema.ScratchExecRequest, pollI
 		observe(op)
 	}
 	return op, nil
+}
+
+// killAbandoned sends a best-effort kill for an abandoned op. Failures are
+// only logged: the worker-enforced timeout is the backstop.
+func killAbandoned(ctx context.Context, stubs Stubs, opID string) {
+	if stubs.ExecKill == nil {
+		return
+	}
+	kctx, cancel := context.WithTimeout(context.WithoutCancel(ctx), killDispatchTimeout)
+	defer cancel()
+	if _, err := stubs.ExecKill(kctx, schema.ScratchExecKillRequest{ID: opID}); err != nil {
+		log.Printf("exec %s: kill: %v", opID, err)
+	}
 }
 
 // outputObject resolves the op's OutURI to a GCS object handle, or nil when
