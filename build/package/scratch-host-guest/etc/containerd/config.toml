@@ -1,0 +1,8 @@
+# Copyright 2026 Google LLC
+# SPDX-License-Identifier: Apache-2.0
+
+# The containerd snapshotter keeps docker's images under containerd's root,
+# so it goes on the scratch disk. CRI stays off, as in the package default.
+version = 2
+root = "/scratch/containerd"
+disabled_plugins = ["io.containerd.grpc.v1.cri"]

@@ -4,6 +4,7 @@
 package agentapiservice
 
 import (
+	"cmp"
 	"context"
 	"errors"
 	"fmt"
@@ -26,9 +27,11 @@ type ScratchReapResponse struct {
 	ScratchesReaped   int `json:"scratches_reaped"`
 	OpsFinalized      int `json:"ops_finalized"`
 	SessionsFinalized int `json:"sessions_finalized"`
+	GuestsSwept       int `json:"guests_swept,omitempty"` // orphans the host sweep destroyed, zero without scratch hosts
+	HostsReaped       int `json:"hosts_reaped,omitempty"`
 }
 
-// opDeadlineGrace pads each op's worker-enforced timeout to allow for
+// opDeadlineGrace pads each op's host-enforced timeout to allow for
 // dispatch latency, clock skew, and sync slack before the reaper treats
 // the op as expired.
 const opDeadlineGrace = 10 * time.Minute
@@ -40,35 +43,33 @@ const sessionDeadlineGrace = 15 * time.Minute
 
 // ScratchReapDeps wires the reaper.
 type ScratchReapDeps struct {
-	Scratches db.Scratch
-	Execs     db.ScratchExecs
-	GCE       GCE
-	Sessions  db.Sessions
-	// Syncer (optional) pulls a pending op's final status from its worker
-	// before the scratch is torn down or the op declared expired. nil
-	// finalizes such ops blind.
-	Syncer Syncer
-	Zones  []string // zones a VM may sit in when its record has none (see deleteScratch)
-	// IdleThreshold is how long a scratch may go without a write before
-	// the reaper takes it (see db.ScratchIdleSince).
-	IdleThreshold time.Duration // default: 30m
+	Scratches     db.Scratch
+	Execs         db.ScratchExecs
+	GCE           GCE
+	Sessions      db.Sessions
+	Syncer        Syncer        // nil finalizes ops blind
+	Zones         []string      // host zones. Empty skips host rules
+	IdleThreshold time.Duration // default: 30m. Also caps empty hosts
 	// TeardownCap bounds the VM deletes one pass attempts, across idle/dead
 	// session sweeps, while the other candidates wait for the next pass.
-	TeardownCap int // default: 25
+	TeardownCap       int           // default: 25
+	Hosts             *HostClient   // nil skips host rules
+	HostHealthTimeout time.Duration // per-pass probe budget. Zero: 3s
+	HostHealthDelay   time.Duration // between probes. Zero means 1s
 }
 
 func (d *ScratchReapDeps) idleThreshold() time.Duration {
-	if d.IdleThreshold > 0 {
-		return d.IdleThreshold
-	}
-	return 30 * time.Minute
+	return cmp.Or(d.IdleThreshold, 30*time.Minute)
 }
 
-func (d *ScratchReapDeps) teardownCap() int {
-	if d.TeardownCap > 0 {
-		return d.TeardownCap
-	}
-	return 25
+func (d *ScratchReapDeps) teardownCap() int { return cmp.Or(d.TeardownCap, 25) }
+
+func (d *ScratchReapDeps) hostHealthTimeout() time.Duration {
+	return cmp.Or(d.HostHealthTimeout, 3*time.Second)
+}
+
+func (d *ScratchReapDeps) hostHealthDelay() time.Duration {
+	return cmp.Or(d.HostHealthDelay, time.Second)
 }
 
 // teardownBudget counts a pass's remaining teardowns and the candidates it
@@ -85,8 +86,8 @@ func (b *teardownBudget) wait() bool {
 	return true
 }
 
-// deadlineFor returns the op's hard deadline: its worker-enforced timeout
-// plus grace, anchored at broker-side creation since the worker's observed
+// deadlineFor returns the op's hard deadline: its host-enforced timeout
+// plus grace, anchored at broker-side creation since the host's observed
 // start only lands on the record at terminal sync. Only meaningful for
 // bounded ops (TimeoutSeconds set). Ops without a bound never expire and
 // exempt their scratch from teardown.
@@ -94,20 +95,20 @@ func deadlineFor(exec schema.ScratchExec) time.Time {
 	return exec.CreatedAt.Add(time.Duration(exec.TimeoutSeconds)*time.Second + opDeadlineGrace)
 }
 
-// ScratchReap moves records that stopped making progress to a terminal
-// state. Each sweep is best-effort per item: a failure is logged and the
-// pass goes on.
+// ScratchReap moves stalled records to a terminal state and applies the host
+// rules. Failures are logged per item and the pass goes on.
 //
-//	sweep          candidate                                    outcome
-//	idle scratch   ready, LastUsed past IdleThreshold           VM and record deleted
-//	stuck scratch  starting or deleting, no write for as long   VM and record deleted
-//	pending exec   past its deadline, or its scratch gone       TimedOut or Lost
-//	dead session   RUNNING, no write for timeout plus grace     VM deleted, COMPLETED/ERROR
+//	sweep             candidate                                    outcome
+//	idle scratch      ready, LastUsed past IdleThreshold           released, record deleted
+//	stuck scratch     starting or deleting, no write for as long   released, record deleted
+//	pending exec      past its deadline, or its scratch gone       TimedOut or Lost
+//	dead session      RUNNING, no write for timeout plus grace     released, COMPLETED/ERROR
+//	orphan guest      no live record naming its host               guest destroyed
+//	empty host        no guest since before IdleThreshold          host deleted
+//	unreachable host  probes fail for HostHealthTimeout            retired, deleted once retired that long
 //
-// A pending exec inside its deadline keeps its scratch up, so a longer
-// execution needs a longer exec timeout rather than a longer idle
-// threshold. Idle and stuck scratches come from one listing, and their
-// teardowns share TeardownCap with dead sessions.
+// A pending exec inside its deadline keeps its scratch up. Host rules run
+// last, so a host emptied by this pass is collected in it.
 func ScratchReap(ctx context.Context, _ ScratchReapRequest, deps *ScratchReapDeps) (*ScratchReapResponse, error) {
 	now := time.Now().UTC()
 	idleCutoff := now.Add(-deps.idleThreshold())
@@ -131,8 +132,7 @@ func ScratchReap(ctx context.Context, _ ScratchReapRequest, deps *ScratchReapDep
 			busy[exec.ScratchID] = true
 		}
 	}
-	// Pending ops on a scratch are synced before its teardown so exit
-	// codes are captured while the worker is still reachable.
+	// Sync pending ops before teardown, while the host still holds the ledger.
 	idle, err := deps.Scratches.ListIdleSince(ctx, idleCutoff)
 	if err != nil {
 		return nil, api.AsStatus(codes.Internal, pkgerrors.Wrap(err, "list idle scratches"))
@@ -160,7 +160,7 @@ func ScratchReap(ctx context.Context, _ ScratchReapRequest, deps *ScratchReapDep
 			continue
 		}
 		budget.left--
-		if err := deleteScratch(ctx, deps.Scratches, deps.GCE, cur, deps.Zones); err != nil {
+		if err := deleteScratch(ctx, deps.Scratches, deps.GCE, deps.Hosts, cur, deps.Zones); err != nil {
 			log.Printf("reap teardown scratch %s: %v", scratch.ID, err)
 			continue
 		}
@@ -193,10 +193,13 @@ func ScratchReap(ctx context.Context, _ ScratchReapRequest, deps *ScratchReapDep
 	if budget.deferred > 0 {
 		log.Printf("reap: teardown cap %d spent, %d candidates wait for the next pass", deps.teardownCap(), budget.deferred)
 	}
+	guestsSwept, hostsReaped := sweepHosts(ctx, deps, now)
 	return &ScratchReapResponse{
 		ScratchesReaped:   scratchesReaped,
 		OpsFinalized:      opsFinalized,
 		SessionsFinalized: sessionsFinalized,
+		GuestsSwept:       guestsSwept,
+		HostsReaped:       hostsReaped,
 	}, nil
 }
 
@@ -228,7 +231,7 @@ func finalizeDeadSessions(ctx context.Context, deps *ScratchReapDeps, now time.T
 					continue
 				}
 				budget.left--
-				if err := deleteScratch(ctx, deps.Scratches, deps.GCE, sc, deps.Zones); err != nil {
+				if err := deleteScratch(ctx, deps.Scratches, deps.GCE, deps.Hosts, sc, deps.Zones); err != nil {
 					log.Printf("reap finalize session %s: teardown scratch %s: %v", s.ID, s.ScratchID, err)
 				}
 			}
@@ -273,15 +276,15 @@ func syncPendingFor(ctx context.Context, deps *ScratchReapDeps, scratch schema.S
 // terminalStateFor returns the State to transition exec to in this reap
 // pass plus the diagnostic Status to attach, or ScratchExecPending with a
 // nil Status if it should stay pending or was already finalized here (an
-// expired op pulled through a still-reachable worker is persisted by the
+// expired op pulled through a still-reachable host is persisted by the
 // Syncer itself).
 //
 // The deadline check stays ahead of the scratch-state checks so ops on a
 // scratch torn down earlier in the pass finalize TimedOut, not Lost.
 func terminalStateFor(ctx context.Context, deps *ScratchReapDeps, exec schema.ScratchExec, now time.Time) (schema.ScratchExecState, *schema.Status) {
 	if exec.TimeoutSeconds > 0 && !exec.CreatedAt.IsZero() && now.After(deadlineFor(exec)) {
-		// The worker killed the command at its timeout, so a reachable
-		// worker has the real exit status and output. Pull those through
+		// The host killed the command at its timeout, so a reachable
+		// host has the real exit status and output. Pull those through
 		// before falling back to a blind TimedOut.
 		if deps.Syncer != nil {
 			if scratch, err := deps.Scratches.Get(ctx, exec.ScratchID); err == nil && scratch.State == schema.ScratchReady {
