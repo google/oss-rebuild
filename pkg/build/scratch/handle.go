@@ -50,9 +50,8 @@ func (h *scratchHandle) Status() build.BuildState {
 	return h.status
 }
 
-// Cancel stops driving the build (polling and follow-up steps). There is no
-// worker kill endpoint yet, so the remote command itself continues until its
-// worker-enforced timeout: effectively build.CancelDetached semantics.
+// Cancel stops driving the build and sends a best-effort kill for the
+// in-flight command, with the worker-enforced timeout as the backstop.
 func (h *scratchHandle) Cancel() {
 	defer h.output.Close()
 	h.cancel()

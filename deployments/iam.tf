@@ -60,10 +60,17 @@ resource "google_service_account" "system-analyzer-build" {
   account_id  = "system-analyzer-build"
   description = "Build identity for the system analyzer"
 }
-resource "google_service_account" "scratch-worker" {
-  count       = !var.public && var.enable_scratch ? 1 : 0
-  account_id  = "scratch-worker"
-  description = "Bootstrap identity for scratch worker VMs, used by the startup script to fetch the worker binary from the bootstrap-tools bucket on private deployments."
+resource "google_service_account" "scratch-host" {
+  count       = var.enable_scratch ? 1 : 0
+  account_id  = "scratch-host"
+  description = "Bootstrap identity for scratch host VMs: pulls the broker image (which carries the golden guest artifacts) from AR."
+}
+resource "google_artifact_registry_repository_iam_member" "scratch-host-pulls-images" {
+  count      = var.enable_scratch ? 1 : 0
+  repository = google_artifact_registry_repository.registry.name
+  location   = google_artifact_registry_repository.registry.location
+  role       = "roles/artifactregistry.reader"
+  member     = google_service_account.scratch-host[0].member
 }
 resource "google_service_account" "cron" {
   account_id  = "cron-invoker" # NOTE: ID must be >=6 chars
@@ -203,7 +210,7 @@ resource "google_storage_bucket_iam_member" "builders-view-bootstrap-bucket" {
     ],
     var.enable_network_analyzer ? [google_service_account.network-analyzer-build[0].member] : [],
     var.enable_system_analyzer ? [google_service_account.system-analyzer-build[0].member] : [],
-    var.enable_scratch ? [google_service_account.scratch-worker[0].member, google_service_account.agent-job.member] : []
+    var.enable_scratch ? [google_service_account.agent-job.member] : []
   ) : [])
   member = each.key
 }
