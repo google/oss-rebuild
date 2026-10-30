@@ -27,15 +27,16 @@ import (
 
 // fakeHosts fakes a fleet of host brokers keyed by host name.
 type fakeHosts struct {
-	onGuests func() // runs before each Guests answer
-	mu       sync.Mutex
-	log      []string
-	hosts    map[string]*fakeHost
-	autoCap  int              // AutoProvision's capacity
-	listE    map[string]error // host name -> error Guests returns
-	downE    map[string]error // host name -> error Healthz returns
-	guestE   map[string]error // host -> sticky GuestHealthz error
-	guestQ   map[string][]error
+	onGuests  func()         // runs before each Guests answer
+	onHealthz func(Instance) // runs after each Healthz that succeeds
+	mu        sync.Mutex
+	log       []string
+	hosts     map[string]*fakeHost
+	autoCap   int              // AutoProvision's capacity
+	listE     map[string]error // host name -> error Guests returns
+	downE     map[string]error // host name -> error Healthz returns
+	guestE    map[string]error // host -> sticky GuestHealthz error
+	guestQ    map[string][]error
 }
 
 type fakeHost struct {
@@ -126,7 +127,7 @@ func (m *fakeHosts) admit(host Instance, scratchID string) error {
 		return nil // idempotent
 	}
 	if len(h.guests) >= h.capacity {
-		return errors.New("host full")
+		return api.AsStatus(codes.ResourceExhausted, errors.New("host full"))
 	}
 	h.guests[scratchID] = scratchhostservice.Guest{ScratchID: scratchID}
 	h.lastServed = time.Now().UTC()
@@ -157,7 +158,7 @@ func (m *fakeHosts) guests(host Instance) (scratchhostservice.GuestList, error) 
 	if !ok {
 		return scratchhostservice.GuestList{}, errors.New("no such host")
 	}
-	out := scratchhostservice.GuestList{LastServed: h.lastServed}
+	out := scratchhostservice.GuestList{Slots: h.capacity, LastServed: h.lastServed}
 	for _, g := range h.guests {
 		out.Guests = append(out.Guests, g)
 	}
@@ -262,6 +263,9 @@ func (c brokerClient) Do(req *http.Request) (*http.Response, error) {
 		if err := wire(m.healthz(host)); err != nil {
 			rw.WriteHeader(http.StatusServiceUnavailable)
 			return
+		}
+		if m.onHealthz != nil {
+			m.onHealthz(host)
 		}
 		rw.WriteHeader(http.StatusOK)
 	})
@@ -420,6 +424,27 @@ func TestScratchCreate_DrainsHostsOfAnEarlierTemplate(t *testing.T) {
 	}
 }
 
+func TestScratchCreate_DoesNotWaitOnABootingHost(t *testing.T) {
+	gce := NewMemoryGCE()
+	hosts := newFakeHosts()
+	// Minted by another create a moment ago, not answering yet.
+	gce.SeedRunning("us-central1-a", "h-boot", hostLabels(schema.MachineClassStandard, testStandard().InstanceTemplate), "10.0.0.1", time.Now().UTC())
+	hosts.FailHealthz("h-boot", errors.New("connection refused"))
+	hosts.AutoProvision(8)
+	got, err := ScratchCreate(context.Background(), schema.ScratchCreateRequest{
+		BuildID: "b", MachineClass: schema.MachineClassStandard,
+	}, newCreateDeps(gce, hosts, db.NewMemoryScratch(), func() string { return "sJ" }))
+	if err != nil {
+		t.Fatalf("ScratchCreate: %v", err)
+	}
+	if got.Host == "h-boot" {
+		t.Errorf("Host = h-boot; want a freshly minted host")
+	}
+	if n := countLog(hosts.Log(), "Healthz(h-boot)"); n != 0 {
+		t.Errorf("Healthz(h-boot) called %d times; want the booting host left to the headroom", n)
+	}
+}
+
 func TestScratchCreate_FallsThroughToAColdHost(t *testing.T) {
 	gce := NewMemoryGCE()
 	hosts := newFakeHosts()
@@ -443,12 +468,13 @@ func TestScratchCreate_FallsThroughToAColdHost(t *testing.T) {
 	if !strings.HasPrefix(got.Host, "scratch-host-") {
 		t.Errorf("Host = %q; want a freshly created host", got.Host)
 	}
-	// Only the full host was even tried.
+	// The full host's listing kept it from being tried. The others were never
+	// contacted.
 	log := strings.Join(hosts.Log(), " ")
-	if !strings.Contains(log, "Admit(h-full,sC)") {
-		t.Errorf("host log = %v; want the full host to have been tried", hosts.Log())
+	if !strings.Contains(log, "Guests(h-full)") {
+		t.Errorf("host log = %v; want the full host to have been listed", hosts.Log())
 	}
-	for _, skipped := range []string{"Admit(h-old,", "Admit(h-retired,"} {
+	for _, skipped := range []string{"Admit(h-full,", "h-old", "h-retired"} {
 		if strings.Contains(log, skipped) {
 			t.Errorf("host log = %v; want %q never tried", hosts.Log(), skipped)
 		}

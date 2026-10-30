@@ -58,6 +58,17 @@ locals {
     { standard = var.scratch_machine_type },
     var.scratch_jumbo_machine_type != "" ? { jumbo = var.scratch_jumbo_machine_type } : {},
   )
+  # vCPUs each class's guest microVMs get.
+  scratch_guest_vcpus = { standard = 4, jumbo = 4 }
+  # Guest vCPUs each class's host runs per vCPU of its own. Guests sit mostly
+  # idle, so a host can carry more guest vCPUs than it has.
+  scratch_cpu_overcommit = { standard = 2, jumbo = 2 }
+  # Unused guest slots each class keeps ready, so bursts start without a boot.
+  scratch_idle_guests = { standard = 24, jumbo = 0 }
+  # Each class's host vCPUs, from its machine type's name (e.g. n2-standard-16 has 16).
+  scratch_host_vcpus = { for class, shape in local.scratch_host_classes : class => tonumber(regex("^[a-z0-9]+-[a-z]+-([0-9]+)", shape)[0]) }
+  # Guests per host for each class.
+  scratch_host_slots = { for class, vcpus in local.scratch_host_vcpus : class => floor(vcpus * local.scratch_cpu_overcommit[class] / local.scratch_guest_vcpus[class]) }
   # Host-only, so it need not be unique across hosts.
   scratch_guest_subnet = "10.200.0.0/24"
 }
@@ -104,6 +115,8 @@ resource "google_compute_instance_template" "scratch-host" {
     })
     startup-script = templatefile("${path.module}/scratch_host_cos_startup.sh", {
       guest_subnet = local.scratch_guest_subnet
+      slots        = local.scratch_host_slots[each.key]
+      guest_vcpu   = local.scratch_guest_vcpus[each.key]
     })
   }
 
@@ -532,6 +545,8 @@ resource "google_cloud_run_v2_service" "agent-api" {
           "--scratch-enabled=true",
           "--scratch-zones=${join(",", data.google_compute_zones.scratch[0].names)}",
           "--scratch-host-standard-template=${google_compute_instance_template.scratch-host["standard"].self_link}",
+          "--scratch-host-standard-idle-guests=${local.scratch_idle_guests["standard"]}",
+          "--scratch-host-standard-slots=${local.scratch_host_slots["standard"]}",
           "--scratch-host-port=8080",
           "--scratch-output-bucket=${google_storage_bucket.scratch-output[0].name}",
           ], contains(keys(local.scratch_host_classes), "jumbo") ? [

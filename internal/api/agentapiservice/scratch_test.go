@@ -113,6 +113,38 @@ func TestScratchCreate_HappyPath(t *testing.T) {
 	}
 }
 
+func TestScratchCreate_TakesTheFirstListedHostWithRoom(t *testing.T) {
+	gce := NewMemoryGCE()
+	hosts := newFakeHosts()
+	since := time.Now().UTC()
+	seedHost(gce, hosts, "us-central1-a", "a-full", "10.0.0.1", 2)
+	hosts.SeedGuest("a-full", "s1", since)
+	hosts.SeedGuest("a-full", "s2", since)
+	seedHost(gce, hosts, "us-central1-a", "b-light", "10.0.0.2", 3)
+	hosts.SeedGuest("b-light", "s3", since)
+	seedHost(gce, hosts, "us-central1-a", "c-busy", "10.0.0.3", 3)
+	hosts.SeedGuest("c-busy", "s4", since)
+	hosts.SeedGuest("c-busy", "s5", since)
+	scratches := db.NewMemoryScratch()
+
+	got, err := ScratchCreate(context.Background(), schema.ScratchCreateRequest{
+		BuildID: "b", MachineClass: schema.MachineClassStandard,
+	}, newCreateDeps(gce, hosts, scratches, func() string { return "sN" }))
+	if err != nil {
+		t.Fatalf("ScratchCreate: %v", err)
+	}
+	// The first listed host with room takes the session. The full one is
+	// never asked.
+	if got.Host != "b-light" {
+		t.Errorf("Host = %q; want b-light", got.Host)
+	}
+	for _, l := range hosts.Log() {
+		if strings.HasPrefix(l, "Admit(a-full,") || strings.HasPrefix(l, "Admit(c-busy,") {
+			t.Errorf("log has %s; want admission tried on b-light alone", l)
+		}
+	}
+}
+
 func TestScratchCreate_JumboUsesJumboHostTemplate(t *testing.T) {
 	gce := NewMemoryGCE()
 	hosts := newFakeHosts()
@@ -185,6 +217,31 @@ func TestScratchCreate_ColdHostInsertFails(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Get: %v", err)
 	}
+	if rec.State != schema.ScratchDeleted {
+		t.Errorf("State = %q; want deleted", rec.State)
+	}
+}
+
+func TestScratchCreate_FreshHostFilledFirstIsResourceExhausted(t *testing.T) {
+	gce := NewMemoryGCE()
+	hosts := newFakeHosts()
+	hosts.AutoProvision(1)
+	// Another create takes the fresh host's only slot as soon as it is up.
+	hosts.onHealthz = func(h Instance) {
+		if err := hosts.admit(h, "sOther"); err != nil {
+			t.Errorf("admit sOther: %v", err)
+		}
+	}
+	scratches := db.NewMemoryScratch()
+	deps := newCreateDeps(gce, hosts, scratches, func() string { return "sF" })
+
+	_, err := ScratchCreate(context.Background(), schema.ScratchCreateRequest{
+		BuildID: "b", MachineClass: schema.MachineClassStandard,
+	}, deps)
+	if status.Code(err) != codes.ResourceExhausted {
+		t.Errorf("err = %v; want ResourceExhausted", err)
+	}
+	rec, _ := scratches.Get(context.Background(), "sF")
 	if rec.State != schema.ScratchDeleted {
 		t.Errorf("State = %q; want deleted", rec.State)
 	}

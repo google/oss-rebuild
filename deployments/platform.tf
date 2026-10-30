@@ -687,6 +687,25 @@ resource "google_cloud_scheduler_job" "scratch-reap" {
   depends_on = [google_project_service.cloudscheduler]
 }
 
+resource "google_cloud_scheduler_job" "scratch-topup" {
+  count    = var.enable_scratch ? 1 : 0
+  name     = "${var.host}-scratch-topup"
+  schedule = "* * * * *" # every minute: a deploy's new template warms within one
+  region   = "us-central1"
+  http_target {
+    uri         = "${google_cloud_run_v2_service.agent-api.uri}/scratch/topup"
+    http_method = "POST"
+    headers = {
+      "Content-Type" = "application/x-www-form-urlencoded"
+    }
+    oidc_token {
+      service_account_email = google_service_account.cron.email
+      audience              = google_cloud_run_v2_service.agent-api.uri
+    }
+  }
+  depends_on = [google_project_service.cloudscheduler]
+}
+
 ## Dashboard load balancer
 
 resource "google_project_service" "iap" {
