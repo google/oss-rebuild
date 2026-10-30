@@ -1,0 +1,22 @@
+#!/bin/sh
+# Copyright 2026 Google LLC
+# SPDX-License-Identifier: Apache-2.0
+
+# Installs the broker's public key from the kernel command line as root's
+# authorized_keys. The key is base64, since a cmdline value cannot hold
+# spaces.
+set -eu
+
+param() {
+    tr ' ' '\n' < /proc/cmdline | sed -n "s/^$1=//p" | tail -1
+}
+
+KEY_B64="$(param mvm_ssh_authorized_key)"
+[ -n "$KEY_B64" ] || { echo "mvm_ssh_authorized_key missing from cmdline" >&2; exit 1; }
+
+# The broker encodes without padding, which base64 -d requires.
+while [ $(( ${#KEY_B64} % 4 )) -ne 0 ]; do KEY_B64="$KEY_B64="; done
+
+install -d -m 0700 /root/.ssh
+echo "$KEY_B64" | base64 -d > /root/.ssh/authorized_keys
+chmod 0600 /root/.ssh/authorized_keys
