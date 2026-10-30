@@ -26,10 +26,11 @@ func Match(pattern, name string) (bool, error) {
 	// Match the pattern before and after ** separately
 	parts := strings.Split(pattern, "**")
 	prefixPattern, suffixPattern := parts[0], parts[1]
+	namePrefixEnd := 0
 	if prefixPattern != "" {
 		// Get the prefix of name that should match the prefix pattern
 		// by taking the number of path components before the **
-		namePrefixEnd := getPrefixEnd(name, strings.Count(prefixPattern, "/"))
+		namePrefixEnd = getPrefixEnd(name, strings.Count(prefixPattern, "/"))
 		if namePrefixEnd == -1 || len(name) < namePrefixEnd {
 			return false, nil
 		}
@@ -44,6 +45,11 @@ func Match(pattern, name string) (bool, error) {
 		// by taking the number of path components after the **
 		nameSuffixStart := getSuffixStart(name, strings.Count(suffixPattern, "/"))
 		if nameSuffixStart == -1 || nameSuffixStart > len(name) {
+			return false, nil
+		}
+		// NOTE: When '**' matches zero directories, the prefix and suffix share
+		// one slash. Any further overlap would let both match the same components.
+		if nameSuffixStart < namePrefixEnd-1 {
 			return false, nil
 		}
 		nameSuffix := name[nameSuffixStart:]
