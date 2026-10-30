@@ -15,6 +15,7 @@ import (
 	"strings"
 	"sync"
 	"testing"
+	"time"
 
 	"github.com/google/go-cmp/cmp"
 	"github.com/google/oss-rebuild/internal/buildpolicy"
@@ -833,19 +834,83 @@ func TestFreeFormCarries(t *testing.T) {
 	}
 }
 
-// The give-up record is filed beside the transcript.
+// The give-up record is filed beside the transcript, with the job's own
+// closest candidate.
 func TestFreeFormGiveUpEndsTheSession(t *testing.T) {
-	h := freeFormTestAgent(t, []string{modelCalls("give_up", `{"reason":"the locale data comes from a CLDR build that is gone"}`), modelSays("Giving up.")}, formalized)
+	mismatch := func(entries int, path string) checkResult {
+		return checkResult{code: 1, out: "ab cd /tmp/check/candidate.stabilized " + stabilizedUpstream + fmt.Sprintf("\nwithin candidate (vs upstream):\n  differ (%d):\n    %s\n", entries, path)}
+	}
+	h := freeFormTestAgent(t, []string{
+		modelCalls("check_artifact", `{"path":"/src/a.tgz"}`),
+		modelCalls("check_artifact", `{"path":"/src/b.tgz"}`),
+		modelCalls("give_up", `{"reason":"the locale data comes from a CLDR build that is gone","closest":"/src/b.tgz","build_commands":{"deps":"npm ci","build":"npm pack"},"remaining":"locale/*.json: generated from CLDR 41, which is no longer published"}`),
+		modelSays("Giving up."),
+	}, formalized)
+	h.checks = []checkResult{mismatch(5, "package/index.js"), mismatch(2, "package/locale/en.json")}
 	dir, _ := url.Parse("gs://sessions/s1/messages/2")
 	_, err := h.a.Propose(context.Background(), &ProposeOpts{ChatUploadURL: dir})
 	var gu gaveUp
 	if !errors.As(err, &gu) || !strings.Contains(gu.Reason, "CLDR build") {
 		t.Fatalf("Propose = %v, want the give-up with its reason", err)
 	}
-	if r := h.record(t, "-giveup.json"); !bytes.Contains(r["reason"], []byte("CLDR build")) {
-		t.Errorf("give-up record = %v", r)
+	if gu.Closest == nil || gu.Closest.Entries != 2 || gu.Closest.Path != "/src/b.tgz" {
+		t.Errorf("job closest = %+v, want the 2-entry check of /src/b.tgz", gu.Closest)
+	}
+	r := h.record(t, "-giveup.json")
+	for key, want := range map[string]string{"reason": "CLDR build", "closest": "/src/b.tgz", "build_commands": "npm pack", "remaining": "CLDR 41", "job_closest": `"entries":2`} {
+		if !bytes.Contains(r[key], []byte(want)) {
+			t.Errorf("give-up record %s = %s, want it to contain %q", key, r[key], want)
+		}
 	}
 	if len(h.prompts) != 0 || h.a.ff.pending != nil {
 		t.Error("a session that gave up was formalized")
+	}
+}
+
+// A farther candidate does not displace the closest.
+func TestArtifactCheckReportsTheClosest(t *testing.T) {
+	var k artifactCheck
+	if got := k.note(schema.AgentCandidate{Path: "a", Entries: 4}); !strings.Contains(got, "4 differing entries (a)") {
+		t.Errorf("first note = %q", got)
+	}
+	k.note(schema.AgentCandidate{Path: "b", Entries: 1})
+	if got := k.note(schema.AgentCandidate{Path: "c", Entries: 3}); !strings.Contains(got, "1 differing entries (b)") {
+		t.Errorf("note after a farther candidate = %q, want b to stay closest", got)
+	}
+}
+
+func TestFreeFormWindDownNotice(t *testing.T) {
+	h := freeFormTestAgent(t, []string{
+		modelCalls("check_artifact", `{"path":"/src/a.tgz"}`),
+		modelCalls("give_up", `{"reason":"out of time","closest":"/src/a.tgz"}`),
+		modelSays("Done."),
+	}, formalized)
+	h.checks = []checkResult{vmMismatch}
+	h.a.ff.windDown = time.Now().Add(-time.Second)
+	dir, _ := url.Parse("gs://sessions/s1/messages/2")
+	if _, err := h.a.Propose(context.Background(), &ProposeOpts{ChatUploadURL: dir}); !errors.As(err, new(gaveUp)) {
+		t.Fatalf("Propose = %v, want the model's give-up", err)
+	}
+	var noticed bool
+	for _, b := range h.records {
+		noticed = noticed || bytes.Contains(b, []byte("time budget is spent"))
+	}
+	if !noticed {
+		t.Error("no tool reply past the wind-down carried the notice")
+	}
+}
+
+// Past the grace, the job gives up for the model and files the record.
+func TestFreeFormWindDownEndsTheTurn(t *testing.T) {
+	h := freeFormTestAgent(t, []string{modelSays("still working")}, formalized)
+	h.a.ff.windDown = time.Now().Add(-windDownGrace - time.Second)
+	dir, _ := url.Parse("gs://sessions/s1/messages/2")
+	_, err := h.a.Propose(context.Background(), &ProposeOpts{ChatUploadURL: dir})
+	var gu gaveUp
+	if !errors.As(err, &gu) || gu.Reason != timeRanOut {
+		t.Fatalf("Propose = %v, want the job's give-up", err)
+	}
+	if r := h.record(t, "-giveup.json"); !bytes.Contains(r["reason"], []byte("ran out")) {
+		t.Errorf("give-up record = %v", r)
 	}
 }
