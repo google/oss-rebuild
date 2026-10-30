@@ -74,12 +74,16 @@ func GenerateTextContentWithUsage(ctx context.Context, client *genai.Client, mod
 		return "", nil, errors.Wrap(err, "failed to generate content")
 	}
 	usage := resp.UsageMetadata
-	if len(resp.Candidates) == 0 {
+	if len(resp.Candidates) == 0 || resp.Candidates[0] == nil {
 		return "", usage, errors.New("no candidates returned")
 	}
 	candidate := resp.Candidates[0]
 	if candidate.FinishReason != genai.FinishReasonStop {
 		return "", usage, errors.Errorf("generating content: %s", candidate.FinishMessage)
+	}
+	// A search-grounded candidate can finish with STOP and carry no Content.
+	if candidate.Content == nil {
+		return "", usage, errors.New("empty response content")
 	}
 	switch len(candidate.Content.Parts) {
 	case 0:
