@@ -11,6 +11,7 @@ import (
 	"strings"
 
 	"github.com/google/oss-rebuild/pkg/llm"
+	"github.com/google/oss-rebuild/pkg/rebuild/schema"
 	"github.com/pkg/errors"
 	"google.golang.org/genai"
 )
@@ -21,7 +22,7 @@ import (
 // openFreeForm is the driver's sessionOpener over a fresh chat.
 func (a *defaultAgent) openFreeForm(ctx context.Context, opts *ProposeOpts, prev *executionDetails) (freeFormSession, string, error) {
 	s := &chatSession{a: a, opts: opts, check: artifactCheck{runner: a.ff.runner}}
-	tools := append(a.getTools(), s.check.tool(), s.handoffTool(), giveUpTool(func(reason string) { s.giveUp = reason }))
+	tools := append(a.getTools(), s.check.tool(), s.handoffTool(), giveUpTool(func(g giveUpArgs) { s.giveUp = &g }))
 	chat, err := a.newChat(ctx, freeFormPrompt, s.tracing(tools))
 	if err != nil {
 		return nil, "", errors.Wrap(err, "starting the free-form chat")
@@ -38,7 +39,7 @@ type chatSession struct {
 	check   artifactCheck
 	trace   []toolCall      // every tool call, as executed
 	handoff json.RawMessage // the turn's handoff, if recorded
-	giveUp  string          // the turn's give_up reason, if recorded
+	giveUp  *giveUpArgs     // the turn's give_up, if recorded
 	part    int             // transcript contents written
 }
 
@@ -64,15 +65,22 @@ func (s *chatSession) turn(ctx context.Context, prompt string) (json.RawMessage,
 		s.part++
 		s.a.ff.record(ctx, s.opts, fmt.Sprintf("%s-%d-%s.json", stamp(), s.part, content.Role), content)
 	}
-	if reason := s.giveUp; reason != "" {
-		s.giveUp = ""
-		s.a.ff.record(ctx, s.opts, stamp()+"-giveup.json", map[string]any{"reason": reason})
-		return nil, s.trace, gaveUp{Reason: reason}
+	if g := s.giveUp; g != nil {
+		s.giveUp = nil
+		s.a.ff.record(ctx, s.opts, stamp()+"-giveup.json", giveUpRecord{giveUpArgs: *g, JobClosest: s.check.closest})
+		return nil, s.trace, gaveUp{Reason: g.Reason, Closest: s.check.closest}
 	}
 	if err != nil {
 		return nil, s.trace, errors.Wrap(err, "running the free-form chat")
 	}
 	return s.handoff, s.trace, nil
+}
+
+// giveUpRecord is the <stamp>-giveup.json transcript object: the model's
+// give_up beside the closest candidate the job compared.
+type giveUpRecord struct {
+	giveUpArgs
+	JobClosest *schema.AgentCandidate `json:"job_closest,omitempty"`
 }
 
 // close folds the chat's tokens into the agent's total.

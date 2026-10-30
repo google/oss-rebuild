@@ -8,6 +8,7 @@ import (
 	"fmt"
 
 	"github.com/google/oss-rebuild/pkg/llm"
+	"github.com/google/oss-rebuild/pkg/rebuild/schema"
 	"google.golang.org/genai"
 )
 
@@ -15,6 +16,15 @@ import (
 type artifactCheck struct {
 	runner  *ScratchRunner
 	matched bool
+	closest *schema.AgentCandidate // fewest differing entries so far
+}
+
+// note keeps c if it is the closest mismatch so far and says which is.
+func (k *artifactCheck) note(c schema.AgentCandidate) string {
+	if k.closest == nil || c.Entries < k.closest.Entries {
+		k.closest = &c
+	}
+	return fmt.Sprintf("\nClosest so far in this session: %d differing entries (%s).", k.closest.Entries, k.closest.Path)
 }
 
 // summaryLines caps the diffr summary check_artifact returns on a mismatch.
@@ -73,7 +83,7 @@ func (k *artifactCheck) check(ctx context.Context, p string) (result string, mat
 			"copied, or edited into the artifact instead of built.", c.candidate, p), true, nil
 	case c.summary == "":
 		return fmt.Sprintf("MISMATCH: the stabilized forms differ as bytes (candidate %s, upstream %s) "+
-			"but diffr reports no file-level differences. %s", c.candidate, c.upstream, where), false, nil
+			"but diffr reports no file-level differences. %s", c.candidate, c.upstream, where) + k.note(schema.AgentCandidate{Path: p}), false, nil
 	}
 	head, lines, shown, entries := summaryHead(c.summary, summaryLines)
 	extent := ""
@@ -81,5 +91,5 @@ func (k *artifactCheck) check(ctx context.Context, p string) (result string, mat
 		extent = fmt.Sprintf(", first %d of %d lines", shown, lines)
 	}
 	return fmt.Sprintf("MISMATCH: stabilized sha256 differ (candidate %s, upstream %s). "+
-		"%d differing entries%s:\n%s\n%s", c.candidate, c.upstream, entries, extent, head, where), false, nil
+		"%d differing entries%s:\n%s\n%s", c.candidate, c.upstream, entries, extent, head, where) + k.note(schema.AgentCandidate{Path: p, Entries: entries}), false, nil
 }
