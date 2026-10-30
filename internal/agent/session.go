@@ -165,9 +165,11 @@ func doIteration(ctx context.Context, sessionID string, iterNum int, agent Agent
 		if status != schema.AgentIterationStatusSuccess {
 			return localIteration(sessionID, iterNum, s, iterUsage, status, result), nil
 		}
-		// The build matched: judge how before a confirmation is spent on it.
+		// The build matched: judge how before a confirmation is spent on it. A
+		// failed check confirms nothing, and its error iteration is retried.
 		if refusal, cerr := agent.Check(ctx, opts, s); cerr != nil {
-			log.Printf("Session %s Iteration %d: check failed (%v), confirming unchecked", sessionID, iterNum, cerr)
+			log.Printf("Session %s Iteration %d: check failed (%v), confirming nothing", sessionID, iterNum, cerr)
+			return localIteration(sessionID, iterNum, s, agent.Usage().Sub(beforeUsage).OrNil(), schema.AgentIterationStatusError, &schema.AgentBuildResult{ErrorMessage: cerr.Error()}), nil
 		} else if refusal != "" {
 			log.Printf("Session %s Iteration %d: proposal refused", sessionID, iterNum)
 			return localIteration(sessionID, iterNum, s, agent.Usage().Sub(beforeUsage).OrNil(), iterationStatusRefused, &schema.AgentBuildResult{ErrorMessage: refusal}), nil
@@ -307,6 +309,11 @@ func doSession(ctx context.Context, req RunSessionReq, deps RunSessionDeps) (com
 			cfg := *config
 			return llm.NewChat(ctx, deps.Client, cmp.Or(deps.Model, llm.GeminiPro), llm.WithSystemPrompt(&cfg, genai.NewPartFromText(system)), &llm.ChatOpts{Tools: tools, MaxToolIterations: freeFormToolCalls, Retrier: deps.Retrier})
 		})
+		// A free-form turn can run past the budget that gates iterations, so it
+		// winds down at the same point.
+		if req.IterationBudget > 0 {
+			a.ff.windDown = time.Now().Add(req.IterationBudget)
+		}
 	}
 	if req.InitialIteration != nil {
 		err := a.InitializeFromIteration(ctx, req.InitialIteration)
@@ -373,7 +380,7 @@ func runIterations(ctx context.Context, req RunSessionReq, iterNum int, a Agent,
 			}
 			var gu gaveUp
 			if errors.As(err, &gu) {
-				return &schema.AgentCompleteRequest{StopReason: schema.AgentCompleteReasonGaveUp, Summary: "Gave up: " + gu.Reason}
+				return &schema.AgentCompleteRequest{StopReason: schema.AgentCompleteReasonGaveUp, Summary: "Gave up: " + gu.Reason, Closest: gu.Closest}
 			}
 			if llm.IsTransient(err) {
 				transientErrs++

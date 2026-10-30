@@ -29,11 +29,12 @@ import (
 // The handoff and each candidate are judged by the content rule before a build.
 
 const (
-	formalizeRetries  = 2     // re-formalizations before proposing the handoff as written
-	traceHead         = 1_000 // bytes kept from the head of a tool output in the formalization prompt
-	traceTail         = 3_000 // bytes kept from its tail
-	freeFormToolCalls = 300   // tool calls per turn
-	handoffReminders  = 2     // follow-ups after a turn without a handoff, and after a refused one
+	formalizeRetries  = 2                // re-formalizations before proposing the handoff as written
+	traceHead         = 1_000            // bytes kept from the head of a tool output in the formalization prompt
+	traceTail         = 3_000            // bytes kept from its tail
+	freeFormToolCalls = 300              // tool calls per turn
+	handoffReminders  = 2                // follow-ups after a turn without a handoff, and after a refused one
+	windDownGrace     = 10 * time.Minute // past windDown until the job ends it
 	maxEndRefusals    = 2
 )
 
@@ -87,6 +88,7 @@ type freeFormDriver struct {
 	store    func(ctx context.Context, opts *ProposeOpts, name string, v any) // uploadRecord, or a test's fake
 	pending  *freeForm                                                        // the handoff being formalized
 	checked  *schema.StrategyOneOf                                            // judged already, so check passes it
+	windDown time.Time                                                        // past it, the model is told to finish
 }
 
 // sessionOpener starts a session over prev and returns its first prompt.
@@ -224,14 +226,16 @@ func handoffReminder(trace []toolCall) string {
 
 // Wind-down and reminder texts.
 const (
-	keepIterating  = "Keep iterating in the container: run the build, call check_artifact on the result, and repeat until it reports a match, then call handoff with the commands that produced it. If the source at the ref cannot produce upstream's bytes, say so and stop."
+	windDownNotice = "The session's time budget is spent. Finish now: call handoff if check_artifact has reported a match, otherwise call give_up with your closest candidate. The job ends the session in a few minutes either way."
+	timeRanOut     = "The session's time budget ran out before a match."
+	keepIterating  = "Keep iterating in the container: run the build, call check_artifact on the result, and repeat until it reports a match, then call handoff with the commands that produced it. If you cannot get closer, call give_up with your closest candidate."
 	handoffMatched = "You ended without calling handoff after check_artifact reported a match. Call handoff now with the commands that produced the matching artifact: deps for every command that installed or fetched anything, build for the rest."
 	handoffNoMatch = "You ended without calling handoff, and check_artifact has not reported a match in this session, so the work is not done. " + keepIterating
 	handoffEarly   = "check_artifact has not reported a match in this session, so the handoff call was not accepted and the work is not done. " + keepIterating
 )
 
 func handoffRefusal(refusal string) string {
-	return fmt.Sprintf("%s\n\nThe handoff is refused and was not formalized. Continue in this session: every byte of the artifact must come from the build tooling applied to the source at the ref. The container's source tree has been put back at the ref (git checkout --force, git clean -fd; ignored files such as installed dependencies remain), so redo what the build needs without the refused commands, rebuild the artifact from the source, call check_artifact again, and call handoff again with commands that contain none of them. If the release was cut from another commit, call set_source_ref with the commit and the evidence instead of checking it out in the handoff. If the source at the ref cannot produce upstream's bytes, say so and stop without calling handoff.", refusal)
+	return fmt.Sprintf("%s\n\nThe handoff is refused and was not formalized. Continue in this session: every byte of the artifact must come from the build tooling applied to the source at the ref. The container's source tree has been put back at the ref (git checkout --force, git clean -fd; ignored files such as installed dependencies remain), so redo what the build needs without the refused commands, rebuild the artifact from the source, call check_artifact again, and call handoff again with commands that contain none of them. If the release was cut from another commit, call set_source_ref with the commit and the evidence instead of checking it out in the handoff. If the source at the ref cannot produce upstream's bytes, call give_up with your closest candidate instead of handoff.", refusal)
 }
 
 // nextCandidate formalizes while the budget allows, then falls back to the
@@ -245,9 +249,13 @@ func (f *freeFormDriver) nextCandidate(ctx context.Context, opts *ProposeOpts) (
 		}
 	}
 	if !ff.fallback {
-		ff.fallback, ff.iterations = true, len(f.a.iterHistory)
 		s := new(schema.NewStrategyOneOf(ff.fallbackStrategy(f.a.loc)))
-		if f.checkCandidate(ctx, opts, s) == "" {
+		refusal, err := f.checkCandidate(ctx, opts, s)
+		if err != nil {
+			return nil, err // the fallback stays for the next call
+		}
+		ff.fallback, ff.iterations = true, len(f.a.iterHistory)
+		if refusal == "" {
 			log.Printf("free-form: %d formalizations rejected, proposing the handoff's commands as written", ff.attempts)
 			return s, nil
 		}
@@ -301,16 +309,16 @@ func (ff *freeForm) carries(inst rebuild.Instructions) bool {
 
 // checkCandidate judges a candidate as the fresh container would run it. One
 // that carries the handoff's verdict is not reviewed again. A pass skips check.
-func (f *freeFormDriver) checkCandidate(ctx context.Context, opts *ProposeOpts, s *schema.StrategyOneOf) string {
+func (f *freeFormDriver) checkCandidate(ctx context.Context, opts *ProposeOpts, s *schema.StrategyOneOf) (string, error) {
 	st, err := s.Strategy()
 	if err != nil {
-		return ""
+		return "", nil
 	}
 	inst, err := st.GenerateFor(f.a.t, f.a.buildEnv())
 	if err != nil {
 		ms, ok := st.(*rebuild.ManualStrategy)
 		if !ok {
-			return ""
+			return "", nil
 		}
 		inst = rebuild.Instructions{Deps: ms.Deps, Build: ms.Build}
 	}
@@ -321,12 +329,12 @@ func (f *freeFormDriver) checkCandidate(ctx context.Context, opts *ProposeOpts, 
 	if ff := f.pending; ff != nil && ff.allowed != nil && ff.carries(inst) {
 		record(ff.allowed)
 	} else if refusal, err = f.a.judge(ctx, in, func(v *buildpolicy.Review) { record(v) }); err != nil {
-		log.Printf("free-form: reviewing the candidate: %v", err)
+		return "", err
 	}
 	if refusal == "" {
 		f.checked = s
 	}
-	return refusal
+	return refusal, nil
 }
 
 // restoreSource resets the container's tree to the ref. Ignored files, such as
@@ -422,7 +430,12 @@ func (f *freeFormDriver) formalize(ctx context.Context, opts *ProposeOpts) (*sch
 	}
 	ff.iterations = len(f.a.iterHistory)
 	rec.Strategy = new(schema.NewStrategyOneOf(ws))
-	if refusal := f.checkCandidate(ctx, opts, rec.Strategy); refusal != "" {
+	refusal, err := f.checkCandidate(ctx, opts, rec.Strategy)
+	if err != nil {
+		rec.Error = err.Error()
+		return nil, err
+	}
+	if refusal != "" {
 		reject("refused before any build: " + refusal)
 		return nil, nil
 	}
@@ -577,7 +590,7 @@ func jobFreeFormGuidance() []string {
 	return []string{
 		"",
 		"# This attempt",
-		"Read the previous build's log with read_logs_end. Work in the container until check_artifact reports a match, then call handoff with the commands that produced it. If the evidence shows the artifact cannot be produced from the source at the ref, call give_up with that evidence.",
+		"Read the previous build's log with read_logs_end. Work in the container until check_artifact reports a match, then call handoff with the commands that produced it. If you cannot get closer, call give_up with your closest candidate.",
 	}
 }
 
@@ -594,10 +607,12 @@ Where things are. run_on_host runs a shell command on the build VM host, in /hom
 
 Checking a candidate. check_artifact compares a candidate against upstream the way the verification does: it stabilizes both with tools/stabilize, compares their sha256, and on a mismatch returns the head of diffr's file-level summary with the entry counts. Give it the candidate's host path, a file under builds/<build-id>/src/, or its container path under /src/, which it maps. For content hunks run tools/diffr on the stabilized forms it names.
 
-How to work. Read the end of the build log and the mismatch summary first. Form a hypothesis, run the build commands in the container with run_in_container, check the result with check_artifact, and repeat until it matches. Keep tool output small with head, tail, grep, and wc rather than printing whole files or trees: a result keeps its first 4 KB and last 12 KB. Do not edit, repackage, or otherwise touch the produced artifact or the upstream artifact: the match must come from building the source. A build input that never ships may be changed by a command the handoff states (sed, patch, a heredoc), since a fresh container starts from the pristine checkout. Do not change the repository being built.
+How to work. Read the end of the build log and the mismatch summary first. Form a hypothesis, run the build commands in the container with run_in_container, check the result with check_artifact, and repeat while each attempt gets closer. Keep tool output small with head, tail, grep, and wc rather than printing whole files or trees: a result keeps its first 4 KB and last 12 KB. Do not edit, repackage, or otherwise touch the produced artifact or the upstream artifact: the match must come from building the source. A build input that never ships may be changed by a command the handoff states (sed, patch, a heredoc), since a fresh container starts from the pristine checkout. Do not change the repository being built.
 
-The content rule. Every byte of the artifact must be produced by the package's own build tooling from the source at the ref, or be absent. A match is necessary, not sufficient: the job reviews how the bytes were produced, in this session's commands and in the handoff, and refuses a handoff that supplied content instead of building it: writing literal content (a heredoc, printf, echo, tee, node -e, python -c, a typed hash, date, or version) into any file that ships in the artifact, lockfiles and package metadata included; copying or extracting anything from the published artifact, from upstream/, or from any commit, branch, or repository other than the ref; unpacking, editing, or re-creating the output archive with tar, zip, wheel, zipfile, or similar instead of letting the build tool produce it; editing the content of shipped source, metadata, or documentation files to match; deleting shipped files so the file set matches. Allowed, with a comment saying why: reproducing the publisher's environment (tool versions, environment variables, a build tool's configuration file wherever it lives, under node_modules or another dependency or tool directory included, removing .git so version tooling behaves as it did for the publisher, a value the publisher's tooling derives from the source such as gitHead from git rev-parse HEAD, a checkout with the line endings the publisher had); deleting files your build produces that upstream does not ship; editing build inputs that never ship; edits that leave the shipped bytes identical. Reading or extracting the upstream artifact to compare is fine; moving any of it into the source tree is not. If upstream contains content that cannot come from the source at the ref, such as a stray coverage or cache directory, editor swap files, or an untracked build product, say so and stop with the mismatch. A refused handoff comes back to you in this session with the refused commands; remove them, rebuild from the source, check again, and hand off again. A match produced by writing the differing bytes is a failure, not a success: an honest mismatch is the better outcome.
+The content rule. Every byte of the artifact must be produced by the package's own build tooling from the source at the ref, or be absent. A match is necessary, not sufficient: the job reviews how the bytes were produced, in this session's commands and in the handoff, and refuses a handoff that supplied content instead of building it: writing literal content (a heredoc, printf, echo, tee, node -e, python -c, a typed hash, date, or version) into any file that ships in the artifact, lockfiles and package metadata included; copying or extracting anything from the published artifact, from upstream/, or from any commit, branch, or repository other than the ref; unpacking, editing, or re-creating the output archive with tar, zip, wheel, zipfile, or similar instead of letting the build tool produce it; editing the content of shipped source, metadata, or documentation files to match; deleting shipped files so the file set matches. Allowed, with a comment saying why: reproducing the publisher's environment (tool versions, environment variables, a build tool's configuration file wherever it lives, under node_modules or another dependency or tool directory included, removing .git so version tooling behaves as it did for the publisher, a value the publisher's tooling derives from the source such as gitHead from git rev-parse HEAD, a checkout with the line endings the publisher had); deleting files your build produces that upstream does not ship; editing build inputs that never ship; edits that leave the shipped bytes identical. Reading or extracting the upstream artifact to compare is fine; moving any of it into the source tree is not. If upstream contains content that cannot come from the source at the ref, such as a stray coverage or cache directory, editor swap files, or an untracked build product, call give_up with that content as what remains. A refused handoff comes back to you in this session with the refused commands; remove them, rebuild from the source, check again, and hand off again. A match produced by writing the differing bytes is a failure, not a success: an honest mismatch is the better outcome.
 
 The source ref. If the evidence shows the release was cut from a different commit than the ref (the published gitHead or .cargo_vcs_info.json sha, a release tag, a version-bump commit), call set_source_ref with that commit and the evidence; the next attempt checks it out and re-infers the dependency phase there, and you may check it out in the container to continue. set_source_ref commits the session to the ref and re-infers the build; it is not a way to look at a ref. To find the commit a release was cut from, use git on the host in builds/<build-id>/src (git log, git diff <ref> -- <paths>, git show <ref>:<path>) against the stabilized upstream contents, then call set_source_ref once with the answer. A git checkout of another commit in the handoff's commands, or files taken from one, is refused.
 
-A give_up call, with the evidence that the artifact cannot be produced from the source at the ref, ends the session; a difference you have not explained is not that evidence. When check_artifact reports a match, call handoff once with a short summary and build_commands: the minimal command sequence that produced the matching artifact in the container, as two scripts a fresh container runs in /src after the previous attempt's deps phase. deps holds every command that installs or fetches anything (packages, toolchain changes, registry access), build holds the rest, and each is complete on its own: a command the earlier attempt ran and the result still needs belongs in it too. Do not call handoff before a match has been reported.`
+Ending without a match. When you cannot get closer, call give_up rather than experimenting until the session runs out: the remaining differences come from something the build cannot control, or several attempts in a row have not lowered check_artifact's count of differing entries. Pass the closest candidate you checked, the commands that produced it, and for each remaining difference what you tried against it. The job files that build for a person to finish, which is a useful outcome. A difference you have not investigated is not a reason to stop.
+
+When check_artifact reports a match, call handoff once with a short summary and build_commands: the minimal command sequence that produced the matching artifact in the container, as two scripts a fresh container runs in /src after the previous attempt's deps phase. deps holds every command that installs or fetches anything (packages, toolchain changes, registry access), build holds the rest, and each is complete on its own: a command the earlier attempt ran and the result still needs belongs in it too. Do not call handoff before a match has been reported.`

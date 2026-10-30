@@ -36,6 +36,7 @@ type fakeAgent struct {
 	canonical  *schema.StrategyOneOf    // when set, what Canonicalize returns with changed=true
 	refusal    string                   // if set, Check refuses with it
 	refused    *schema.StrategyOneOf    // if set, the only strategy Check refuses
+	checkErr   error                    // if set, Check fails with it
 	checks     int
 }
 
@@ -57,6 +58,9 @@ func (a *fakeAgent) Canonicalize(_ context.Context, _ *ProposeOpts, working *sch
 
 func (a *fakeAgent) Check(_ context.Context, _ *ProposeOpts, s *schema.StrategyOneOf) (string, error) {
 	a.checks++
+	if a.checkErr != nil {
+		return "", a.checkErr
+	}
 	if a.refused != nil && s != a.refused {
 		return "", nil
 	}
@@ -356,27 +360,38 @@ func TestDoIterationCanonicalForm(t *testing.T) {
 	}
 }
 
-func TestDoIterationRefusedProposalIsLocalOnly(t *testing.T) {
-	artifact := testTarball(t)
-	runner := testRunner(&fakeExecutor{artifact: artifact})
-	runner.RegistryClient = &fakeRegistry{artifact: artifact}
-	deps := RunSessionDeps{
-		ScratchRunner: runner,
-		IterationStub: func(context.Context, schema.AgentCreateIterationRequest) (*schema.AgentCreateIterationResponse, error) {
-			t.Error("IterationStub called for a refused proposal")
-			return nil, errors.New("unexpected call")
-		},
-	}
-	a := &fakeAgent{strategy: testStrategy(), refusal: "proposal refused: the script supplies artifact content"}
-	iter, err := doIteration(context.Background(), "sess", 2, a, deps)
-	if err != nil {
-		t.Fatalf("doIteration: %v", err)
-	}
-	if a.checks != 1 {
-		t.Errorf("Check called %d times, want 1", a.checks)
-	}
-	if iter.ID != "" || iter.Status != iterationStatusRefused || iter.Result == nil || iter.Result.ErrorMessage != a.refusal {
-		t.Errorf("refused iteration = %+v (result %+v)", iter, iter.Result)
+func TestDoIterationUncheckedProposalIsLocalOnly(t *testing.T) {
+	for _, tc := range []struct {
+		name    string
+		agent   *fakeAgent
+		status  string
+		message string
+	}{
+		{"Refused", &fakeAgent{strategy: testStrategy(), refusal: "proposal refused: the script supplies artifact content"}, iterationStatusRefused, "proposal refused: the script supplies artifact content"},
+		{"CheckFailed", &fakeAgent{strategy: testStrategy(), checkErr: errors.New("reviewing proposal: reviewer unavailable")}, schema.AgentIterationStatusError, "reviewing proposal: reviewer unavailable"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			artifact := testTarball(t)
+			runner := testRunner(&fakeExecutor{artifact: artifact})
+			runner.RegistryClient = &fakeRegistry{artifact: artifact}
+			deps := RunSessionDeps{
+				ScratchRunner: runner,
+				IterationStub: func(context.Context, schema.AgentCreateIterationRequest) (*schema.AgentCreateIterationResponse, error) {
+					t.Error("IterationStub called for an unchecked proposal")
+					return nil, errors.New("unexpected call")
+				},
+			}
+			iter, err := doIteration(context.Background(), "sess", 2, tc.agent, deps)
+			if err != nil {
+				t.Fatalf("doIteration: %v", err)
+			}
+			if tc.agent.checks != 1 {
+				t.Errorf("Check called %d times, want 1", tc.agent.checks)
+			}
+			if iter.ID != "" || iter.Status != tc.status || iter.Result == nil || iter.Result.ErrorMessage != tc.message {
+				t.Errorf("iteration = %+v (result %+v), want a local %s", iter, iter.Result, tc.status)
+			}
+		})
 	}
 }
 
@@ -403,11 +418,12 @@ func TestRunIterationsStopsAfterRepeatedRefusals(t *testing.T) {
 }
 
 func TestRunIterationsStopsOnGiveUp(t *testing.T) {
-	a := &fakeAgent{proposeErr: gaveUp{Reason: "the wheel ships a coverage file that is not in the source"}}
+	closest := &schema.AgentCandidate{Path: "/src/dist/x.whl", Entries: 1}
+	a := &fakeAgent{proposeErr: gaveUp{Reason: "the wheel ships a coverage file that is not in the source", Closest: closest}}
 	req := RunSessionReq{SessionID: "sess", MaxIterations: 5, InitialIteration: &schema.AgentIteration{Strategy: testStrategy()}}
 	done := runIterations(context.Background(), req, 1, a, RunSessionDeps{})
-	if done.StopReason != schema.AgentCompleteReasonGaveUp || !strings.Contains(done.Summary, "coverage file") {
-		t.Errorf("completion = %+v, want GAVE_UP with the reason", done)
+	if done.StopReason != schema.AgentCompleteReasonGaveUp || done.Summary != "Gave up: the wheel ships a coverage file that is not in the source" || done.Closest != closest {
+		t.Errorf("completion = %+v, want GAVE_UP with the reason and the closest candidate", done)
 	}
 	if a.proposes != 1 {
 		t.Errorf("Propose called %d times, want the one that gave up", a.proposes)
