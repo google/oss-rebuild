@@ -37,6 +37,14 @@ jobs:
           key: go-${{runner.os}}-${{steps.go.outputs.go-version}}-${{github.run_id}}
           restore-keys: go-${{runner.os}}-${{steps.go.outputs.go-version}}-
 
+      # NOTE: Used in cache pruning below as Go only updates entries with mtime older than 1h.
+      - name: Backdate restored build cache
+        if: github.ref == 'refs/heads/main'
+        run: |
+          touch -d '-2 hours' "$RUNNER_TEMP/go-cache-epoch"
+          mkdir -p ~/.cache/go-build
+          find ~/.cache/go-build -mindepth 2 -maxdepth 2 -name '*-[ad]' -exec touch -r "$RUNNER_TEMP/go-cache-epoch" {} +
+
       - name: Build
         run: go run ./ci -v build
 
@@ -54,6 +62,11 @@ jobs:
 
       - name: Check license headers
         run: go run ./ci -v license-check
+
+      # NOTE: Unused entries normally pruned after 5 days.
+      - name: Prune unused build cache entries
+        if: github.ref == 'refs/heads/main'
+        run: find ~/.cache/go-build -mindepth 2 -maxdepth 2 -name '*-[ad]' ! -newer "$RUNNER_TEMP/go-cache-epoch" -exec rm -rf {} +
 
       - name: Save Go caches
         if: github.ref == 'refs/heads/main'
