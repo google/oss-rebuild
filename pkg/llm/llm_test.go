@@ -35,6 +35,16 @@ func TestGenerateTextContentWithUsage(t *testing.T) {
 			wantErr:  "empty response content",
 		},
 		{
+			name:     "JoinsTextParts",
+			response: `{"candidates":[{"content":{"role":"model","parts":[{"text":"thinking","thought":true},{"text":"npm ci\n"},{"text":"npm pack\n"}]},"finishReason":"STOP"}]}`,
+			want:     "npm ci\nnpm pack\n",
+		},
+		{
+			name:     "OnlyThoughts",
+			response: `{"candidates":[{"content":{"role":"model","parts":[{"text":"thinking","thought":true}]},"finishReason":"STOP"}]}`,
+			wantErr:  "empty response content",
+		},
+		{
 			name:     "NoCandidates",
 			response: `{"candidates":[]}`,
 			wantErr:  "no candidates returned",

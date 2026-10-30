@@ -829,7 +829,19 @@ func (a *defaultAgent) generate(ctx context.Context, prompt []string, opts *Prop
 		response = *content
 		partNum++
 	}
-	return response.Parts[0].Text, nil
+	return textOf(response.Parts), nil
+}
+
+// textOf joins a model turn's text parts, skipping thoughts. A long script can
+// arrive split across parts.
+func textOf(parts []*genai.Part) string {
+	var b strings.Builder
+	for _, p := range parts {
+		if p != nil && p.Text != "" && !p.Thought {
+			b.WriteString(p.Text)
+		}
+	}
+	return b.String()
 }
 
 // One "cycle" of the LLM produces a thoughtData
