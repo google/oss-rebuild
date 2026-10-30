@@ -143,9 +143,18 @@ func outputObject(client *gcs.Client, op *longrunning.Operation[schema.ScratchEx
 // limit reads at most the last limit bytes. Zero reads the entire object. A
 // missing object (no output produced) yields nil bytes.
 func ReadOutput(ctx context.Context, client *gcs.Client, op *longrunning.Operation[schema.ScratchExecResult], limit int64) ([]byte, error) {
+	b, _, err := ReadOutputWithSize(ctx, client, op, limit)
+	return b, err
+}
+
+// ReadOutputWithSize reads the exec op's merged stdout/stderr object and
+// returns it with the object's size. A positive limit reads at most the last
+// limit bytes. Zero reads the entire object. A missing object yields nil bytes
+// and size 0.
+func ReadOutputWithSize(ctx context.Context, client *gcs.Client, op *longrunning.Operation[schema.ScratchExecResult], limit int64) ([]byte, int64, error) {
 	obj, err := outputObject(client, op)
 	if err != nil || obj == nil {
-		return nil, err
+		return nil, 0, err
 	}
 	var rd *gcs.Reader
 	if limit > 0 {
@@ -154,14 +163,14 @@ func ReadOutput(ctx context.Context, client *gcs.Client, op *longrunning.Operati
 		rd, err = obj.NewReader(ctx)
 	}
 	if errors.Is(err, gcs.ErrObjectNotExist) {
-		return nil, nil
+		return nil, 0, nil
 	} else if err != nil {
-		return nil, errors.Wrap(err, "opening output object")
+		return nil, 0, errors.Wrap(err, "opening output object")
 	}
 	defer rd.Close()
 	b, err := io.ReadAll(rd)
 	if err != nil {
-		return nil, errors.Wrap(err, "reading output object")
+		return nil, 0, errors.Wrap(err, "reading output object")
 	}
-	return b, nil
+	return b, rd.Attrs.Size, nil
 }

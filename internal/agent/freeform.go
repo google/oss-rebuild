@@ -337,8 +337,8 @@ func (f *freeFormDriver) restoreSource(ctx context.Context) {
 		return
 	}
 	script := dockerExecInContainerScript(fmt.Sprintf("cd /src && git checkout --force %s && git clean -fd", f.a.loc.Ref))
-	if code, out, err := f.runner.RunCommand(ctx, script, 0); err != nil || code != 0 {
-		log.Printf("free-form: restoring the source tree: exit %d, %v: %.400s", code, err, out)
+	if res, err := f.runner.RunCommand(ctx, script, 0); err != nil || res.ExitCode != 0 {
+		log.Printf("free-form: restoring the source tree: exit %d, %v: %.400s", res.ExitCode, err, res.Output)
 	}
 }
 

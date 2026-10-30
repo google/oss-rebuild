@@ -8,6 +8,7 @@ import (
 	"io"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/google/go-cmp/cmp"
 	"github.com/google/oss-rebuild/internal/gcsx/gcsxtest"
@@ -183,26 +184,36 @@ func TestLastBuildLogs(t *testing.T) {
 
 func TestRunCommand(t *testing.T) {
 	var gotReq schema.ScratchExecRequest
+	started := time.Date(2026, 9, 10, 1, 2, 3, 0, time.UTC)
 	r := testRunner(&fakeExecutor{})
 	r.Stubs = scratch.Stubs{
 		ExecCreate: func(_ context.Context, req schema.ScratchExecRequest) (*longrunning.Operation[schema.ScratchExecResult], error) {
 			gotReq = req
 			return &longrunning.Operation[schema.ScratchExecResult]{
-				ID:     "cmd",
-				Done:   true,
-				Result: &schema.ScratchExecResult{ScratchID: "s1", ExitCode: 3},
+				ID:   "cmd",
+				Done: true,
+				Result: &schema.ScratchExecResult{
+					ScratchID:  "s1",
+					ExitCode:   3,
+					StartedAt:  started,
+					FinishedAt: started.Add(time.Second),
+				},
 			}, nil
 		},
 		ExecGet: func(_ context.Context, req schema.GetOperationRequest) (*longrunning.Operation[schema.ScratchExecResult], error) {
 			return nil, errors.New("unexpected ExecGet")
 		},
 	}
-	exitCode, _, err := r.RunCommand(context.Background(), "docker images", 0)
+	res, err := r.RunCommand(context.Background(), "docker images", 0)
 	if err != nil {
 		t.Fatalf("RunCommand: %v", err)
 	}
-	if exitCode != 3 {
-		t.Errorf("exitCode = %d, want 3", exitCode)
+	if res.ExitCode != 3 {
+		t.Errorf("exitCode = %d, want 3", res.ExitCode)
+	}
+	// The record written for the call names the exec and when it ran.
+	if res.ExecID != "cmd" || !res.StartedAt.Equal(started) || !res.FinishedAt.Equal(started.Add(time.Second)) {
+		t.Errorf("result = %+v, want the exec's ID and timings", res)
 	}
 	if len(gotReq.Cmd) != 3 || gotReq.Cmd[2] != "docker images" {
 		t.Errorf("req.Cmd = %v, want /bin/sh -c 'docker images'", gotReq.Cmd)
@@ -230,12 +241,12 @@ func TestRunCommandTimeout(t *testing.T) {
 			return nil, errors.New("unexpected ExecGet")
 		},
 	}
-	exitCode, _, err := r.RunCommand(context.Background(), "sleep 600", 5)
+	res, err := r.RunCommand(context.Background(), "sleep 600", 5)
 	if err == nil || !strings.Contains(err.Error(), "timed out") {
 		t.Fatalf("err = %v, want timeout error", err)
 	}
-	if exitCode != 124 {
-		t.Errorf("exitCode = %d, want 124", exitCode)
+	if res.ExitCode != 124 {
+		t.Errorf("exitCode = %d, want 124", res.ExitCode)
 	}
 }
 

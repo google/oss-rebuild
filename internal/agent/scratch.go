@@ -480,11 +480,10 @@ func (r *ScratchRunner) StartKeepAlive(ctx context.Context) (stop func()) {
 	return cancel
 }
 
-// RunCommand executes a diagnostic shell command on the scratch VM on
-// behalf of the LLM and returns its exit code and merged output (truncated
-// to the tail when large). The returned error covers infrastructure
-// failures only. Command failures are expressed via the exit code.
-func (r *ScratchRunner) RunCommand(ctx context.Context, command string, timeoutSeconds int) (exitCode int, output string, err error) {
+// RunCommand runs a diagnostic shell command on the scratch VM for the LLM. It
+// returns the exit code, the output's tail, and the exec and object holding
+// all of it. The error covers infrastructure failures only.
+func (r *ScratchRunner) RunCommand(ctx context.Context, command string, timeoutSeconds int) (CommandResult, error) {
 	if timeoutSeconds <= 0 {
 		timeoutSeconds = int(defaultCommandTimeout.Seconds())
 	}
@@ -494,19 +493,31 @@ func (r *ScratchRunner) RunCommand(ctx context.Context, command string, timeoutS
 		TimeoutSeconds: timeoutSeconds,
 	}, 0)
 	if err != nil {
-		return 0, "", err
+		return CommandResult{}, err
 	}
-	out, rerr := scratch.ReadOutput(ctx, r.GCSClient, op, uploadBytesLimit)
+	out, total, rerr := scratch.ReadOutputWithSize(ctx, r.GCSClient, op, uploadBytesLimit)
 	if rerr != nil {
 		log.Printf("scratch command: reading output: %v", rerr)
 	}
+	res := CommandResult{
+		ExitCode:   op.Result.ExitCode,
+		Output:     string(out),
+		ExecID:     op.ID,
+		OutURI:     op.Result.OutURI,
+		TotalBytes: total,
+		StartedAt:  op.Result.StartedAt,
+		FinishedAt: op.Result.FinishedAt,
+	}
 	if op.Error != nil {
 		if op.Error.Code == int(codes.DeadlineExceeded) {
-			return op.Result.ExitCode, string(out), commandTimeout(timeoutSeconds)
+			return res, commandTimeout(timeoutSeconds)
 		}
-		return 0, string(out), errors.New(op.Error.Message)
+		// The op failed before the command did, so its exit code is not the
+		// command's.
+		res.ExitCode = 0
+		return res, errors.New(op.Error.Message)
 	}
-	return op.Result.ExitCode, string(out), nil
+	return res, nil
 }
 
 // checkScriptTpl stabilizes a candidate into the checks directory, replacing

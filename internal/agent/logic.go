@@ -85,6 +85,8 @@ type defaultAgent struct {
 	gitTools         []*llm.FunctionDefinition
 	sideUsage        schema.TokenUsage       // accumulates LLM token consumption from calls made outside the main chat
 	inferenceFailure string                  // inference failure a toolchain-only first attempt stood in for, shown to the model
+	toolOpts         *ProposeOpts            // the iteration Propose is on, where tool calls are recorded
+	toolSeq          int                     // the next tool-call record's index in that iteration
 	refusals         []buildpolicy.Violation // shown so the model avoids them
 	reviewer         buildpolicy.Reviewer    // buildpolicy.Run, nil without a client
 	refMoves         []refMove               // set_source_ref calls, in order
@@ -154,7 +156,8 @@ func (a *defaultAgent) metadata(ctx context.Context, obliviousID string) (rebuil
 	return metadata, errors.Wrap(err, "creating metadata store")
 }
 
-func (a *defaultAgent) logs(ctx context.Context, obliviousID string) (io.ReadCloser, error) {
+// logObject is the GCB merged log of the build under obliviousID.
+func (a *defaultAgent) logObject(ctx context.Context, obliviousID string) (*gcs.ObjectHandle, error) {
 	meta, err := a.metadata(ctx, obliviousID)
 	if err != nil {
 		return nil, err
@@ -170,8 +173,7 @@ func (a *defaultAgent) logs(ctx context.Context, obliviousID string) (io.ReadClo
 	if bi.BuildID == "" {
 		return nil, errors.New("BuildID is empty, cannot read gcb logs")
 	}
-	obj := a.deps.GCSClient.Bucket(a.deps.LogsBucket).Object(gcb.MergedLogFile(bi.BuildID))
-	return obj.NewReader(ctx)
+	return a.deps.GCSClient.Bucket(a.deps.LogsBucket).Object(gcb.MergedLogFile(bi.BuildID)), nil
 }
 
 // singleEnv reports whether the session runs entirely in the build container,
@@ -210,8 +212,9 @@ func (a *defaultAgent) readLogsTool() *llm.FunctionDefinition {
 			},
 		},
 		Function: func(ctx context.Context, args map[string]any) genai.FunctionResponse {
-			logs, err := a.readPreviousBuildLogs(ctx)
+			logs, uri, err := a.readPreviousBuildLogs(ctx)
 			if err != nil {
+				a.recordToolCall(ctx, schema.AgentToolCall{Tool: "read_logs_end", Error: err.Error()})
 				return genai.FunctionResponse{
 					Name: "read_logs_end", // Name must match the FunctionDeclaration
 					Response: map[string]any{
@@ -220,9 +223,17 @@ func (a *defaultAgent) readLogsTool() *llm.FunctionDefinition {
 					},
 				}
 			}
+			total := len(logs)
 			if len(logs) > logsTailLimit {
 				logs = fmt.Sprintf("...[%d earlier bytes omitted]...\n", len(logs)-logsTailLimit) + logs[len(logs)-logsTailLimit:]
 			}
+			a.recordToolCall(ctx, schema.AgentToolCall{
+				Tool:         "read_logs_end",
+				OutURI:       uri,
+				TotalBytes:   int64(total),
+				SeenBytes:    len(logs),
+				OmittedBytes: max(total-len(logs), 0),
+			})
 			return genai.FunctionResponse{
 				Name: "read_logs_end", // Name must match the FunctionDeclaration
 				Response: map[string]any{
@@ -236,32 +247,36 @@ func (a *defaultAgent) readLogsTool() *llm.FunctionDefinition {
 
 // readPreviousBuildLogs returns the previous iteration's build logs from
 // wherever that build actually ran, routed on ObliviousID (present only when
-// the iteration was recorded from GCB).
+// the iteration was recorded from GCB), and the log's URI if it has one.
 // NOTE: A failed scratch-mode confirmation carries an ObliviousID, so its GCB
 // logs win over the retained (successful) local build output.
-func (a *defaultAgent) readPreviousBuildLogs(ctx context.Context) (string, error) {
+func (a *defaultAgent) readPreviousBuildLogs(ctx context.Context) (logs, uri string, err error) {
 	if len(a.iterHistory) > 0 {
 		if prev := a.iterHistory[len(a.iterHistory)-1]; prev.ObliviousID != "" {
-			r, err := a.logs(ctx, prev.ObliviousID)
+			obj, err := a.logObject(ctx, prev.ObliviousID)
 			if err != nil {
-				return "", errors.Wrap(err, "reading logs")
+				return "", "", errors.Wrap(err, "reading logs")
+			}
+			r, err := obj.NewReader(ctx)
+			if err != nil {
+				return "", "", errors.Wrap(err, "reading logs")
 			}
 			defer r.Close()
 			b, err := io.ReadAll(r)
 			if err != nil {
-				return "", err
+				return "", "", err
 			}
-			return string(b), nil
+			return string(b), fmt.Sprintf("gs://%s/%s", obj.BucketName(), obj.ObjectName()), nil
 		}
 	}
 	if a.deps.Shell != nil {
 		logs, err := a.deps.Shell.LastBuildLogs(ctx)
 		if err != nil {
-			return "", errors.Wrap(err, "reading logs")
+			return "", "", errors.Wrap(err, "reading logs")
 		}
-		return string(logs), nil
+		return string(logs), "", nil
 	}
-	return "", errors.New("can't read logs because there was no previous build execution")
+	return "", "", errors.New("can't read logs because there was no previous build execution")
 }
 
 const runCommandTimeoutMax = 900
@@ -312,35 +327,72 @@ func (a *defaultAgent) runInContainerTool() *llm.FunctionDefinition {
 // still larger output is the head of that window.
 func (a *defaultAgent) runShell(ctx context.Context, name string, args map[string]any, wrap func(string) string) genai.FunctionResponse {
 	command, _ := args["command"].(string)
+	// Every response gets a record, refusals included, so a reader pairing
+	// records with transcript responses by position never drifts.
+	refuse := func(msg string) genai.FunctionResponse {
+		a.recordToolCall(ctx, schema.AgentToolCall{Tool: name, Command: command, Error: msg})
+		return shellResponse(name, "", 0, msg, 0)
+	}
 	if command == "" {
-		return shellResponse(name, "", 0, "command is required", 0)
+		return refuse("command is required")
 	}
 	timeout, terr := shellTimeout(args)
 	if terr != "" {
-		return shellResponse(name, "", 0, terr, 0)
+		return refuse(terr)
 	}
-	run := func(script string, timeout int) (int, string, error) {
+	run := func(script string, timeout int) (CommandResult, error) {
 		if wrap != nil {
 			script = wrap(script)
 		}
 		return a.deps.Shell.RunCommand(ctx, script, timeout)
 	}
 	out := fmt.Sprintf("/tmp/.rb-tool-%016x", rand.Uint64())
-	exitCode, output, err := run(detachOutput(command, out), timeout)
+	res, err := run(detachOutput(command, out), timeout)
 	if errors.As(err, new(commandTimeout)) {
 		// A timeout can kill the shell before its replay.
-		_, back, rerr := run(readbackScript(out), readbackTimeout)
+		back, rerr := run(readbackScript(out), readbackTimeout)
 		if rerr != nil {
 			log.Printf("%s: reading back a timed-out call's output: %v", name, rerr)
 		}
-		output = cmp.Or(back, output)
+		if back.Output != "" {
+			res.Output, res.OutURI, res.TotalBytes = back.Output, back.OutURI, back.TotalBytes
+		}
 	}
-	output, omitted := truncateEnds(output, cmp.Or(a.deps.ShellHeadBytes, toolOutputHead), cmp.Or(a.deps.ShellTailBytes, toolOutputTail))
+	output, omitted := truncateEnds(res.Output, cmp.Or(a.deps.ShellHeadBytes, toolOutputHead), cmp.Or(a.deps.ShellTailBytes, toolOutputTail))
 	errStr := ""
 	if err != nil {
 		errStr = err.Error()
 	}
-	return shellResponse(name, output, exitCode, errStr, omitted)
+	// The runner reads back only a large output's tail, so the object's size is
+	// the real total.
+	total := cmp.Or(res.TotalBytes, int64(len(res.Output)))
+	a.recordToolCall(ctx, schema.AgentToolCall{
+		Tool:         name,
+		Command:      command,
+		ExecID:       res.ExecID,
+		OutURI:       res.OutURI,
+		ExitCode:     res.ExitCode,
+		Error:        errStr,
+		TotalBytes:   total,
+		SeenBytes:    len(output),
+		OmittedBytes: max(int(total)-len(output), 0),
+		StartedAt:    res.StartedAt,
+		FinishedAt:   res.FinishedAt,
+	})
+	return shellResponse(name, output, res.ExitCode, errStr, omitted)
+}
+
+// recordToolCall writes a tool-call record beside the iteration's transcript,
+// tying the truncated output the model saw to its exec and full output. Best
+// effort: failures are logged.
+func (a *defaultAgent) recordToolCall(ctx context.Context, rec schema.AgentToolCall) {
+	u := a.toolOpts.upload()
+	if u == nil || u.Scheme != "gs" || a.deps.GCSClient == nil {
+		return
+	}
+	rec.SessionID, rec.Iteration, rec.Seq = a.toolOpts.Session, a.toolOpts.Iteration, a.toolSeq
+	a.toolSeq++
+	uploadJSONRecord(ctx, a.deps.GCSClient, u.Host, toolCallPath(rec.SessionID, rec.Iteration, rec.Seq, rec.Tool), rec)
 }
 
 // truncateEnds keeps the first head and last tail bytes of s with a marker
@@ -838,15 +890,15 @@ func (a *defaultAgent) generate(ctx context.Context, prompt []string, opts *Prop
 			return "", errors.Wrap(err, "chat error")
 		}
 		log.Printf("%s\n\n", llm.FormatContent(*content))
-		if opts.ChatUploadURL != nil {
-			contentPath := path.Join(opts.ChatUploadURL.Path, fmt.Sprintf("%s-%d-%s.json", invokeTime, partNum, content.Role))
+		if u := opts.upload(); u != nil {
+			contentPath := path.Join(u.Path, fmt.Sprintf("%s-%d-%s.json", invokeTime, partNum, content.Role))
 			var writer io.WriteCloser
-			switch opts.ChatUploadURL.Scheme {
+			switch u.Scheme {
 			case "gs":
-				writer = a.deps.GCSClient.Bucket(opts.ChatUploadURL.Host).Object(contentPath).NewWriter(ctx)
+				writer = a.deps.GCSClient.Bucket(u.Host).Object(contentPath).NewWriter(ctx)
 			// TODO: implement local fs storage
 			default:
-				return "", fmt.Errorf("unsupported chat upload scheme: \"%s\"", opts.ChatUploadURL.Scheme)
+				return "", fmt.Errorf("unsupported chat upload scheme: \"%s\"", u.Scheme)
 			}
 			enc := json.NewEncoder(writer)
 			enc.SetIndent("", "  ")
@@ -974,6 +1026,8 @@ func (a *defaultAgent) Propose(ctx context.Context, opts *ProposeOpts) (*schema.
 	var s *schema.StrategyOneOf
 	var err error
 	record := "0-proposal.json"
+	// Tool records below join this iteration's transcript.
+	a.toolOpts, a.toolSeq = opts, 0
 	if len(a.iterHistory) == 0 {
 		// For the first iteration, use our regular inference logic. It walks git
 		// history without consulting its context, so the call is abandoned rather

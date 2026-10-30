@@ -540,6 +540,28 @@ type AgentContext struct {
 	PriorSessions []string `json:"prior_sessions,omitempty"`
 }
 
+// AgentToolCall records one diagnosis tool call, written best effort to the
+// sessions bucket beside the transcript. The transcript keeps only a
+// truncated result, so this is what ties a call to the exec that ran it and
+// to its full output when a session is debugged after it ends.
+type AgentToolCall struct {
+	SessionID string `json:"session_id"`
+	Iteration int    `json:"iteration"` // messages/<n> transcript folder
+	Seq       int    `json:"seq"`       // tool run order within Iteration
+	Tool      string `json:"tool"`
+	Command   string `json:"command,omitempty"`
+	ExecID    string `json:"exec_id,omitempty"` // scratch exec op, if one ran
+	OutURI    string `json:"out_uri,omitempty"` // full output: exec object or GCB log
+	ExitCode  int    `json:"exit_code"`
+	Error     string `json:"error,omitempty"`
+	// Output sizes: in full, as shown to the model, and the cut between them.
+	TotalBytes   int64     `json:"total_bytes"`
+	SeenBytes    int       `json:"seen_bytes"`
+	OmittedBytes int       `json:"omitted_bytes"`
+	StartedAt    time.Time `json:"started_at,omitzero"`
+	FinishedAt   time.Time `json:"finished_at,omitzero"`
+}
+
 // AgentCreateResponse returns the session ID and job name
 type AgentCreateResponse struct {
 	SessionID     string `json:"session_id"`
