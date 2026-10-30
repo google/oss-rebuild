@@ -1,0 +1,152 @@
+// Copyright 2026 Google LLC
+// SPDX-License-Identifier: Apache-2.0
+
+// Command scratch-host is the scratch host broker. See package
+// scratchhostservice.
+package main
+
+import (
+	"context"
+	"flag"
+	"log"
+	"net/http"
+	"net/netip"
+	"os"
+	"os/signal"
+	"path/filepath"
+	"syscall"
+	"time"
+
+	"github.com/google/oss-rebuild/internal/api/idauth"
+	"github.com/google/oss-rebuild/internal/api/scratchhostservice"
+	"github.com/google/oss-rebuild/internal/execx"
+	"github.com/google/oss-rebuild/pkg/act/api"
+)
+
+var (
+	callerSA = flag.String("caller-sa", "", "caller service account email (sender of incoming requests)")
+	audience = flag.String("audience", "", "expected ID-token audience (e.g. https://builder/<host-name>)")
+	listen   = flag.String("listen", ":8080", "listen address")
+
+	guestDir  = flag.String("guest-dir", "/var/lib/scratch-host/guest", "directory holding the guest's disk overlays and console log")
+	goldenDir = flag.String("golden-dir", "/var/lib/scratch-host/golden", "directory holding vmlinuz, initrd.img, rootfs.raw and scratch.raw")
+	execDir   = flag.String("exec-dir", "/var/lib/scratch-host/execs", "parent of per-session exec ledger directories: op capture files")
+
+	guestSlots   = flag.Int("guest-slots", 1, "guests the host runs at once")
+	guestVCPU    = flag.Int("guest-vcpu", 4, "vCPUs for each guest")
+	guestMemMB   = flag.Int("guest-mem-mb", 12288, "memory for each guest, in MB")
+	guestMTU     = flag.Int("guest-mtu", 1460, "guest MTU, at most the host NIC's")
+	guestDNS     = flag.String("guest-dns", "169.254.169.254", "resolver written into the guest")
+	guestWorkdir = flag.String("guest-workdir", "/home/builder", "default cwd for execs")
+
+	bridge      = flag.String("bridge", "mvmbr0", "host bridge the guest tap attaches to")
+	guestSubnet = flag.String("guest-subnet", "10.200.0.0/24", "host-only guest subnet, never reachable off this host")
+
+	qemuBin    = flag.String("qemu-bin", "qemu-system-x86_64", "system emulator binary")
+	qemuImgBin = flag.String("qemu-img-bin", "qemu-img", "qemu-img binary")
+)
+
+// The guest image's sshd authorizes the broker's key for root.
+const (
+	sshUser        = "root"
+	sshPort        = 22
+	sshDialTimeout = 10 * time.Second // also bounds the readiness probe
+)
+
+// maxOutputBytes caps an exec's output, killing the exec past it.
+// NOTE: Keep it at least pkg/build/scratch's defaultMaxArtifactBytes, since an
+// artifact comes back through exec output.
+const maxOutputBytes = 256 << 20
+
+func main() {
+	flag.Parse()
+	if *callerSA == "" {
+		log.Fatalf("--caller-sa is required")
+	}
+	if *audience == "" {
+		log.Fatalf("--audience is required")
+	}
+	subnet, err := netip.ParsePrefix(*guestSubnet)
+	if err != nil {
+		log.Fatalf("parsing --guest-subnet: %v", err)
+	}
+	guestNet, err := scratchhostservice.GuestNetFor(subnet, *guestSlots)
+	if err != nil {
+		log.Fatalf("--guest-subnet: %v", err)
+	}
+	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGTERM, syscall.SIGINT)
+	defer stop()
+	dialer, err := scratchhostservice.NewSSHDialer(scratchhostservice.SSHConfig{
+		User:        sshUser,
+		Port:        sshPort,
+		DialTimeout: sshDialTimeout,
+	})
+	if err != nil {
+		log.Fatalf("exec channel: %v", err)
+	}
+	if err := os.MkdirAll(*execDir, 0o755); err != nil {
+		log.Fatalf("creating %s: %v", *execDir, err)
+	}
+	host := scratchhostservice.NewHost(time.Now(), *guestSlots)
+	channels := scratchhostservice.NewChannelCache(dialer)
+	guestDeps := &scratchhostservice.GuestDeps{
+		Host: host,
+		Config: scratchhostservice.Config{
+			Layout: scratchhostservice.Layout{
+				GuestDir: *guestDir,
+				ExecsDir: *execDir,
+				Kernel:   filepath.Join(*goldenDir, "vmlinuz"),
+				Initrd:   filepath.Join(*goldenDir, "initrd.img"),
+				Rootfs:   filepath.Join(*goldenDir, "rootfs.raw"),
+				Scratch:  filepath.Join(*goldenDir, "scratch.raw"),
+			},
+			Guest: scratchhostservice.GuestConfig{
+				VCPU:           *guestVCPU,
+				MemMB:          *guestMemMB,
+				DNS:            *guestDNS,
+				MTU:            *guestMTU,
+				Workdir:        *guestWorkdir,
+				MaxOutputBytes: maxOutputBytes,
+			},
+			Net:        guestNet,
+			Bridge:     *bridge,
+			QEMUBin:    *qemuBin,
+			QEMUImgBin: *qemuImgBin,
+		},
+		Exec:         execx.NewRealCommandExecutor(),
+		ChannelCache: channels,
+	}
+	guestInit := func(context.Context) (*scratchhostservice.GuestDeps, error) { return guestDeps, nil }
+	mw := idauth.Middleware(idauth.NewGoogleValidator(*callerSA, *audience))
+	mux := http.NewServeMux()
+	mux.Handle(scratchhostservice.RouteAdmit, mw(api.Handler(guestInit, scratchhostservice.GuestAdmit)))
+	mux.Handle(scratchhostservice.RouteDelete, mw(api.Handler(guestInit, scratchhostservice.GuestDelete)))
+	mux.Handle(scratchhostservice.RouteList, mw(api.Handler(guestInit, scratchhostservice.Guests)))
+	mux.Handle(scratchhostservice.RouteExecStart, mw(api.Handler(guestInit, scratchhostservice.ExecStart)))
+	mux.Handle(scratchhostservice.RouteExecStatus, mw(api.Handler(guestInit, scratchhostservice.Status)))
+	mux.Handle(scratchhostservice.RouteExecOutput, mw(api.StreamHandler(guestInit, scratchhostservice.Output)))
+	mux.Handle(scratchhostservice.RouteExecKill, mw(api.Handler(guestInit, scratchhostservice.Kill)))
+	// The health checks are open. The guest probe runs a command in the guest,
+	// so it is bounded like a dial.
+	mux.Handle(scratchhostservice.RouteGuestHealth, api.Handler(guestInit, api.WithTimeout(sshDialTimeout, scratchhostservice.GuestHealth)))
+	mux.HandleFunc(scratchhostservice.RouteHealthz, func(rw http.ResponseWriter, _ *http.Request) { rw.WriteHeader(http.StatusOK) })
+	srv := &http.Server{Addr: *listen, Handler: mux}
+	drained := make(chan struct{}) // ListenAndServe returns as Shutdown starts, not when it ends
+	go func() {
+		defer close(drained)
+		<-ctx.Done()
+		// Stop admitting and end guests before the listener drains, so no guest
+		// boots unreachable.
+		host.Close()
+		shutdownCtx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+		defer cancel()
+		if err := srv.Shutdown(shutdownCtx); err != nil {
+			log.Printf("shutdown: %v", err)
+		}
+	}()
+	log.Printf("scratch-host listening on %s (guest on %s)", *listen, subnet)
+	if err := srv.ListenAndServe(); err != nil && err != http.ErrServerClosed {
+		log.Fatal(err)
+	}
+	<-drained
+}
