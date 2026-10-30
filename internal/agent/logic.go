@@ -177,12 +177,12 @@ func (a *defaultAgent) logs(ctx context.Context, obliviousID string) (io.ReadClo
 // singleEnv reports whether the session runs entirely in the build container,
 // with no host shell tool.
 func (a *defaultAgent) singleEnv() bool {
-	return a.deps.ScratchRunner != nil && a.deps.ScratchRunner.SingleEnv
+	return a.deps.SingleEnv
 }
 
 func (a *defaultAgent) getTools() []*llm.FunctionDefinition {
 	tools := append(a.gitTools, a.readLogsTool(), a.setSourceRefTool())
-	if a.deps.ScratchRunner != nil {
+	if a.deps.Shell != nil {
 		if !a.singleEnv() {
 			tools = append(tools, a.runOnHostTool())
 		}
@@ -254,8 +254,8 @@ func (a *defaultAgent) readPreviousBuildLogs(ctx context.Context) (string, error
 			return string(b), nil
 		}
 	}
-	if a.deps.ScratchRunner != nil {
-		logs, err := a.deps.ScratchRunner.LastBuildLogs(ctx)
+	if a.deps.Shell != nil {
+		logs, err := a.deps.Shell.LastBuildLogs(ctx)
 		if err != nil {
 			return "", errors.Wrap(err, "reading logs")
 		}
@@ -323,7 +323,7 @@ func (a *defaultAgent) runShell(ctx context.Context, name string, args map[strin
 		if wrap != nil {
 			script = wrap(script)
 		}
-		return a.deps.ScratchRunner.RunCommand(ctx, script, timeout)
+		return a.deps.Shell.RunCommand(ctx, script, timeout)
 	}
 	out := fmt.Sprintf("/tmp/.rb-tool-%016x", rand.Uint64())
 	exitCode, output, err := run(detachOutput(command, out), timeout)
@@ -335,7 +335,7 @@ func (a *defaultAgent) runShell(ctx context.Context, name string, args map[strin
 		}
 		output = cmp.Or(back, output)
 	}
-	output, omitted := truncateEnds(output, toolOutputHead, toolOutputTail)
+	output, omitted := truncateEnds(output, cmp.Or(a.deps.ShellHeadBytes, toolOutputHead), cmp.Or(a.deps.ShellTailBytes, toolOutputTail))
 	errStr := ""
 	if err != nil {
 		errStr = err.Error()
@@ -624,13 +624,13 @@ func (a *defaultAgent) diagnoseOnly() []string {
 		prompt = append(prompt,
 			"You can use the run_in_container tool to run commands inside the retained build container with the build's own toolchain. Everything is in the container.",
 			"Where things are, all in the container: the source checkout is at /src, where each call starts; your rebuild is at /out/rebuild; diffr is at "+scratch.ContainerDiffrPath()+" and the upstream artifact is under "+scratch.ContainerUpstreamDir+"; and "+scratch.ContainerBuildsDir+" holds this and every earlier attempt's build.sh, out/, and src/.",
-			fmt.Sprintf("Read the build log with read_logs_end before exploring, keep tool output small with head, tail, grep, and wc rather than printing whole files or trees (a result keeps only its first %dKB and last %dKB), and aim to reach a diagnosis in under 20 tool calls; the exchange ends after %d.", toolOutputHead/1000, toolOutputTail/1000, maxToolTurns),
+			fmt.Sprintf("Read the build log with read_logs_end before exploring, keep tool output small with head, tail, grep, and wc rather than printing whole files or trees (a result keeps only its first %dKB and last %dKB), and aim to reach a diagnosis in under 20 tool calls. The exchange ends after %d.", cmp.Or(a.deps.ShellHeadBytes, toolOutputHead)/1000, cmp.Or(a.deps.ShellTailBytes, toolOutputTail)/1000, cmp.Or(a.deps.MaxTurns, maxToolTurns)),
 		)
-	} else if a.deps.ScratchRunner != nil {
+	} else if a.deps.Shell != nil {
 		prompt = append(prompt,
 			"You can also use the run_on_host tool to run diagnostic shell commands on the build VM host (e.g. inspect docker images or examine files left by previous build attempts), and the run_in_container tool to run commands inside the retained build container with the build's own toolchain.",
 			"Where things are: the source checkout is at /src inside the retained container, where each call starts, and that same tree is the host directory ./builds/<build-id>/src, so a file you produce in the container is readable by host tools like diffr at that path. Host tools cannot read other container paths. The previous attempt's build script and output are under ./builds/<build-id>/ on the host. After a content mismatch the error message names where the upstream artifact and diffr sit on the host.",
-			fmt.Sprintf("Read the build log with read_logs_end before exploring, keep tool output small with head, tail, grep, and wc rather than printing whole files or trees (a result keeps only its first %dKB and last %dKB), and aim to reach a diagnosis in under 20 tool calls. The exchange ends after %d.", toolOutputHead/1000, toolOutputTail/1000, maxToolTurns),
+			fmt.Sprintf("Read the build log with read_logs_end before exploring, keep tool output small with head, tail, grep, and wc rather than printing whole files or trees (a result keeps only its first %dKB and last %dKB), and aim to reach a diagnosis in under 20 tool calls. The exchange ends after %d.", cmp.Or(a.deps.ShellHeadBytes, toolOutputHead)/1000, cmp.Or(a.deps.ShellTailBytes, toolOutputTail)/1000, cmp.Or(a.deps.MaxTurns, maxToolTurns)),
 		)
 	}
 	return append(prompt,
@@ -740,6 +740,9 @@ func (a *defaultAgent) execDetails(ctx context.Context, iteration *schema.AgentI
 // next proposal inherits the rendered Deps verbatim and runs them on the
 // scratch VM and then on GCB, so timewarp must be configured the same.
 func (a *defaultAgent) buildEnv() rebuild.BuildEnv {
+	if a.deps.BuildEnv.TimewarpHost != "" {
+		return a.deps.BuildEnv
+	}
 	return rebuild.BuildEnv{TimewarpHost: "localhost:8080", HasRepo: false}
 }
 
@@ -888,7 +891,7 @@ func (a *defaultAgent) proposeAgentInference(ctx context.Context, opts *ProposeO
 		if a.deps.Chat != nil {
 			a.sideUsage = a.sideUsage.Add(sumTokenUsage(a.deps.Chat.Usage(), a.deps.Chat.Model()))
 		}
-		chat, err := a.deps.ChatFn(ctx)
+		chat, err := a.deps.ChatFn(ctx, a.getTools())
 		if err != nil {
 			return nil, errors.Wrap(err, "starting chat")
 		}
@@ -1028,7 +1031,7 @@ func (a *defaultAgent) Canonicalize(ctx context.Context, opts *ProposeOpts, work
 		if a.deps.Chat != nil {
 			a.sideUsage = a.sideUsage.Add(sumTokenUsage(a.deps.Chat.Usage(), a.deps.Chat.Model()))
 		}
-		chat, err := a.deps.ChatFn(ctx)
+		chat, err := a.deps.ChatFn(ctx, nil)
 		if err != nil {
 			return working, false, errors.Wrap(err, "starting canonicalize chat")
 		}

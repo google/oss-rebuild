@@ -128,7 +128,7 @@ func freeFormTestAgent(t *testing.T, responses []string, answers ...string) *fre
 		}
 		return &longrunning.Operation[schema.ScratchExecResult]{ID: id, Done: true, Result: &schema.ScratchExecResult{ScratchID: "s1", ExitCode: code, OutURI: "gs://out/" + id}}, nil
 	}
-	h.a = NewDefaultAgent(testTarget, &AgentDeps{ScratchRunner: runner, MaxTurns: 7})
+	h.a = NewDefaultAgent(testTarget, &AgentDeps{Shell: runner, MaxTurns: 7})
 	h.a.loc = testLocation
 	h.a.enableFreeForm(runner, func(ctx context.Context, system string, tools []*llm.FunctionDefinition) (*llm.Chat, error) {
 		return llm.NewChat(ctx, client, "m", llm.WithSystemPrompt(nil, genai.NewPartFromText(system)), &llm.ChatOpts{Tools: tools, MaxToolIterations: 20})

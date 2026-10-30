@@ -18,6 +18,7 @@ import (
 	"github.com/google/oss-rebuild/internal/httpx"
 	"github.com/google/oss-rebuild/internal/ratex"
 	"github.com/google/oss-rebuild/pkg/act/api"
+	"github.com/google/oss-rebuild/pkg/build/local"
 	"github.com/google/oss-rebuild/pkg/llm"
 	"github.com/google/oss-rebuild/pkg/rebuild/rebuild"
 	"github.com/google/oss-rebuild/pkg/rebuild/schema"
@@ -25,9 +26,16 @@ import (
 	"google.golang.org/genai"
 )
 
+// Shell runs the model's diagnostic commands where the previous attempt's
+// container and files are, and serves that attempt's build log.
+type Shell interface {
+	RunCommand(ctx context.Context, command string, timeoutSeconds int) (exitCode int, output string, err error)
+	LastBuildLogs(ctx context.Context) ([]byte, error)
+}
+
 type AgentDeps struct {
 	Chat   *llm.Chat
-	ChatFn func(context.Context) (*llm.Chat, error) // starts the chat an iteration diagnoses in, one per iteration
+	ChatFn func(context.Context, []*llm.FunctionDefinition) (*llm.Chat, error) // Starts each iteration's fresh chat with the agent's tools.
 	// Bucket for logs and rebuild artifact
 	MetadataBucket     string
 	LogsBucket         string
@@ -35,7 +43,11 @@ type AgentDeps struct {
 	MaxTurns           int // Bounds each model exchange's tool uses (ChatOpts.MaxToolIterations)
 	GenaiClient        *genai.Client
 	RegistryClient     httpx.BasicClient // Upstream registry requests (e.g. adapt-mode registry refresh) via the session's identified egress path.
-	ScratchRunner      *ScratchRunner    // When set, iteration builds run on a scratch VM with build logs read from exec output.
+	Shell              Shell             // Backs the shell tools and read_logs_end.
+	BuildEnv           rebuild.BuildEnv  // Must match the next attempt's executor. Empty means GCB.
+	ShellHeadBytes     int               // Kept from the start of a shell result. Zero means the default.
+	ShellTailBytes     int               // Kept from the end of a shell result. Zero means the default.
+	SingleEnv          bool              // Runs the loop in the build container, without run_on_host.
 	Model              string            // Gemini model id for auxiliary calls. Empty selects llm.GeminiPro.
 	GitCache           *gitcache.Client  // When set, inference repo clones go through the git-cache.
 	Retrier            ratex.Retrier     // Paces and retries the auxiliary model calls. Zero value calls once.
@@ -241,21 +253,25 @@ func doSession(ctx context.Context, req RunSessionReq, deps RunSessionDeps) (com
 		MaxTurns:           maxToolTurns,
 		GenaiClient:        deps.Client,
 		RegistryClient:     deps.RegistryClient,
-		ScratchRunner:      deps.ScratchRunner,
 		Model:              deps.Model,
 		GitCache:           deps.GitCache,
 		Retrier:            deps.Retrier,
 		CratesRegistryStub: deps.CratesRegistryStub,
 		CratesCache:        deps.CratesCache,
 	})
+	if deps.ScratchRunner != nil {
+		a.deps.Shell = deps.ScratchRunner
+		a.deps.BuildEnv = local.DockerRunBuildEnv()
+		a.deps.SingleEnv = deps.ScratchRunner.SingleEnv
+	}
 	// Stamp the session's LLM token spend onto whatever completion we return.
 	defer func() {
 		if completeReq != nil {
 			completeReq.Usage = a.Usage().OrNil()
 		}
 	}()
-	a.deps.ChatFn = func(ctx context.Context) (*llm.Chat, error) {
-		return llm.NewChat(ctx, deps.Client, cmp.Or(deps.Model, llm.GeminiPro), config, &llm.ChatOpts{Tools: a.getTools(), MaxToolIterations: a.deps.MaxTurns, Retrier: deps.Retrier})
+	a.deps.ChatFn = func(ctx context.Context, tools []*llm.FunctionDefinition) (*llm.Chat, error) {
+		return llm.NewChat(ctx, deps.Client, cmp.Or(deps.Model, llm.GeminiPro), config, &llm.ChatOpts{Tools: tools, MaxToolIterations: a.deps.MaxTurns, Retrier: deps.Retrier})
 	}
 	if deps.FreeForm && deps.ScratchRunner != nil {
 		// One chat per session, bounded by freeFormToolCalls.

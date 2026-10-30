@@ -20,7 +20,7 @@ import (
 
 // openFreeForm is the driver's sessionOpener over a fresh chat.
 func (a *defaultAgent) openFreeForm(ctx context.Context, opts *ProposeOpts, prev *executionDetails) (freeFormSession, string, error) {
-	s := &chatSession{a: a, opts: opts, check: artifactCheck{runner: a.deps.ScratchRunner}}
+	s := &chatSession{a: a, opts: opts, check: artifactCheck{runner: a.ff.runner}}
 	tools := append(a.getTools(), s.check.tool(), s.handoffTool(), giveUpTool(func(reason string) { s.giveUp = reason }))
 	chat, err := a.newChat(ctx, freeFormPrompt, s.tracing(tools))
 	if err != nil {

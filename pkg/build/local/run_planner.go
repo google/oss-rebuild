@@ -98,8 +98,8 @@ func NewDockerRunPlanner() *DockerRunPlanner {
 	return &DockerRunPlanner{}
 }
 
-// dockerRunBuildEnv is the env docker run plans for which strategies render.
-func dockerRunBuildEnv() rebuild.BuildEnv {
+// DockerRunBuildEnv is the env docker run plans for which strategies render.
+func DockerRunBuildEnv() rebuild.BuildEnv {
 	return rebuild.BuildEnv{TimewarpHost: "localhost:8080", HasRepo: false}
 }
 
@@ -108,7 +108,7 @@ func (p *DockerRunPlanner) GeneratePlan(ctx context.Context, input rebuild.Input
 	if opts.UseSyscallMonitor {
 		return nil, errors.New("syscall monitor support not implemented")
 	}
-	instructions, err := input.Strategy.GenerateFor(input.Target, dockerRunBuildEnv())
+	instructions, err := input.Strategy.GenerateFor(input.Target, DockerRunBuildEnv())
 	if err != nil {
 		return nil, errors.Wrap(err, "failed to generate rebuild instructions")
 	}

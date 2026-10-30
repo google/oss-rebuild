@@ -8,6 +8,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/google/oss-rebuild/pkg/build/local"
 	"github.com/google/oss-rebuild/pkg/rebuild/flow"
 	"github.com/google/oss-rebuild/pkg/rebuild/rebuild"
 	"github.com/google/oss-rebuild/pkg/rebuild/schema"
@@ -22,9 +23,9 @@ func TestExecDetailsRendersTheSharedTimewarpHost(t *testing.T) {
 		OutputDir: ".",
 	}
 	iter := &schema.AgentIteration{Strategy: new(schema.NewStrategyOneOf(strategy))}
-	for name, runner := range map[string]*ScratchRunner{"scratch": {}, "gcb": nil} {
+	for name, env := range map[string]rebuild.BuildEnv{"scratch": local.DockerRunBuildEnv(), "gcb": {}} {
 		t.Run(name, func(t *testing.T) {
-			a := NewDefaultAgent(target, &AgentDeps{ScratchRunner: runner})
+			a := NewDefaultAgent(target, &AgentDeps{BuildEnv: env})
 			d := a.execDetails(context.Background(), iter)
 			if !strings.Contains(d.Instructions.Build, "@localhost:8080") {
 				t.Errorf("build = %q, want the registry on localhost:8080", d.Instructions.Build)
