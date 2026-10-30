@@ -9,9 +9,12 @@ import (
 	"encoding/json"
 	"fmt"
 	"log"
+	"regexp"
+	"slices"
 	"strings"
 	"time"
 
+	"github.com/google/oss-rebuild/internal/buildpolicy"
 	"github.com/google/oss-rebuild/pkg/llm"
 	"github.com/google/oss-rebuild/pkg/rebuild/flow"
 	"github.com/google/oss-rebuild/pkg/rebuild/rebuild"
@@ -23,13 +26,15 @@ import (
 // Free-form mode: the model iterates in the retained container, where trials
 // are cheap, until check_artifact matches, then hands off its commands. The job
 // formalizes them into candidates that each get one fresh build.
+// The handoff and each candidate are judged by the content rule before a build.
 
 const (
 	formalizeRetries  = 2     // re-formalizations before proposing the handoff as written
 	traceHead         = 1_000 // bytes kept from the head of a tool output in the formalization prompt
 	traceTail         = 3_000 // bytes kept from its tail
 	freeFormToolCalls = 300   // tool calls per turn
-	handoffReminders  = 2     // follow-ups after a turn without a handoff
+	handoffReminders  = 2     // follow-ups after a turn without a handoff, and after a refused one
+	maxEndRefusals    = 2
 )
 
 // freeFormSession is a model session. Each turn (run, then followUp) returns
@@ -66,6 +71,7 @@ type freeForm struct {
 	handoff    handoff
 	trace      []toolCall
 	exemplar   rebuild.Instructions // the attempt the model worked from
+	allowed    *handoffVerdict      // the handoff's allowing review
 	attempts   int                  // formalizations the model answered
 	failures   []string             // each rejected candidate's reason
 	fallback   bool                 // fallbackStrategy has been tried
@@ -80,6 +86,7 @@ type freeFormDriver struct {
 	complete func(ctx context.Context, prompt string) (string, error)         // the formalization's model call
 	store    func(ctx context.Context, opts *ProposeOpts, name string, v any) // uploadRecord, or a test's fake
 	pending  *freeForm                                                        // the handoff being formalized
+	checked  *schema.StrategyOneOf                                            // judged already, so check passes it
 }
 
 // sessionOpener starts a session over prev and returns its first prompt.
@@ -93,24 +100,43 @@ func newFreeFormDriver(a *defaultAgent, runner *ScratchRunner, open sessionOpene
 }
 
 // propose continues the pending handoff or starts a session for a new one.
+// A refused candidate costs no build, so the next is tried in the same call.
+// A second handoff spent in one call is an error.
 func (f *freeFormDriver) propose(ctx context.Context, opts *ProposeOpts) (*schema.StrategyOneOf, error) {
 	if ff := f.pending; ff != nil {
 		if n := len(f.a.iterHistory); n > ff.iterations {
 			ff.failures = append(ff.failures, iterationFailure(f.a.iterHistory[n-1]))
 		}
-		if s, err := f.nextCandidate(ctx, opts); s != nil || err != nil {
-			return s, err
+	}
+	restarted := false
+	for {
+		if f.pending != nil {
+			if s, err := f.nextCandidate(ctx, opts); s != nil || err != nil {
+				return s, err
+			}
+			if restarted {
+				return nil, errors.New("every candidate of the handoff was refused")
+			}
+			log.Printf("free-form: the handoff is spent, starting over")
+			f.pending, restarted = nil, true
 		}
-		log.Printf("free-form: the handoff is spent, starting over")
-		f.pending = nil
+		if err := f.handoffSession(ctx, opts); err != nil {
+			return nil, err
+		}
 	}
-	if err := f.handoffSession(ctx, opts); err != nil {
-		return nil, err
-	}
-	return f.nextCandidate(ctx, opts)
 }
 
-// handoffSession runs a session to a handoff and makes it pending.
+// check is the agent's Check in free-form mode. It passes the candidate
+// checkCandidate already judged.
+func (f *freeFormDriver) check(ctx context.Context, opts *ProposeOpts, proposal *schema.StrategyOneOf) (string, error) {
+	if proposal != nil && proposal == f.checked {
+		return "", nil
+	}
+	return f.a.judgeProposal(ctx, opts, proposal)
+}
+
+// handoffSession runs a session to a handoff and makes it pending. A refused
+// handoff continues the session from a tree reset to the ref.
 func (f *freeFormDriver) handoffSession(ctx context.Context, opts *ProposeOpts) error {
 	if err := f.runner.PrepareCompare(ctx); err != nil {
 		return errors.Wrap(err, "staging the comparison inputs")
@@ -124,26 +150,58 @@ func (f *freeFormDriver) handoffSession(ctx context.Context, opts *ProposeOpts) 
 		return err
 	}
 	defer sess.close()
-	raw, trace, err := sess.run(ctx, prompt)
-	for reminders := 0; err == nil && raw == nil; {
-		if reminders++; reminders > handoffReminders {
-			return errors.New("the model ended without calling handoff")
+	var h handoff
+	var allowed *handoffVerdict
+	var window int // trace index of the last restore
+	judge := func(raw json.RawMessage, trace []toolCall) string {
+		h, allowed = handoff{}, nil
+		if json.Unmarshal(raw, &h) != nil || strings.TrimSpace(h.BuildCommands.Build) == "" {
+			return ""
 		}
-		raw, trace, err = sess.followUp(ctx, handoffReminder(trace))
+		refusal, verdict, err := f.reviewHandoff(ctx, opts, h, trace[window:])
+		if err != nil {
+			log.Printf("free-form: reviewing the handoff: %v", err)
+			return ""
+		}
+		if refusal == "" {
+			allowed = verdict
+			return ""
+		}
+		log.Printf("free-form: handoff refused")
+		window = len(trace)
+		f.restoreSource(ctx)
+		return handoffRefusal(refusal)
+	}
+	raw, trace, err := sess.run(ctx, prompt)
+	for reminders, refusals := 0, 0; err == nil; {
+		var followUp string
+		if raw == nil {
+			if reminders++; reminders > handoffReminders {
+				err = errors.New("the model ended without calling handoff")
+				break
+			}
+			followUp = handoffReminder(trace)
+		} else if followUp = judge(raw, trace); followUp != "" {
+			if refusals++; refusals > maxEndRefusals {
+				err = errors.Errorf("handoff refused %d times", refusals)
+				break
+			}
+		}
+		if followUp == "" {
+			break
+		}
+		raw, trace, err = sess.followUp(ctx, followUp)
 	}
 	if err != nil {
 		return err
 	}
-	var h handoff
-	if err := json.Unmarshal(raw, &h); err != nil {
-		return errors.Wrap(err, "decoding the handoff")
-	}
 	if strings.TrimSpace(h.BuildCommands.Build) == "" {
 		return errors.New("handoff without build commands")
 	}
+	trace = trace[window:]
 	f.a.reinferAfterMove(ctx, opts, &prev.Instructions)
 	f.a.thoughts = append(f.a.thoughts, thoughtData{BasedOnIteration: len(f.a.iterHistory) - 1, Diagnostic: h.Summary, UpdatedScript: h.BuildCommands.Build})
-	f.pending = &freeForm{handoff: h, trace: trace, exemplar: prev.Instructions}
+	f.pending = &freeForm{handoff: h, trace: trace, exemplar: prev.Instructions, allowed: allowed}
 	f.record(ctx, opts, stamp()+"-handoff.json", handoffRecord{Handoff: h, Exemplar: prev.Instructions, Trace: trace})
 	return nil
 }
@@ -172,8 +230,13 @@ const (
 	handoffEarly   = "check_artifact has not reported a match in this session, so the handoff call was not accepted and the work is not done. " + keepIterating
 )
 
+func handoffRefusal(refusal string) string {
+	return fmt.Sprintf("%s\n\nThe handoff is refused and was not formalized. Continue in this session: every byte of the artifact must come from the build tooling applied to the source at the ref. The container's source tree has been put back at the ref (git checkout --force, git clean -fd; ignored files such as installed dependencies remain), so redo what the build needs without the refused commands, rebuild the artifact from the source, call check_artifact again, and call handoff again with commands that contain none of them. If the release was cut from another commit, call set_source_ref with the commit and the evidence instead of checking it out in the handoff. If the source at the ref cannot produce upstream's bytes, say so and stop without calling handoff.", refusal)
+}
+
 // nextCandidate formalizes while the budget allows, then falls back to the
 // handoff's commands as written. It returns nil once the handoff is spent.
+// Refused candidates are skipped.
 func (f *freeFormDriver) nextCandidate(ctx context.Context, opts *ProposeOpts) (*schema.StrategyOneOf, error) {
 	ff := f.pending
 	for ff.attempts < 1+formalizeRetries {
@@ -183,10 +246,131 @@ func (f *freeFormDriver) nextCandidate(ctx context.Context, opts *ProposeOpts) (
 	}
 	if !ff.fallback {
 		ff.fallback, ff.iterations = true, len(f.a.iterHistory)
-		log.Printf("free-form: %d formalizations rejected, proposing the handoff's commands as written", ff.attempts)
-		return new(schema.NewStrategyOneOf(ff.fallbackStrategy(f.a.loc))), nil
+		s := new(schema.NewStrategyOneOf(ff.fallbackStrategy(f.a.loc)))
+		if f.checkCandidate(ctx, opts, s) == "" {
+			log.Printf("free-form: %d formalizations rejected, proposing the handoff's commands as written", ff.attempts)
+			return s, nil
+		}
+		log.Printf("free-form: the handoff's commands were refused as written")
 	}
 	return nil, nil
+}
+
+// handoffVerdict is the review that allowed a handoff. A candidate of the same
+// commands carries it instead of a second review.
+type handoffVerdict struct {
+	CarriedFrom string              `json:"carried_from"`
+	Review      *buildpolicy.Review `json:"review"`
+}
+
+// reviewHandoff judges a handoff with the session's commands and files the
+// verdict. It returns an allow for the candidates to carry.
+func (f *freeFormDriver) reviewHandoff(ctx context.Context, opts *ProposeOpts, h handoff, trace []toolCall) (refusal string, allowed *handoffVerdict, err error) {
+	in := f.a.reviewInput(f.a.loc.Ref)
+	in.Deps, in.Build, in.Transcript = h.BuildCommands.Deps, h.BuildCommands.Build, transcript(trace)
+	var filed handoffVerdict
+	refusal, err = f.a.judge(ctx, in, func(v *buildpolicy.Review) {
+		filed = handoffVerdict{CarriedFrom: stamp() + "-handoff-review.json", Review: v}
+		f.record(ctx, opts, filed.CarriedFrom, map[string]any{"handoff": h, "review": v})
+	})
+	if refusal != "" || err != nil || filed.CarriedFrom == "" {
+		return refusal, nil, err
+	}
+	return "", &filed, nil
+}
+
+// carries reports whether inst runs exactly the handoff's commands on top of
+// the exemplar's.
+func (ff *freeForm) carries(inst rebuild.Instructions) bool {
+	inherited := map[string]bool{}
+	for _, l := range buildpolicy.Commands(ff.exemplar.Source + "\n" + ff.exemplar.Deps + "\n" + ff.exemplar.Build) {
+		inherited[l] = true
+	}
+	own := func(script string) []string {
+		var out []string
+		for _, l := range buildpolicy.Commands(script) {
+			if !inherited[l] {
+				out = append(out, l)
+			}
+		}
+		return out
+	}
+	h := ff.handoff.BuildCommands
+	return slices.Equal(own(inst.Source+"\n"+inst.Deps+"\n"+inst.Build), own(h.Deps+"\n"+h.Build))
+}
+
+// checkCandidate judges a candidate as the fresh container would run it. One
+// that carries the handoff's verdict is not reviewed again. A pass skips check.
+func (f *freeFormDriver) checkCandidate(ctx context.Context, opts *ProposeOpts, s *schema.StrategyOneOf) string {
+	st, err := s.Strategy()
+	if err != nil {
+		return ""
+	}
+	inst, err := st.GenerateFor(f.a.t, f.a.buildEnv())
+	if err != nil {
+		ms, ok := st.(*rebuild.ManualStrategy)
+		if !ok {
+			return ""
+		}
+		inst = rebuild.Instructions{Deps: ms.Deps, Build: ms.Build}
+	}
+	in := f.a.reviewInput(f.a.loc.Ref)
+	in.Deps, in.Build = strings.TrimSpace(inst.Source+"\n"+inst.Deps), inst.Build
+	record := func(v any) { f.record(ctx, opts, stamp()+"-review.json", v) }
+	var refusal string
+	if ff := f.pending; ff != nil && ff.allowed != nil && ff.carries(inst) {
+		record(ff.allowed)
+	} else if refusal, err = f.a.judge(ctx, in, func(v *buildpolicy.Review) { record(v) }); err != nil {
+		log.Printf("free-form: reviewing the candidate: %v", err)
+	}
+	if refusal == "" {
+		f.checked = s
+	}
+	return refusal
+}
+
+// restoreSource resets the container's tree to the ref. Ignored files, such as
+// installed dependencies, stay.
+func (f *freeFormDriver) restoreSource(ctx context.Context) {
+	if !shellWord.MatchString(f.a.loc.Ref) {
+		log.Printf("free-form: not restoring the source tree: ref %q", f.a.loc.Ref)
+		return
+	}
+	script := dockerExecInContainerScript(fmt.Sprintf("cd /src && git checkout --force %s && git clean -fd", f.a.loc.Ref))
+	if code, out, err := f.runner.RunCommand(ctx, script, 0); err != nil || code != 0 {
+		log.Printf("free-form: restoring the source tree: exit %d, %v: %.400s", code, err, out)
+	}
+}
+
+var (
+	hostTreeRE     = regexp.MustCompile(`(?:/home/builder/|\./)?builds/[^/\s'"]+/src\b`)
+	hostUpstreamRE = regexp.MustCompile(`(^|[\s"'=])(?:/home/builder/|\./)?upstream/`)
+)
+
+// hostPaths rewrites host paths of the build tree and upstream copy to the
+// container's /src and /upstream, as the review reads them.
+func hostPaths(cmd string) string {
+	return hostUpstreamRE.ReplaceAllString(hostTreeRE.ReplaceAllString(cmd, "/src"), "${1}/upstream/")
+}
+
+// transcript renders the trace as the script the review reads: shell commands
+// in container paths, reads as comments, no results.
+func transcript(trace []toolCall) string {
+	var b strings.Builder
+	for _, c := range trace {
+		var args struct{ Command, Path string }
+		_ = json.Unmarshal(c.Args, &args)
+		switch c.Tool {
+		case "run_on_host", "run_in_container":
+			b.WriteString(hostPaths(args.Command))
+			b.WriteByte('\n')
+		case "read_repo_file", "list_repo_files":
+			fmt.Fprintf(&b, "# %s %s\n", c.Tool, args.Path)
+		case "read_logs_end":
+			fmt.Fprintf(&b, "# %s\n", c.Tool)
+		}
+	}
+	return b.String()
 }
 
 // iterationFailure is what a rejected candidate's iteration reports.
@@ -214,7 +398,7 @@ type formalizeRecord struct {
 }
 
 // formalize asks the model for the handoff as a WorkflowStrategy. A failed
-// call is an error, and a rejected answer still spends an attempt.
+// call is an error, and a rejected or refused answer still spends an attempt.
 func (f *freeFormDriver) formalize(ctx context.Context, opts *ProposeOpts) (*schema.StrategyOneOf, error) {
 	ff := f.pending
 	rec := formalizeRecord{Attempt: ff.attempts + 1, Prompt: formalizePrompt(f.a.t, ff)}
@@ -227,14 +411,21 @@ func (f *freeFormDriver) formalize(ctx context.Context, opts *ProposeOpts) (*sch
 		return nil, err
 	}
 	ff.attempts++
+	reject := func(why string) {
+		rec.Error = why
+		ff.failures = append(ff.failures, why)
+	}
 	ws, err := decodeWorkflow(rec.Response, f.a.loc, ff.exemplar, f.a.t, f.a.buildEnv())
 	if err != nil {
-		rec.Error = "rejected before any build: " + err.Error()
-		ff.failures = append(ff.failures, rec.Error)
+		reject("rejected before any build: " + err.Error())
 		return nil, nil
 	}
 	ff.iterations = len(f.a.iterHistory)
 	rec.Strategy = new(schema.NewStrategyOneOf(ws))
+	if refusal := f.checkCandidate(ctx, opts, rec.Strategy); refusal != "" {
+		reject("refused before any build: " + refusal)
+		return nil, nil
+	}
 	return rec.Strategy, nil
 }
 

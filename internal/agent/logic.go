@@ -1078,6 +1078,14 @@ func (a *defaultAgent) RecordIteration(i *schema.AgentIteration) {
 // Check reviews a proposal whose scratch build matched upstream, before it
 // is rebuilt on GCB. A refusal's violations stay in every later prompt.
 func (a *defaultAgent) Check(ctx context.Context, opts *ProposeOpts, proposal *schema.StrategyOneOf) (string, error) {
+	if a.ff != nil {
+		return a.ff.check(ctx, opts, proposal)
+	}
+	return a.judgeProposal(ctx, opts, proposal)
+}
+
+// judgeProposal is the judgment Check makes of a manual strategy's shell.
+func (a *defaultAgent) judgeProposal(ctx context.Context, opts *ProposeOpts, proposal *schema.StrategyOneOf) (string, error) {
 	st, err := proposal.Strategy()
 	if err != nil {
 		return "", errors.Wrap(err, "reading proposal")
@@ -1088,7 +1096,9 @@ func (a *defaultAgent) Check(ctx context.Context, opts *ProposeOpts, proposal *s
 	}
 	in := a.reviewInput(ms.Ref)
 	in.Deps, in.Build = ms.Deps, ms.Build
-	return a.judge(ctx, in, func(v any) { a.uploadRecord(ctx, opts, time.Now().UTC().Format(time.RFC3339Nano)+"-review.json", v) })
+	return a.judge(ctx, in, func(v *buildpolicy.Review) {
+		a.uploadRecord(ctx, opts, time.Now().UTC().Format(time.RFC3339Nano)+"-review.json", v)
+	})
 }
 
 // reviewInput holds the target and the attempt a proposal revises.
@@ -1106,7 +1116,7 @@ func (a *defaultAgent) reviewInput(ref string) buildpolicy.ReviewInput {
 
 // judge returns the reviewer's refusal, if any, and passes the verdict to
 // record. Without a reviewer it allows.
-func (a *defaultAgent) judge(ctx context.Context, in buildpolicy.ReviewInput, record func(any)) (string, error) {
+func (a *defaultAgent) judge(ctx context.Context, in buildpolicy.ReviewInput, record func(*buildpolicy.Review)) (string, error) {
 	if a.reviewer == nil {
 		return "", nil
 	}

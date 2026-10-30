@@ -11,11 +11,13 @@ import (
 	"io"
 	"net/http"
 	"net/url"
+	"slices"
 	"strings"
 	"sync"
 	"testing"
 
 	"github.com/google/go-cmp/cmp"
+	"github.com/google/oss-rebuild/internal/buildpolicy"
 	"github.com/google/oss-rebuild/internal/gcsx/gcsxtest"
 	"github.com/google/oss-rebuild/pkg/build"
 	"github.com/google/oss-rebuild/pkg/build/scratch"
@@ -498,6 +500,335 @@ func TestFormalizePromptTruncatesTraceOutput(t *testing.T) {
 	for _, s := range []string{"## 1. run_on_host $ cat big\n(error result)\n```\n" + strings.Repeat("x", traceHead) + "\n...[10 bytes omitted"} {
 		if !strings.Contains(p, s) {
 			t.Errorf("prompt lacks %q:\n%.600s", s, p)
+		}
+	}
+}
+
+// candidateReviews returns the review records of candidates, not handoffs.
+func (h *freeFormHarness) candidateReviews(t *testing.T) map[string]map[string]json.RawMessage {
+	t.Helper()
+	out := map[string]map[string]json.RawMessage{}
+	for name, b := range h.records {
+		if !strings.HasSuffix(name, "-review.json") || strings.HasSuffix(name, "-handoff-review.json") {
+			continue
+		}
+		var m map[string]json.RawMessage
+		if err := json.Unmarshal(b, &m); err != nil {
+			t.Fatalf("%s: %v", name, err)
+		}
+		out[name] = m
+	}
+	return out
+}
+
+// allowing is a reviewer that allows every proposal and keeps what it saw.
+func allowing(seen *[]buildpolicy.ReviewInput) func(context.Context, buildpolicy.ReviewInput) (*buildpolicy.Review, *genai.GenerateContentResponseUsageMetadata, error) {
+	return func(_ context.Context, in buildpolicy.ReviewInput) (*buildpolicy.Review, *genai.GenerateContentResponseUsageMetadata, error) {
+		*seen = append(*seen, in)
+		return &buildpolicy.Review{Verdict: buildpolicy.VerdictAllow, Rationale: "toolchain configuration"}, nil, nil
+	}
+}
+
+func jsonString(s string) string {
+	b, _ := json.Marshal(s)
+	return string(b)
+}
+
+// transcribed writes the shipped file from a literal. The handoff's commands
+// stay clean, so only the session's transcript shows it.
+var transcribed = "cat > /src/index.js <<'EOF'\n" + strings.Repeat("module.exports = {};\n", 30) + "EOF\nnpm pack"
+
+var transcribedCall = modelCalls("run_in_container", `{"command":`+jsonString(transcribed)+`}`)
+
+// rejecting is a reviewer that rejects under rule any input containing a mark,
+// and allows the rest.
+func rejecting(rule string, marks ...string) func(context.Context, buildpolicy.ReviewInput) (*buildpolicy.Review, *genai.GenerateContentResponseUsageMetadata, error) {
+	return func(_ context.Context, in buildpolicy.ReviewInput) (*buildpolicy.Review, *genai.GenerateContentResponseUsageMetadata, error) {
+		for _, text := range []string{in.Deps, in.Build, in.Transcript} {
+			for _, mark := range marks {
+				if i := strings.Index(text, mark); i >= 0 {
+					line := text[i:]
+					if j := strings.IndexByte(line, '\n'); j >= 0 {
+						line = line[:j]
+					}
+					return &buildpolicy.Review{Verdict: buildpolicy.VerdictReject, Violations: []buildpolicy.Violation{{Rule: rule, Line: line, Why: "supplies the content instead of building it"}}, Rationale: "the match was written, not built"}, nil, nil
+				}
+			}
+		}
+		return &buildpolicy.Review{Verdict: buildpolicy.VerdictAllow, Rationale: "toolchain configuration"}, nil, nil
+	}
+}
+
+func TestFreeFormRefusedHandoffContinuesTheSession(t *testing.T) {
+	h := freeFormTestAgent(t, []string{transcribedCall, check, handoffCall, modelSays("handed off"),
+		// The follow-up turn builds the file.
+		trial, check, handoffCall, done}, formalized)
+	h.a.reviewer = rejecting(buildpolicy.RuleTranscribe, "cat > /src/index.js")
+	got, _ := h.propose(t).Strategy()
+	if diff := cmp.Diff(wantWorkflow(testLocation), got); diff != "" {
+		t.Errorf("strategy mismatch (-want +got):\n%s", diff)
+	}
+	if n := len(h.model.requests); n != 8 {
+		t.Fatalf("%d model calls, want 8 across the two turns", n)
+	}
+	followUp := h.model.request(4)
+	for _, want := range []string{
+		"proposal refused: the script supplies artifact content instead of building it",
+		"F1 writing content into a file that ships in the artifact",
+		`cat \u003e /src/index.js`, // JSON spells > as \u003e
+		"The handoff is refused and was not formalized. Continue in this session",
+	} {
+		if !strings.Contains(followUp, want) {
+			t.Errorf("the follow-up lacks %q:\n%s", want, followUp)
+		}
+	}
+	if len(h.a.refusals) != 1 || h.a.refusals[0].Rule != "F1" {
+		t.Errorf("refusals = %+v, want the one F1", h.a.refusals)
+	}
+	// The rejected handoff review is on file.
+	var rejected bool
+	for name, b := range h.records {
+		if strings.HasSuffix(name, "-handoff-review.json") && bytes.Contains(b, []byte(`"reject"`)) && bytes.Contains(b, []byte("npm run build")) {
+			rejected = true
+		}
+	}
+	if !rejected {
+		t.Errorf("no rejected handoff review among %v", h.records)
+	}
+	// The tree was reset to the ref, and only the commands after the refusal are
+	// formalized.
+	if n := len(h.execs); n != 6 || !strings.Contains(h.execs[3].Cmd[2], "git checkout --force "+testLocation.Ref+" && git clean -fd") {
+		t.Errorf("execs = %d, want the prepare, the trial, the check, the restore, the trial and the check", n)
+	}
+	if len(h.prompts) != 1 || !strings.Contains(h.prompts[0], "## 1. run_in_container $ npm run build && npm pack") || strings.Contains(h.prompts[0], "cat > /src/index.js") {
+		t.Errorf("formalizations = %d, prompt:\n%.900s", len(h.prompts), strings.Join(h.prompts, "\n"))
+	}
+	// The candidate was judged before it ran: doIteration's Check passes it.
+	if refusal, err := h.a.Check(context.Background(), &ProposeOpts{}, h.a.ff.checked); refusal != "" || err != nil || h.a.ff.checked == nil {
+		t.Errorf("Check(judged candidate) = %q, %v", refusal, err)
+	}
+}
+
+func TestFreeFormHandoffRefusedRepeatedlyEndsTheSession(t *testing.T) {
+	turn := []string{transcribedCall, check, handoffCall, modelSays("handed off")}
+	h := freeFormTestAgent(t, append(append(append([]string{}, turn...), turn...), turn...), formalized)
+	h.a.reviewer = rejecting(buildpolicy.RuleTranscribe, "cat > /src/index.js")
+	if _, err := h.a.Propose(context.Background(), &ProposeOpts{}); err == nil || !strings.Contains(err.Error(), "handoff refused 3 times") {
+		t.Errorf("err = %v, want the session given up", err)
+	}
+	if len(h.model.requests) != 12 || len(h.prompts) != 0 || h.a.ff.pending != nil {
+		t.Errorf("%d model calls, %d formalizations, ff %+v; want three turns and no formalization", len(h.model.requests), len(h.prompts), h.a.ff.pending)
+	}
+}
+
+// transcribing formalizes by writing the shipped file from a literal.
+var transcribing = `{"deps": [{"runs": "npm install"}], "build": [{"runs": ` + jsonString("cat > index.js <<'EOF'\n"+strings.Repeat("module.exports = {};\n", 30)+"EOF\nnpm pack") + `}], "output_path": "lodash-4.17.21.tgz"}`
+
+func TestFreeFormRefusedFormalizationIsRetoldInThePropose(t *testing.T) {
+	h := freeFormTestAgent(t, freeFormScript, transcribing, formalized)
+	h.a.reviewer = rejecting(buildpolicy.RuleTranscribe, "cat > index.js")
+	s := h.propose(t)
+	if got, _ := s.Strategy(); cmp.Diff(wantWorkflow(testLocation), got) != "" {
+		t.Errorf("strategy = %+v, want the second formalization", got)
+	}
+	// The refusal cost no build, so the retry is in the same Propose.
+	if len(h.model.requests) != 4 || len(h.prompts) != 2 || !strings.Contains(h.prompts[1], "## Candidate 1\n```\nrefused before any build: proposal refused") || !strings.Contains(h.prompts[1], "F1 writing content") {
+		t.Errorf("model calls = %d, formalizations = %d, the re-formalization:\n%s", len(h.model.requests), len(h.prompts), h.prompts[len(h.prompts)-1])
+	}
+	if h.a.ff.pending.attempts != 2 || len(h.a.ff.pending.failures) != 1 || !strings.HasPrefix(h.a.ff.pending.failures[0], "refused before any build: proposal refused") {
+		t.Errorf("attempts = %d, failures = %q", h.a.ff.pending.attempts, h.a.ff.pending.failures)
+	}
+	if fr := h.record(t, "-formalize-1.json"); !bytes.Contains(fr["error"], []byte("refused before any build")) || !bytes.Contains(fr["strategy"], []byte(`"flow"`)) {
+		t.Errorf("formalize-1 record = %v, want the strategy and the refusal", fr)
+	}
+	if fr := h.record(t, "-formalize-2.json"); fr["error"] != nil || !bytes.Contains(fr["strategy"], []byte(`"flow"`)) {
+		t.Errorf("formalize-2 record = %v, want the strategy", fr)
+	}
+	if h.a.ff.checked != s {
+		t.Error("the accepted candidate was not marked judged")
+	}
+}
+
+func TestFreeFormReviewRefusalIsRetriedInThePropose(t *testing.T) {
+	// The first definition edits a shipped file. The second adds a command the
+	// handoff did not run, so it is reviewed, not carried.
+	edited := `{"deps": [{"runs": "npm install"}, {"runs": "npm install -g pnpm@9"}], "build": [{"runs": "sed -i 's/a/b/' index.js\nnpm run build\nnpm pack"}], "requires": {"system_deps": ["git"]}, "output_path": "lodash-4.17.21.tgz"}`
+	linted := `{"deps": [{"runs": "npm install"}, {"runs": "npm install -g pnpm@9"}], "build": [{"runs": "npm run lint\nnpm run build\nnpm pack"}], "requires": {"system_deps": ["git"]}, "output_path": "lodash-4.17.21.tgz"}`
+	h := freeFormTestAgent(t, freeFormScript, edited, linted)
+	var seen []buildpolicy.ReviewInput
+	h.a.reviewer = func(_ context.Context, in buildpolicy.ReviewInput) (*buildpolicy.Review, *genai.GenerateContentResponseUsageMetadata, error) {
+		seen = append(seen, in)
+		if strings.Contains(in.Build, "sed -i") {
+			return &buildpolicy.Review{Verdict: buildpolicy.VerdictReject, Violations: []buildpolicy.Violation{{Rule: buildpolicy.RuleEdit, Line: "sed -i 's/a/b/' index.js", Why: "edits a shipped file to match"}}, Rationale: "supplied the answer"}, nil, nil
+		}
+		return &buildpolicy.Review{Verdict: buildpolicy.VerdictAllow, Rationale: "toolchain"}, nil, nil
+	}
+	s := h.propose(t)
+	got, _ := s.Strategy()
+	if ws, ok := got.(*rebuild.WorkflowStrategy); !ok || len(ws.Build) != 1 || ws.Build[0].Runs != "npm run lint\nnpm run build\nnpm pack" {
+		t.Errorf("strategy = %+v, want the second formalization", got)
+	}
+	// The reviewer saw the handoff, the edited definition, and the second.
+	if len(seen) != 3 || seen[0].Transcript == "" || !strings.Contains(seen[1].Build, "sed -i") || !strings.Contains(seen[2].Build, "npm run lint") {
+		t.Fatalf("the reviewer saw %d proposals: %+v", len(seen), seen)
+	}
+	if len(h.model.requests) != 4 || len(h.prompts) != 2 || !strings.Contains(h.prompts[1], "## Candidate 1\n```\nrefused before any build: proposal refused") || !strings.Contains(h.prompts[1], "F4 editing the content of a file that ships in the artifact\n  sed -i 's/a/b/' index.js\n  edits a shipped file to match") {
+		t.Errorf("model calls = %d, formalizations = %d, the re-formalization:\n%s", len(h.model.requests), len(h.prompts), h.prompts[len(h.prompts)-1])
+	}
+	if fr := h.record(t, "-formalize-1.json"); !bytes.Contains(fr["error"], []byte("refused before any build: proposal refused")) || !bytes.Contains(fr["strategy"], []byte("sed -i")) {
+		t.Errorf("formalize-1 record = %v, want the refused strategy and the refusal", fr)
+	}
+	if fr := h.record(t, "-formalize-2.json"); fr["error"] != nil || !bytes.Contains(fr["strategy"], []byte("npm run lint")) {
+		t.Errorf("formalize-2 record = %v, want the accepted strategy", fr)
+	}
+	var verdicts []string
+	for _, r := range h.candidateReviews(t) {
+		verdicts = append(verdicts, string(r["verdict"]))
+	}
+	slices.Sort(verdicts)
+	if strings.Join(verdicts, ",") != `"allow","reject"` {
+		t.Errorf("candidate review verdicts = %v, want the rejection and the allow on file", verdicts)
+	}
+	if len(h.a.refusals) != 1 || h.a.refusals[0].Rule != buildpolicy.RuleEdit || h.a.ff.checked != s || h.a.ff.pending.attempts != 2 {
+		t.Errorf("refusals = %+v, checked = %v, attempts = %d", h.a.refusals, h.a.ff.checked == s, h.a.ff.pending.attempts)
+	}
+}
+
+// The fallback runs the handoff's allowed commands, so it carries the verdict.
+func TestFreeFormRefusedFormalizationsFallBackToTheHandoff(t *testing.T) {
+	h := freeFormTestAgent(t, freeFormScript, transcribing, transcribing, transcribing)
+	h.a.reviewer = rejecting(buildpolicy.RuleTranscribe, "cat > index.js")
+	dir, _ := url.Parse("gs://sessions/s1/messages/3")
+	s, err := h.a.Propose(context.Background(), &ProposeOpts{ChatUploadURL: dir})
+	if err != nil {
+		t.Fatalf("Propose: %v", err)
+	}
+	got, _ := s.Strategy()
+	if _, ok := got.(*rebuild.ManualStrategy); !ok || len(h.model.requests) != 4 || len(h.prompts) != 3 {
+		t.Errorf("proposal = %T after %d model calls and %d formalizations; want the handoff's commands after three refusals in one session", got, len(h.model.requests), len(h.prompts))
+	}
+	if ff := h.a.ff.pending; ff == nil || ff.attempts != 3 || !ff.fallback || len(ff.failures) != 3 || !strings.HasPrefix(ff.failures[2], "refused before any build") {
+		t.Errorf("ff = %+v, want three refused formalizations and the fallback proposed", ff)
+	}
+	if h.a.ff.checked != s {
+		t.Error("the fallback was not marked judged")
+	}
+	var n int
+	for name := range h.records {
+		if strings.Contains(name, "-formalize-") {
+			n++
+		}
+	}
+	if n != 3 {
+		t.Errorf("formalize records = %d, want 3", n)
+	}
+}
+
+func TestFreeFormRefusedFallbackStartsOver(t *testing.T) {
+	// The handoff passed review, and the fallback of its since-edited commands
+	// checks out another commit, so it is refused and a fresh session starts.
+	h := freeFormTestAgent(t, append(append([]string{}, freeFormScript...), freeFormScript...), formalized, formalized, formalized, formalized)
+	h.a.reviewer = rejecting(buildpolicy.RuleCopy, "git checkout 7d18bf46")
+	h.propose(t)
+	for range 1 + formalizeRetries {
+		h.fail("rebuild content mismatch")
+		h.propose(t)
+	}
+	h.a.ff.pending.handoff.BuildCommands.Build = "git checkout 7d18bf46b662f1c6f806c1f8d3ea6b9c5b88bbdb\nnpm pack"
+	h.fail("rebuild content mismatch")
+	got, _ := h.propose(t).Strategy()
+	if _, ok := got.(*rebuild.WorkflowStrategy); !ok || len(h.model.requests) != 8 || h.a.ff.pending.attempts != 1 {
+		t.Errorf("after the refused fallback: %T, %d model calls, attempts %d; want a fresh session's formalization", got, len(h.model.requests), h.a.ff.pending.attempts)
+	}
+}
+
+func TestTranscript(t *testing.T) {
+	trace := []toolCall{
+		{Tool: "run_on_host", Args: json.RawMessage(`{"command":"tar -xzf /home/builder/upstream/x.tgz -C /tmp/up && diff /tmp/up/package/a builds/iter-2/src/a"}`)},
+		{Tool: "run_in_container", Args: json.RawMessage(`{"command":"npm pack"}`), Output: "built"},
+		{Tool: "check_artifact", Args: json.RawMessage(`{"path":"/src/x.tgz"}`)},
+		{Tool: "read_repo_file", Args: json.RawMessage(`{"path":"package.json"}`)},
+		{Tool: "read_logs_end", Args: json.RawMessage(`{}`)},
+		{Tool: "handoff", Args: json.RawMessage(handoffArgs)},
+	}
+	want := "tar -xzf /upstream/x.tgz -C /tmp/up && diff /tmp/up/package/a /src/a\n" +
+		"npm pack\n" +
+		"# read_repo_file package.json\n" +
+		"# read_logs_end\n"
+	if diff := cmp.Diff(want, transcript(trace)); diff != "" {
+		t.Errorf("transcript mismatch (-want +got):\n%s", diff)
+	}
+}
+
+func TestFreeFormCarriesTheHandoffVerdict(t *testing.T) {
+	// The first formalization splits the deps into commented steps, which still
+	// carry the verdict. The second adds a command.
+	commented := `{"deps": [{"runs": "# the attempt's deps\nnpm install"}, {"runs": "npm install -g pnpm@9  # the handoff's"}], "build": [{"runs": "npm run build\nnpm pack"}], "requires": {"system_deps": ["git"]}, "output_path": "lodash-4.17.21.tgz"}`
+	extra := `{"deps": [{"runs": "npm install"}, {"runs": "npm install -g pnpm@9"}], "build": [{"runs": "npm run lint\nnpm run build\nnpm pack"}], "requires": {"system_deps": ["git"]}, "output_path": "lodash-4.17.21.tgz"}`
+	h := freeFormTestAgent(t, freeFormScript, commented, extra)
+	var seen []buildpolicy.ReviewInput
+	h.a.reviewer = allowing(&seen)
+	s := h.propose(t)
+	if len(seen) != 1 || seen[0].Transcript == "" {
+		t.Fatalf("the reviewer saw %d proposals, want the handoff alone", len(seen))
+	}
+	var from string
+	for name := range h.records {
+		if strings.HasSuffix(name, "-handoff-review.json") {
+			from = name
+		}
+	}
+	reviews := h.candidateReviews(t)
+	if len(reviews) != 1 {
+		t.Fatalf("candidate reviews = %v, want the carried one", reviews)
+	}
+	for name, r := range reviews {
+		if string(r["carried_from"]) != jsonString(from) || !bytes.Contains(r["review"], []byte(`"allow"`)) {
+			t.Errorf("%s = %v, want the verdict carried from %s", name, r, from)
+		}
+	}
+	if h.a.ff.checked != s {
+		t.Error("the carried candidate was not marked judged")
+	}
+	// A candidate with a command the handoff did not run is reviewed.
+	h.fail("rebuild content mismatch")
+	h.propose(t)
+	if len(seen) != 2 || !strings.Contains(seen[1].Build, "npm run lint") {
+		t.Fatalf("the reviewer saw %d proposals, want the extra candidate as the second", len(seen))
+	}
+	reviews = h.candidateReviews(t)
+	if len(reviews) != 2 {
+		t.Fatalf("candidate reviews = %v, want two", reviews)
+	}
+	for name, r := range reviews {
+		if _, carried := r["carried_from"]; !carried && !bytes.Contains(r["verdict"], []byte("allow")) {
+			t.Errorf("%s = %v, want the reviewer's verdict", name, r)
+		}
+	}
+}
+
+func TestFreeFormCarries(t *testing.T) {
+	ff := &freeForm{
+		exemplar: rebuild.Instructions{Source: "git clone https://github.com/lodash/lodash .\ngit checkout --force 'aa1d'", Deps: "wget node.tgz | tar xzf - -C /usr/local/\nnpm install", Build: "npm pack"},
+		handoff:  handoff{BuildCommands: buildCommands{Deps: "npm install\nnpm i --no-save rollup@4.18.0", Build: "cat << 'EOF' > node_modules/x/options.js\n  a: 1\nEOF\nnpm run prepare\nnpm pack"}},
+	}
+	src, build := ff.exemplar.Source, ff.handoff.BuildCommands.Build
+	for _, tc := range []struct {
+		name string
+		inst rebuild.Instructions
+		want bool
+	}{
+		{"the handoff on the exemplar's deps", rebuild.Instructions{Source: src, Deps: "wget node.tgz | tar xzf - -C /usr/local/\nnpm install\nnpm i --no-save rollup@4.18.0", Build: build}, true},
+		{"split into commented steps", rebuild.Instructions{Source: src, Deps: "# toolchain\nwget   node.tgz | tar xzf - -C /usr/local/\n\nnpm install\n# the handoff's pins\nnpm i --no-save rollup@4.18.0", Build: build + "  # as handed off"}, true},
+		{"the exemplar's toolchain step dropped", rebuild.Instructions{Source: src, Deps: "npm install\nnpm i --no-save rollup@4.18.0", Build: build}, true},
+		{"a command added", rebuild.Instructions{Source: src, Deps: "npm install\nnpm i --no-save rollup@4.18.0", Build: "sed -i 's/a/b/' index.js\n" + build}, false},
+		{"a command changed", rebuild.Instructions{Source: src, Deps: "npm install\nnpm i --no-save rollup@4.19.0", Build: build}, false},
+		{"a command dropped", rebuild.Instructions{Source: src, Deps: "npm install\nnpm i --no-save rollup@4.18.0", Build: strings.Replace(build, "npm run prepare\n", "", 1)}, false},
+		{"reordered", rebuild.Instructions{Source: src, Deps: "npm install\nnpm i --no-save rollup@4.18.0", Build: "npm run prepare\ncat << 'EOF' > node_modules/x/options.js\n  a: 1\nEOF\nnpm pack"}, false},
+		{"its own source step", rebuild.Instructions{Source: "git clone https://github.com/lodash/lodash .\ngit checkout --force v4.17.21", Deps: "npm install\nnpm i --no-save rollup@4.18.0", Build: build}, false},
+	} {
+		if got := ff.carries(tc.inst); got != tc.want {
+			t.Errorf("%s: carries = %v, want %v", tc.name, got, tc.want)
 		}
 	}
 }
