@@ -695,6 +695,56 @@ func TestFreeFormReviewRefusalIsRetriedInThePropose(t *testing.T) {
 	}
 }
 
+func TestFreeFormFailedReviewPassesNoCandidate(t *testing.T) {
+	h := freeFormTestAgent(t, freeFormScript, formalized, formalized)
+	down := true
+	h.a.reviewer = func(context.Context, buildpolicy.ReviewInput) (*buildpolicy.Review, *genai.GenerateContentResponseUsageMetadata, error) {
+		if down {
+			return nil, nil, errors.New("reviewer unavailable")
+		}
+		return &buildpolicy.Review{Verdict: buildpolicy.VerdictAllow, Rationale: "toolchain"}, nil, nil
+	}
+	// The handoff carries no verdict, so the candidate is reviewed and fails.
+	if _, err := h.a.Propose(context.Background(), &ProposeOpts{}); err == nil || !strings.Contains(err.Error(), "reviewer unavailable") {
+		t.Fatalf("Propose with the reviewer down = %v, want its error", err)
+	}
+	if h.a.ff.checked != nil || h.a.ff.pending == nil || h.a.ff.pending.allowed != nil {
+		t.Fatalf("checked = %v, ff = %+v; want the handoff pending with no verdict and nothing judged", h.a.ff.checked, h.a.ff.pending)
+	}
+	down = false
+	s := h.propose(t)
+	if h.a.ff.checked != s || h.a.ff.pending.attempts != 2 || len(h.model.requests) != 4 {
+		t.Errorf("checked = %v, attempts = %d, model calls = %d; want the second formalization judged in the same session", h.a.ff.checked == s, h.a.ff.pending.attempts, len(h.model.requests))
+	}
+}
+
+// A review that fails on the fallback leaves it to propose once the reviewer is
+// back, in the same session.
+func TestFreeFormFailedReviewKeepsTheFallback(t *testing.T) {
+	h := freeFormTestAgent(t, freeFormScript, formalized, formalized, formalized)
+	down := true
+	h.a.reviewer = func(context.Context, buildpolicy.ReviewInput) (*buildpolicy.Review, *genai.GenerateContentResponseUsageMetadata, error) {
+		if down {
+			return nil, nil, errors.New("reviewer unavailable")
+		}
+		return &buildpolicy.Review{Verdict: buildpolicy.VerdictAllow, Rationale: "toolchain"}, nil, nil
+	}
+	for range 1 + formalizeRetries + 1 {
+		if _, err := h.a.Propose(context.Background(), &ProposeOpts{}); err == nil || !strings.Contains(err.Error(), "reviewer unavailable") {
+			t.Fatalf("Propose with the reviewer down = %v, want its error", err)
+		}
+	}
+	if ff := h.a.ff.pending; ff == nil || ff.attempts != 1+formalizeRetries || ff.fallback {
+		t.Fatalf("ff = %+v, want the formalizations spent and the fallback not", ff)
+	}
+	down = false
+	s := h.propose(t)
+	got, _ := s.Strategy()
+	if _, ok := got.(*rebuild.ManualStrategy); !ok || !h.a.ff.pending.fallback || h.a.ff.checked != s || len(h.model.requests) != 4 {
+		t.Errorf("proposal = %T, fallback spent = %v, judged = %v, model calls = %d; want the judged fallback in the same session", got, h.a.ff.pending.fallback, h.a.ff.checked == s, len(h.model.requests))
+	}
+}
+
 // The fallback runs the handoff's allowed commands, so it carries the verdict.
 func TestFreeFormRefusedFormalizationsFallBackToTheHandoff(t *testing.T) {
 	h := freeFormTestAgent(t, freeFormScript, transcribing, transcribing, transcribing)
