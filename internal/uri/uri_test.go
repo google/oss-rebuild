@@ -19,6 +19,7 @@ func TestFindARepo(t *testing.T) {
 		{"github:user/repo", "github:user/repo"},                                // GitHub, alt format
 		{"https://github.com/org/project.git", "github.com/org/project.git"},    // GitHub, with .git
 		{"http://github.com/org/project/tree/branch", "github.com/org/project"}, // GitHub, with path
+		{"https://github.com/sponsors/user", ""},                                // GitHub Sponsors page
 		{"GitLab.com/Group/Repo", "GitLab.com/Group/Repo"},                      // GitLab, case insensitive
 		{"https://bitbucket.org/team/repo", "bitbucket.org/team/repo"},          // Bitbucket
 		{
@@ -64,6 +65,10 @@ func TestFindARepo(t *testing.T) {
 		{
 			"https://gitlab.com/group/blob/repo",
 			"gitlab.com/group/blob/repo",
+		},
+		{
+			"https://github.com/sponsors/user or github.com/user/repo",
+			"github.com/user/repo",
 		},
 		{"https://codeberg.org/tlocke/scramp", "codeberg.org/tlocke/scramp"}, // Codeberg
 		{"codeberg:user/repo", "codeberg:user/repo"},                         // Codeberg, alt format

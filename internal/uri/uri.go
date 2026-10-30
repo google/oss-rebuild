@@ -86,9 +86,14 @@ func CanonicalizeRepoURI(uri string) (string, error) {
 }
 
 // FindCommonRepo attempts to find something that looks like a repo in the text. It will return empty string when no repo is found.
+// GitHub Sponsors pages are skipped since their URLs look like repos.
 func FindCommonRepo(text string) string {
 	for _, pattern := range commonRepos {
-		if repo := pattern.FindString(text); repo != "" {
+		for _, m := range pattern.FindAllStringSubmatch(text, -1) {
+			repo := m[0]
+			if pattern == githubRE && strings.HasPrefix(strings.ToLower(m[1]), "sponsors/") {
+				continue
+			}
 			if pattern == gitlabRE {
 				repo = trimGitLabRoute(repo)
 			}

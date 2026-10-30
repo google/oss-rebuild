@@ -69,7 +69,7 @@ func (Rebuilder) Published(ctx context.Context, t rebuild.Target, mux rebuild.Re
 //	  - a link named in commonRepoLinks, on a known repo host
 //	  - a link named in commonRepoLinks, on any host
 //	other mentions, release then project:
-//	  - a link under any other name, on a known repo host, sponsors excluded
+//	  - a link under any other name, on a known repo host
 //	  - the first repository cited in the description
 func (Rebuilder) InferRepo(ctx context.Context, t rebuild.Target, mux rebuild.RegistryMux) (string, error) {
 	var infos []pypireg.Info
@@ -121,20 +121,11 @@ func repoFromSourceLinks(info pypireg.Info) string {
 // the first one cited in the description.
 func repoFromOtherLinks(info pypireg.Info) string {
 	for _, name := range slices.Sorted(maps.Keys(info.ProjectURLs)) {
-		url := info.ProjectURLs[name]
-		if strings.Contains(url, "sponsors") {
-			continue
-		}
-		if repo := uri.FindCommonRepo(url); repo != "" {
+		if repo := uri.FindCommonRepo(info.ProjectURLs[name]); repo != "" {
 			return repo
 		}
 	}
-	r := uri.FindCommonRepo(info.Description)
-	// TODO: Maybe revisit this sponsors logic?
-	if r != "" && !strings.Contains(r, "sponsors") {
-		return r
-	}
-	return ""
+	return uri.FindCommonRepo(info.Description)
 }
 
 func (Rebuilder) CloneRepo(ctx context.Context, t rebuild.Target, repoURI string, ropt *gitx.RepositoryOptions) (r rebuild.RepoConfig, err error) {
