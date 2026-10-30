@@ -14,7 +14,9 @@ import (
 
 	gcs "cloud.google.com/go/storage"
 	"github.com/go-git/go-billy/v5/memfs"
+	"github.com/google/go-cmp/cmp"
 	"github.com/google/oss-rebuild/internal/gcsx/gcsxtest"
+	"github.com/google/oss-rebuild/pkg/act"
 	"github.com/google/oss-rebuild/pkg/build"
 	"github.com/google/oss-rebuild/pkg/longrunning"
 	"github.com/google/oss-rebuild/pkg/rebuild/rebuild"
@@ -106,7 +108,8 @@ type fakeStubs struct {
 	gets map[string][]*longrunning.Operation[schema.ScratchExecResult]
 
 	createReqs []schema.ScratchExecRequest
-	outputs    *gcsxtest.Server // serves the ops' output, nil when none has any
+	outputs    *gcsxtest.Server                // serves the ops' output, nil when none has any
+	kills      []schema.ScratchExecKillRequest // dispatched kills, all successful
 }
 
 // withOutput gives op an output object holding body.
@@ -135,6 +138,10 @@ func (f *fakeStubs) stubs() Stubs {
 			op := ops[0]
 			f.gets[req.ID] = ops[1:]
 			return op, nil
+		},
+		ExecKill: func(_ context.Context, req schema.ScratchExecKillRequest) (*act.NoOutput, error) {
+			f.kills = append(f.kills, req)
+			return &act.NoOutput{}, nil
 		},
 	}
 }
@@ -241,6 +248,94 @@ func TestExecPollsToTerminal(t *testing.T) {
 	}
 	if remaining := f.gets["op1"]; len(remaining) != 0 {
 		t.Errorf("expected all scripted gets consumed, %d remaining", len(remaining))
+	}
+}
+
+func TestExecKillsAbandonedOp(t *testing.T) {
+	for _, tt := range []struct {
+		name      string
+		canceled  bool // the caller gives up before the first poll
+		noKill    bool // the stubs have no ExecKill
+		wantKills []schema.ScratchExecKillRequest
+	}{
+		{name: "Canceled", canceled: true, wantKills: []schema.ScratchExecKillRequest{{ID: "op1"}}},
+		{name: "CanceledWithoutKillStub", canceled: true, noKill: true},
+		// No scripted gets: every poll errors until the loop gives up.
+		{name: "PollsGiveUp", wantKills: []schema.ScratchExecKillRequest{{ID: "op1"}}},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			pending := &longrunning.Operation[schema.ScratchExecResult]{
+				ID:     "op1",
+				Result: &schema.ScratchExecResult{ScratchID: "s1"},
+			}
+			f := &fakeStubs{creates: []createFn{respond(pending, nil)}}
+			s := f.stubs()
+			if tt.noKill {
+				s.ExecKill = nil
+			}
+			ctx, cancel := context.WithCancel(context.Background())
+			defer cancel()
+			if tt.canceled {
+				cancel()
+			}
+			_, err := Exec(ctx, s, schema.ScratchExecRequest{
+				ScratchID:      "s1",
+				Cmd:            []string{"sleep", "30"},
+				TimeoutSeconds: 5,
+			}, time.Millisecond)
+			if err == nil {
+				t.Fatal("Exec succeeded, want the op abandoned")
+			}
+			if tt.canceled && !errors.Is(err, context.Canceled) {
+				t.Errorf("Exec err = %v, want context.Canceled", err)
+			}
+			if diff := cmp.Diff(tt.wantKills, f.kills); diff != "" {
+				t.Errorf("kills mismatch (-want +got):\n%s", diff)
+			}
+		})
+	}
+}
+
+func TestExecHoldsCreateOpen(t *testing.T) {
+	f := &fakeStubs{creates: []createFn{respond(completedOp("op1", 0), nil)}}
+	if _, err := Exec(context.Background(), f.stubs(), schema.ScratchExecRequest{
+		ScratchID:      "s1",
+		Cmd:            []string{"true"},
+		TimeoutSeconds: 5,
+	}, time.Millisecond); err != nil {
+		t.Fatalf("Exec: %v", err)
+	}
+	if len(f.createReqs) != 1 || f.createReqs[0].WaitSeconds != int(createHold.Seconds()) {
+		t.Errorf("create requests = %+v, want one holding for %s", f.createReqs, createHold)
+	}
+}
+
+func TestExecCancelDuringHoldDispatchesKill(t *testing.T) {
+	pending := &longrunning.Operation[schema.ScratchExecResult]{
+		ID:     "op1",
+		Result: &schema.ScratchExecResult{ScratchID: "s1"},
+	}
+	f := &fakeStubs{}
+	s := f.stubs()
+	ctx, cancel := context.WithCancel(context.Background())
+	s.ExecCreate = func(cctx context.Context, _ schema.ScratchExecRequest) (*longrunning.Operation[schema.ScratchExecResult], error) {
+		cancel() // give up mid-hold
+		// A real stub aborts its request when its context is cancelled.
+		if err := cctx.Err(); err != nil {
+			return nil, err
+		}
+		return pending, nil
+	}
+	_, err := Exec(ctx, s, schema.ScratchExecRequest{
+		ScratchID:      "s1",
+		Cmd:            []string{"sleep", "30"},
+		TimeoutSeconds: 5,
+	}, time.Millisecond)
+	if !errors.Is(err, context.Canceled) {
+		t.Fatalf("Exec err = %v, want context.Canceled", err)
+	}
+	if len(f.kills) != 1 || f.kills[0].ID != "op1" {
+		t.Errorf("kills = %+v, want one for op1", f.kills)
 	}
 }
 

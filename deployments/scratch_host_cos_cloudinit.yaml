@@ -1,0 +1,71 @@
+#cloud-config
+# Copyright 2026 Google LLC
+# SPDX-License-Identifier: Apache-2.0
+#
+# Scratch host init: a systemd unit that docker-runs the broker image,
+# privileged with host networking, /dev/kvm and the host directory. Reruns
+# every boot, since COS's /etc is stateless. The startup script prepares
+# the bridge first.
+# NOTE: "#cloud-config" must remain the first line.
+#
+# Template parameters:
+#   host_image   - AR ref of the runnable scratch-host image
+#   caller_sa    - service account email permitted to contact the broker
+#   audience     - expected ID-token audience for inbound requests
+#   guest_subnet - host-only subnet the guest address comes from
+
+write_files:
+  - path: /etc/systemd/system/scratch-host.service
+    permissions: "0644"
+    owner: root
+    content: |
+      [Unit]
+      Description=Scratch host broker
+      Wants=docker.service
+      After=docker.service
+      StartLimitIntervalSec=0
+
+      [Service]
+      # Wait for the startup script's marker. /run is wiped each boot.
+      ExecStartPre=/bin/sh -c 'test -e /run/scratch-host-ready'
+      # Pull credentials come from the attached service account.
+      # DOCKER_CONFIG must be writable: the unit has no HOME and the root is
+      # read-only.
+      Environment=DOCKER_CONFIG=/var/lib/scratch-host/.docker
+      ExecStartPre=/bin/mkdir -p /var/lib/scratch-host/.docker
+      ExecStartPre=/usr/bin/docker-credential-gcr configure-docker --registries=us-central1-docker.pkg.dev
+      # Tolerated, so an unreachable registry cannot keep a cached image from
+      # restarting.
+      ExecStartPre=-/usr/bin/docker pull ${host_image}
+      # Ensure a previous attempt didn't leave our container name claimed.
+      ExecStartPre=-/usr/bin/docker rm -f scratch-host
+      # The startup script sizes the slots and guests to the host.
+      EnvironmentFile=/var/lib/scratch-host/host.env
+      # The shell expands $(hostname), the instance name, into the audience,
+      # which systemd cannot. The host directory mounts at its own path,
+      # where the broker's defaults point.
+      ExecStart=/bin/sh -c 'exec /usr/bin/docker run --rm --name=scratch-host \
+          --privileged \
+          --network=host \
+          --device=/dev/kvm \
+          -v /var/lib/scratch-host:/var/lib/scratch-host \
+          ${host_image} \
+          --caller-sa=${caller_sa} \
+          --audience="${audience}" \
+          --guest-slots=$SLOTS \
+          --guest-vcpu=$GUEST_VCPU \
+          --guest-mem-mb=$GUEST_MEM_MB \
+          --guest-mtu=$MTU \
+          --guest-subnet=${guest_subnet} \
+          --bridge=mvmbr0 \
+          --listen=:8080'
+      ExecStop=/usr/bin/docker stop scratch-host
+      Restart=always
+      # Retry cadence for the marker wait above and for broker crashes.
+      RestartSec=5
+
+runcmd:
+  # Fire and forget: a plain start fails until the startup script is done,
+  # and systemd retries anyway.
+  - systemctl daemon-reload
+  - systemctl start --no-block scratch-host.service

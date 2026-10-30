@@ -67,17 +67,18 @@ func TestScratchReap_IdleReapedFreshPreserved(t *testing.T) {
 	ctx := context.Background()
 	scratches := db.NewMemoryScratch()
 	gce := NewMemoryGCE()
+	hosts := newFakeHosts()
 	now := time.Now().UTC()
 
 	zone := "us-central1-a"
+	gce.SeedRunning(zone, "h1", hostLabels(schema.MachineClassStandard, testStandard().InstanceTemplate), "10.0.0.1", now)
+	hosts.AddHost("h1", 6)
 	stale := schema.Scratch{
-		ID: "stale", State: schema.ScratchReady, Zone: zone,
-		VMName:   "scratch-stale",
+		ID: "stale", State: schema.ScratchReady, Zone: zone, Host: "h1",
 		LastUsed: now.Add(-1 * time.Hour),
 	}
 	fresh := schema.Scratch{
-		ID: "fresh", State: schema.ScratchReady, Zone: zone,
-		VMName:   "scratch-fresh",
+		ID: "fresh", State: schema.ScratchReady, Zone: zone, Host: "h1",
 		LastUsed: now.Add(-5 * time.Minute),
 	}
 	dead := schema.Scratch{
@@ -88,12 +89,14 @@ func TestScratchReap_IdleReapedFreshPreserved(t *testing.T) {
 		if err := scratches.Insert(ctx, s); err != nil {
 			t.Fatalf("seed %s: %v", s.ID, err)
 		}
-	}
-	if _, err := gce.InsertInstanceFromTemplate(ctx, zone, stale.VMName, "tpl", nil); err != nil {
-		t.Fatalf("seed instance: %v", err)
+		if s.Host != "" {
+			hosts.SeedGuest(s.Host, s.ID, s.LastUsed)
+		}
 	}
 
-	resp, err := ScratchReap(ctx, ScratchReapRequest{}, reapDeps(t, scratches, db.NewMemoryScratchExecs(), gce))
+	deps := reapDeps(t, scratches, db.NewMemoryScratchExecs(), gce)
+	deps.Hosts = hosts.client()
+	resp, err := ScratchReap(ctx, ScratchReapRequest{}, deps)
 	if err != nil {
 		t.Fatalf("ScratchReap: %v", err)
 	}
@@ -108,8 +111,13 @@ func TestScratchReap_IdleReapedFreshPreserved(t *testing.T) {
 	if got.State != schema.ScratchReady {
 		t.Errorf("fresh.State = %q; want ready (left alone)", got.State)
 	}
-	if gce.InstanceExists(zone, stale.VMName) {
-		t.Errorf("stale VM not torn down")
+	names := hosts.GuestNames("h1")
+	if len(names) != 1 || names[0] != "fresh" {
+		t.Errorf("guests = %v; want only fresh's guest left", names)
+	}
+	// The shared host outlives any one session's teardown.
+	if !gce.InstanceExists(zone, "h1") {
+		t.Error("host deleted by session reaping; want it left running")
 	}
 }
 
@@ -122,7 +130,6 @@ func TestScratchReap_OpOnDeadScratchFinalizesLost(t *testing.T) {
 
 	if err := scratches.Insert(ctx, schema.Scratch{
 		ID: "s-1", State: schema.ScratchDeleted, Zone: "z",
-		VMName:   "vm",
 		LastUsed: now.Add(-time.Hour),
 	}); err != nil {
 		t.Fatalf("seed scratch: %v", err)
