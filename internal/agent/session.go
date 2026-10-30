@@ -63,6 +63,7 @@ type RunSessionReq struct {
 	SessionID        string
 	Target           rebuild.Target
 	MaxIterations    int
+	IterationBudget  time.Duration // No iteration starts past it. 0: unbounded.
 	InitialIteration *schema.AgentIteration
 }
 
@@ -83,6 +84,7 @@ type RunSessionDeps struct {
 	CratesRegistryStub api.StubFn[cratesregistryservice.FindRegistryCommitRequest, cratesregistryservice.FindRegistryCommitResponse]
 	CratesCache        *cratesregistryservice.Cache // Inference's crates.io metadata.
 	FreeForm           bool                         // Free-form mode. Needs ScratchRunner.
+	Now                func() time.Time             // Budget clock. Nil uses time.Now.
 }
 
 // transcriptOpts names iteration iterNum's transcript directory, or nothing
@@ -279,9 +281,23 @@ func doSession(ctx context.Context, req RunSessionReq, deps RunSessionDeps) (com
 	return runIterations(ctx, req, iterNum, a, deps)
 }
 
-// runIterations drives the propose/build loop from iterNum until a verdict.
+// A first build turn longer than slowIteration lifts the iteration budget.
+// Such packages spend much of the budget per turn and reproduce late.
+const slowIteration = 5 * time.Minute
+
+// runIterations runs iterations until one is confirmed, the iteration cap or
+// budget is spent, or ctx ends. The budget gates only an iteration's start and
+// runs from the loop's start, lifted after a slow first build turn.
 func runIterations(ctx context.Context, req RunSessionReq, iterNum int, a Agent, deps RunSessionDeps) *schema.AgentCompleteRequest {
 	var transientErrs, buildAttempts, refusals int // tracks whether model made real progress or was throttled
+	now := deps.Now
+	if now == nil {
+		now = time.Now
+	}
+	var deadline time.Time
+	if req.IterationBudget > 0 {
+		deadline = now().Add(req.IterationBudget)
+	}
 	for {
 		iterNum++
 		if iterNum > req.MaxIterations {
@@ -293,7 +309,14 @@ func runIterations(ctx context.Context, req RunSessionReq, iterNum int, a Agent,
 			}
 			return &schema.AgentCompleteRequest{StopReason: reason, Summary: summary}
 		}
+		if !deadline.IsZero() && now().After(deadline) {
+			return &schema.AgentCompleteRequest{
+				StopReason: schema.AgentCompleteReasonFailed,
+				Summary:    fmt.Sprintf("Iteration budget (%s) spent after %d builds", req.IterationBudget, buildAttempts),
+			}
+		}
 		log.Printf("Session %s Iteration %d", req.SessionID, iterNum)
+		iterStart := now()
 		iteration, err := doIteration(ctx, req.SessionID, iterNum, a, deps)
 		if err != nil {
 			log.Printf("Doing iteration: %v", err)
@@ -326,6 +349,10 @@ func runIterations(ctx context.Context, req RunSessionReq, iterNum int, a Agent,
 			refusals++ // no build ran
 		} else {
 			buildAttempts++
+			if took := now().Sub(iterStart); buildAttempts == 1 && !deadline.IsZero() && took > slowIteration {
+				log.Printf("Session %s: first build turn took %s, lifting the iteration budget", req.SessionID, took.Round(time.Second))
+				deadline = time.Time{}
+			}
 		}
 		log.Printf("%#v", iteration)
 		if iteration != nil && iteration.Result != nil && !iteration.Result.BuildSuccess {

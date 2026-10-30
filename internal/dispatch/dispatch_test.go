@@ -460,12 +460,12 @@ func TestTransitionConflict(t *testing.T) {
 // TestRequestConfig covers the HTTP form of the config: empty fields take
 // Defaults, negatives switch a cap off, durations are Go strings.
 func TestRequestConfig(t *testing.T) {
-	got, err := Request{MaxAgent: -1, Batch: 200, Period: "1h", Window: "4m", AgentModel: "gemini-3.7-flash"}.Config()
+	got, err := Request{MaxAgent: -1, Batch: 200, Period: "1h", Window: "4m", AgentModel: "gemini-3.7-flash", AgentIterationBudget: "45m"}.Config()
 	if err != nil {
 		t.Fatalf("Config: %v", err)
 	}
 	want := Defaults
-	want.MaxAgent, want.Batch, want.Period, want.Window, want.AgentModel = 0, 200, time.Hour, 4*time.Minute, "gemini-3.7-flash"
+	want.MaxAgent, want.Batch, want.Period, want.Window, want.AgentModel, want.AgentIterationBudget = 0, 200, time.Hour, 4*time.Minute, "gemini-3.7-flash", 45*time.Minute
 	if diff := cmp.Diff(want, got); diff != "" {
 		t.Errorf("config mismatch (-want +got):\n%s", diff)
 	}

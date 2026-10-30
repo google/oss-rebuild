@@ -44,6 +44,7 @@ var (
 	metadataBucket    = flag.String("metadata-bucket", "", "GCS bucket for build metadata")
 	logsBucket        = flag.String("logs-bucket", "", "GCS bucket for build logs")
 	maxIterations     = flag.Int("max-iterations", 20, "Maximum number of iterations")
+	iterationBudget   = flag.Duration("iteration-budget", 0, "No iteration starts this long into the session. 0 leaves the job timeout as the only bound")
 	targetEcosystem   = flag.String("target-ecosystem", "", "Target package ecosystem")
 	targetPackage     = flag.String("target-package", "", "Target package name")
 	targetVersion     = flag.String("target-version", "", "Target package version")
@@ -245,9 +246,10 @@ func main() {
 		deps.FreeForm = *freeForm
 	}
 	req := agent.RunSessionReq{
-		SessionID:     *sessionID,
-		Target:        target,
-		MaxIterations: *maxIterations,
+		SessionID:       *sessionID,
+		Target:          target,
+		MaxIterations:   *maxIterations,
+		IterationBudget: *iterationBudget,
 	}
 	log.Printf("Agent running for session %s (execution mode %s), target: %+v", req.SessionID, mode, req.Target)
 	agent.RunSession(ctx, req, deps)

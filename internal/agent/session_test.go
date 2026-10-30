@@ -413,3 +413,40 @@ func TestRunIterationsStopsOnGiveUp(t *testing.T) {
 		t.Errorf("Propose called %d times, want the one that gave up", a.proposes)
 	}
 }
+
+func TestRunIterationsStopsAtTheIterationBudget(t *testing.T) {
+	for _, tc := range []struct {
+		name         string
+		step         time.Duration // fake time each build takes
+		wantSummary  string        // prefix
+		wantProposes int
+	}{
+		// Builds start at 0, 4 and 8 minutes. The fourth would start past the budget.
+		{"BudgetSpent", 4 * time.Minute, "Iteration budget (10m0s) spent after 3 builds", 3},
+		// A first turn slower than slowIteration lifts the budget, and the
+		// iteration cap is what ends the session.
+		{"SlowFirstTurnLiftsTheBudget", 6 * time.Minute, "Maximum iterations", 5},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			// Every build advances a fake clock by step, so the budget's deadline
+			// falls between builds.
+			clock := time.Date(2026, 9, 9, 12, 0, 0, 0, time.UTC)
+			deps := RunSessionDeps{
+				IterationStub: func(context.Context, schema.AgentCreateIterationRequest) (*schema.AgentCreateIterationResponse, error) {
+					clock = clock.Add(tc.step)
+					return &schema.AgentCreateIterationResponse{Iteration: &schema.AgentIteration{Status: schema.AgentIterationStatusFailed}}, nil
+				},
+				Now: func() time.Time { return clock },
+			}
+			req := RunSessionReq{SessionID: "sess", MaxIterations: 5, IterationBudget: 10 * time.Minute}
+			agent := &fakeAgent{strategy: testStrategy()}
+			got := runIterations(context.Background(), req, 0, agent, deps)
+			if got.StopReason != schema.AgentCompleteReasonFailed || !strings.HasPrefix(got.Summary, tc.wantSummary) {
+				t.Errorf("verdict = %s %q, want FAILED with %q", got.StopReason, got.Summary, tc.wantSummary)
+			}
+			if agent.proposes != tc.wantProposes {
+				t.Errorf("proposes = %d, want %d", agent.proposes, tc.wantProposes)
+			}
+		})
+	}
+}

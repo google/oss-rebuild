@@ -508,13 +508,14 @@ const (
 
 // AgentCreateRequest creates a new agent session
 type AgentCreateRequest struct {
-	Target        rebuild.Target     `form:",required"`
-	RunID         string             `form:""`
-	MaxIterations int                `form:""`
-	Context       *AgentContext      `form:""`
-	ExecutionMode AgentExecutionMode `form:""` // Empty means AgentExecutionModeGCB
-	ExternalAgent bool               `form:""` // Skip the hosted agent job launch: the caller runs the agent binary
-	Model         string             `form:""` // Gemini model id for the session. Empty selects the agent's default.
+	Target                 rebuild.Target     `form:",required"`
+	RunID                  string             `form:""`
+	MaxIterations          int                `form:""`
+	IterationBudgetSeconds int                `form:""` // iteration start cutoff, 0 for none
+	Context                *AgentContext      `form:""`
+	ExecutionMode          AgentExecutionMode `form:""` // Empty means AgentExecutionModeGCB
+	ExternalAgent          bool               `form:""` // Skip the hosted agent job launch: the caller runs the agent binary
+	Model                  string             `form:""` // Gemini model id for the session. Empty selects the agent's default.
 }
 
 var _ api.Input = AgentCreateRequest{}
@@ -522,6 +523,9 @@ var _ api.Input = AgentCreateRequest{}
 func (r AgentCreateRequest) Validate() error {
 	if r.Target.Ecosystem == "" || r.Target.Package == "" || r.Target.Version == "" || r.Target.Artifact == "" {
 		return errors.New("target must be fully specified")
+	}
+	if r.IterationBudgetSeconds < 0 {
+		return errors.New("iteration_budget_seconds must not be negative")
 	}
 	switch r.ExecutionMode {
 	case "", AgentExecutionModeGCB, AgentExecutionModeScratch:
@@ -617,25 +621,26 @@ type AgentCompleteResponse struct {
 
 // AgentSession stores agent session metadata in Firestore
 type AgentSession struct {
-	ID               string             `firestore:"id,omitempty"`
-	RunID            string             `firestore:"run_id,omitempty"`
-	Target           rebuild.Target     `firestore:"target,omitempty"`
-	MaxIterations    int                `firestore:"max_iterations,omitempty"`
-	IterationCount   int                `firestore:"iteration_count,omitempty"` // Iterations recorded so far. New iterations are numbered from it.
-	TimeoutSeconds   int                `firestore:"timeout_seconds,omitempty"`
-	Context          *AgentContext      `firestore:"context,omitempty"`
-	Status           string             `firestore:"status,omitempty"`
-	ExecutionName    string             `firestore:"execution_name,omitempty"`
-	ExecutionMode    AgentExecutionMode `firestore:"execution_mode,omitempty"` // Empty means GCB (sessions predating scratch support)
-	Model            string             `firestore:"model,omitempty"`          // Gemini model id driving the session
-	ScratchID        string             `firestore:"scratch_id,omitempty"`     // Scratch VM bound to the session (scratch execution mode only)
-	Usage            *TokenUsage        `firestore:"usage,omitempty"`          // total LLM tokens, reported at completion
-	Created          time.Time          `firestore:"created,omitempty"`
-	Updated          time.Time          `firestore:"updated,omitempty"`
-	StopReason       string             `firestore:"stop_reason,omitempty"`
-	SuccessIteration string             `firestore:"success_iteration,omitempty"`
-	WonBy            string             `firestore:"won_by,omitempty"` // on success, an AgentWonBy value
-	Summary          string             `firestore:"summary,omitempty"`
+	ID                     string             `firestore:"id,omitempty"`
+	RunID                  string             `firestore:"run_id,omitempty"`
+	Target                 rebuild.Target     `firestore:"target,omitempty"`
+	MaxIterations          int                `firestore:"max_iterations,omitempty"`
+	IterationCount         int                `firestore:"iteration_count,omitempty"` // Iterations recorded so far. New iterations are numbered from it.
+	TimeoutSeconds         int                `firestore:"timeout_seconds,omitempty"`
+	IterationBudgetSeconds int                `firestore:"iteration_budget_seconds,omitempty"` // Iteration start cutoff. 0 for none.
+	Context                *AgentContext      `firestore:"context,omitempty"`
+	Status                 string             `firestore:"status,omitempty"`
+	ExecutionName          string             `firestore:"execution_name,omitempty"`
+	ExecutionMode          AgentExecutionMode `firestore:"execution_mode,omitempty"` // Empty means GCB (sessions predating scratch support)
+	Model                  string             `firestore:"model,omitempty"`          // Gemini model id driving the session
+	ScratchID              string             `firestore:"scratch_id,omitempty"`     // Scratch VM bound to the session (scratch execution mode only)
+	Usage                  *TokenUsage        `firestore:"usage,omitempty"`          // total LLM tokens, reported at completion
+	Created                time.Time          `firestore:"created,omitempty"`
+	Updated                time.Time          `firestore:"updated,omitempty"`
+	StopReason             string             `firestore:"stop_reason,omitempty"`
+	SuccessIteration       string             `firestore:"success_iteration,omitempty"`
+	WonBy                  string             `firestore:"won_by,omitempty"` // on success, an AgentWonBy value
+	Summary                string             `firestore:"summary,omitempty"`
 }
 
 // AgentIteration stores iteration metadata in Firestore

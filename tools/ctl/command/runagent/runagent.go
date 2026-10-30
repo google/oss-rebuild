@@ -34,6 +34,7 @@ type Config struct {
 	Version         string
 	Artifact        string
 	AgentIterations int
+	IterationBudget time.Duration
 	ExecutionMode   string
 	LocalAgent      bool
 }
@@ -104,10 +105,11 @@ func Handler(ctx context.Context, cfg Config, deps *Deps) (*act.NoOutput, error)
 	}
 	stub := api.Stub[schema.AgentCreateRequest, schema.AgentCreateResponse](client, apiURL.JoinPath("agent"))
 	resp, err := stub(ctx, schema.AgentCreateRequest{
-		Target:        t,
-		MaxIterations: cfg.AgentIterations,
-		ExecutionMode: schema.AgentExecutionMode(cfg.ExecutionMode),
-		ExternalAgent: cfg.LocalAgent,
+		Target:                 t,
+		MaxIterations:          cfg.AgentIterations,
+		IterationBudgetSeconds: int(cfg.IterationBudget.Seconds()),
+		ExecutionMode:          schema.AgentExecutionMode(cfg.ExecutionMode),
+		ExternalAgent:          cfg.LocalAgent,
 	})
 	if err != nil {
 		return nil, errors.Wrap(err, "running attest")
@@ -147,7 +149,7 @@ func Handler(ctx context.Context, cfg Config, deps *Deps) (*act.NoOutput, error)
 func Command() *cobra.Command {
 	cfg := Config{}
 	cmd := &cobra.Command{
-		Use:   "run-agent --project <project> --api <URI> --ecosystem <ecosystem> --package <name> --version <version> --artifact <name> [--agent-iterations <max iterations>] [--execution-mode <mode>] [--local-agent]",
+		Use:   "run-agent --project <project> --api <URI> --ecosystem <ecosystem> --package <name> --version <version> --artifact <name> [--agent-iterations <max iterations>] [--iteration-budget <duration>] [--execution-mode <mode>] [--local-agent]",
 		Short: "Run the agent on a single target",
 		Args:  cobra.NoArgs,
 		RunE: cli.RunE(
@@ -171,6 +173,7 @@ func flagSet(name string, cfg *Config) *flag.FlagSet {
 	set.StringVar(&cfg.Version, "version", "", "the version of the package")
 	set.StringVar(&cfg.Artifact, "artifact", "", "the artifact name")
 	set.IntVar(&cfg.AgentIterations, "agent-iterations", 3, "maximum number of agent iterations before giving up")
+	set.DurationVar(&cfg.IterationBudget, "iteration-budget", 0, "no iteration starts this long into the session. 0 leaves the job timeout as the only bound")
 	set.StringVar(&cfg.ExecutionMode, "execution-mode", "", "where iteration builds execute: gcb (default) or scratch")
 	set.BoolVar(&cfg.LocalAgent, "local-agent", false, "run the agent locally instead of launching the hosted agent job (iteration builds still run per --execution-mode)")
 	return set
