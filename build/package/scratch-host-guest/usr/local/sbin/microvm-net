@@ -1,0 +1,43 @@
+#!/bin/sh
+# Copyright 2026 Google LLC
+# SPDX-License-Identifier: Apache-2.0
+
+# Configures eth0 from mvm_* kernel command line parameters. The kernel's
+# ip= autoconfig can run before the initramfs loads virtio_net.
+
+set -eu
+
+param() {
+    tr ' ' '\n' < /proc/cmdline | sed -n "s/^$1=//p" | tail -1
+}
+
+IP="$(param mvm_ip)"
+GW="$(param mvm_gw)"
+MTU="$(param mvm_mtu)"
+PREFIX="$(param mvm_prefix)"
+DNS="$(param mvm_dns)"
+NAME="$(param mvm_name)"
+
+[ -n "$MTU" ] || MTU=1460
+[ -n "$PREFIX" ] || PREFIX=24
+
+if [ -n "$NAME" ]; then
+    hostname "$NAME"
+    printf '%s\n' "$NAME" > /etc/hostname
+    printf '127.0.0.1 localhost\n127.0.1.1 %s\n' "$NAME" > /etc/hosts
+fi
+
+ip link set dev eth0 mtu "$MTU"
+ip link set dev eth0 up
+if [ -n "$IP" ]; then
+    ip addr add "$IP/$PREFIX" dev eth0
+fi
+if [ -n "$GW" ]; then
+    ip route add default via "$GW"
+fi
+if [ -n "$DNS" ]; then
+    printf 'nameserver %s\n' "$DNS" > /etc/resolv.conf
+fi
+
+# Readiness marker on the serial console.
+echo MICROVM_NET_UP > /dev/console
