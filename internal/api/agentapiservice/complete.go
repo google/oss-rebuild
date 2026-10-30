@@ -43,6 +43,9 @@ func AgentComplete(ctx context.Context, req schema.AgentCompleteRequest, deps *A
 		if req.Summary != "" {
 			s.Summary = req.Summary
 		}
+		if req.Closest != nil {
+			s.Closest = req.Closest
+		}
 		if req.Usage != nil {
 			s.Usage = req.Usage // token consumption, as tallied by the agent
 		}
