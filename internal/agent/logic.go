@@ -848,11 +848,15 @@ func (a *defaultAgent) generate(ctx context.Context, prompt []string, opts *Prop
 			default:
 				return "", fmt.Errorf("unsupported chat upload scheme: \"%s\"", opts.ChatUploadURL.Scheme)
 			}
-			defer writer.Close()
 			enc := json.NewEncoder(writer)
 			enc.SetIndent("", "  ")
 			if err := enc.Encode(content); err != nil {
+				writer.Close()
 				return "", errors.Wrap(err, "writing to bucket")
+			}
+			// Eagerly close to flush writes.
+			if err := writer.Close(); err != nil {
+				log.Printf("session transcript: closing %s: %v", contentPath, err)
 			}
 		}
 		response = *content
