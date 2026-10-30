@@ -32,11 +32,8 @@ const (
 	// DefaultWorkDir matches the scratch worker's default working directory.
 	DefaultWorkDir = "/home/builder"
 	// buildsSubdir is the directory under WorkDir holding per-build state.
-	buildsSubdir = "builds"
-	// defaultBuildTimeout bounds a build when Options.Timeout is unset. The
-	// worker-enforced timeout must never be zero: with no kill endpoint an
-	// unbounded remote command could not be terminated.
-	defaultBuildTimeout = time.Hour
+	buildsSubdir        = "builds"
+	defaultBuildTimeout = time.Hour // when Options.Timeout is unset
 	// utilityTimeout bounds the non-build exec steps (staging, artifact
 	// retrieval).
 	utilityTimeout = 10 * time.Minute
@@ -112,11 +109,9 @@ type ExecutorConfig struct {
 // lifecycle scaffolding plus the exec, output, and asset plumbing shared by
 // the docker run and docker build compositions.
 //
-// NOTE: On cancellation, there is no worker kill endpoint yet, so cancelling
-// a build (handle cancel, Close) stops driving it client-side while the
-// remote command runs on until its worker-enforced timeout
-// (build.CancelDetached semantics). Every dispatched exec therefore carries
-// a nonzero timeout.
+// NOTE: On cancellation (handle cancel, Close), the exec loop sends a
+// best-effort kill for the in-flight op. The worker-enforced timeout is the
+// backstop, so every exec carries a nonzero timeout.
 type executor struct {
 	scratchID        string
 	stubs            Stubs
@@ -281,8 +276,8 @@ func (e *executor) prepareBuild(ctx context.Context, dir, recordName string, rec
 // the build's wall-clock budget, following output into the handle while it
 // polls. The dispatch-to-terminal wall time is charged against remaining.
 // The worker-enforced timeout is clamped to at least 1s: zero means
-// unbounded, and nothing could kill the command (see the cancellation
-// caveat on executor).
+// unbounded, leaving no backstop when a kill cannot be delivered (see
+// the cancellation NOTE on executor).
 func (e *executor) phaseExec(ctx context.Context, handle *scratchHandle, req schema.ScratchExecRequest, remaining *time.Duration) (*longrunning.Operation[schema.ScratchExecResult], error) {
 	var offset int64
 	follow := func(op *longrunning.Operation[schema.ScratchExecResult]) {

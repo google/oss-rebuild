@@ -509,6 +509,19 @@ resource "google_compute_router_nat" "nat" {
   # Auto-allocate for all IPs
   nat_ip_allocate_option             = "AUTO_ONLY"
   source_subnetwork_ip_ranges_to_nat = "ALL_SUBNETWORKS_ALL_IP_RANGES"
+  # A host masquerades all its guests behind one address. Dynamic allocation
+  # grows ports too slowly for a package install and drops packets when it
+  # can't keep up. This allocation floor covers the observed host bursts.
+  enable_dynamic_port_allocation      = true
+  enable_endpoint_independent_mapping = false # dynamic allocation needs it off
+  min_ports_per_vm                    = 4096
+  max_ports_per_vm                    = 16384
+  tcp_time_wait_timeout_sec           = 30 # a short TIME_WAIT frees ports sooner
+  # Port exhaustion otherwise shows only as connection timeouts in builds.
+  log_config {
+    enable = true
+    filter = "ERRORS_ONLY"
+  }
 }
 # run.app resolves to public front-end IPs, so with a NAT present that traffic
 # would egress publicly and be classified external at internal-ingress
@@ -573,18 +586,18 @@ resource "google_compute_firewall" "allow_outbound" {
   destination_ranges = ["0.0.0.0/0"]
 }
 
-# Scratch workers: reachable on port 8080 only from agent-api's
-# Direct VPC egress range. Workers have no external IPs.
-resource "google_compute_firewall" "scratch-worker-ingress" {
+# Scratch hosts expose only the broker's port 8080, to agent-api's Direct VPC
+# egress range. Guests are never VPC-addressable.
+resource "google_compute_firewall" "scratch-host-ingress" {
   count   = var.enable_scratch ? 1 : 0
-  name    = "${var.host}-scratch-worker-ingress"
+  name    = "${var.host}-scratch-host-ingress"
   network = google_compute_network.vpc[0].name
   allow {
     protocol = "tcp"
     ports    = ["8080"]
   }
   source_ranges = [google_compute_subnetwork.subnet[0].ip_cidr_range]
-  target_tags   = ["scratch"]
+  target_tags   = ["scratch-host"]
 }
 
 resource "google_project_service" "cloudscheduler" {

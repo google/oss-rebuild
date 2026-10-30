@@ -17,7 +17,7 @@ import (
 
 	"cloud.google.com/go/storage"
 	"github.com/google/go-cmp/cmp"
-	"github.com/google/oss-rebuild/internal/api/scratchworkerservice"
+	"github.com/google/oss-rebuild/internal/api/scratchhostservice"
 	"github.com/google/oss-rebuild/internal/db"
 	"github.com/google/oss-rebuild/internal/httpx"
 	"github.com/google/oss-rebuild/pkg/act/api"
@@ -192,12 +192,12 @@ func TestSyncer_FinalFromStatus(t *testing.T) {
 	}
 	tests := []struct {
 		name   string
-		status scratchworkerservice.ExecStatus
+		status scratchhostservice.ExecStatus
 		want   schema.ScratchExec
 	}{
 		{
 			name: "WorkerClocksAdopted",
-			status: scratchworkerservice.ExecStatus{
+			status: scratchhostservice.ExecStatus{
 				Done:       true,
 				ExitCode:   3,
 				StartedAt:  workerStart,
@@ -218,7 +218,7 @@ func TestSyncer_FinalFromStatus(t *testing.T) {
 			// A worker that never observed a start leaves StartedAt zero.
 			// Only FinishedAt falls back to the broker clock.
 			name:   "MissingWorkerClocksFallBack",
-			status: scratchworkerservice.ExecStatus{Done: true},
+			status: scratchhostservice.ExecStatus{Done: true},
 			want: schema.ScratchExec{
 				ID:         "op1",
 				ScratchID:  "s1",
@@ -230,7 +230,7 @@ func TestSyncer_FinalFromStatus(t *testing.T) {
 		},
 		{
 			name: "TimedOut",
-			status: scratchworkerservice.ExecStatus{
+			status: scratchhostservice.ExecStatus{
 				Done:       true,
 				ExitCode:   124,
 				TimedOut:   true,
@@ -255,7 +255,7 @@ func TestSyncer_FinalFromStatus(t *testing.T) {
 		{
 			// Terminal like a timeout, with its own code.
 			name: "OutputCapped",
-			status: scratchworkerservice.ExecStatus{
+			status: scratchhostservice.ExecStatus{
 				Done:         true,
 				OutputCapped: true,
 				TotalBytes:   256 << 20,
@@ -277,8 +277,31 @@ func TestSyncer_FinalFromStatus(t *testing.T) {
 			},
 		},
 		{
+			// A killed op lands in Lost with an Aborted error.
+			name: "KilledIsLost",
+			status: scratchhostservice.ExecStatus{
+				Done:       true,
+				Killed:     true,
+				StartedAt:  workerStart,
+				FinishedAt: workerFinish,
+			},
+			want: schema.ScratchExec{
+				ID:         "op1",
+				ScratchID:  "s1",
+				State:      schema.ScratchExecLost,
+				CreatedAt:  created,
+				StartedAt:  workerStart,
+				FinishedAt: workerFinish,
+				Updated:    brokerNow,
+				Error: &schema.Status{
+					Code:    int(codes.Aborted),
+					Message: "op killed",
+				},
+			},
+		},
+		{
 			name: "InfraErrorIsLost",
-			status: scratchworkerservice.ExecStatus{
+			status: scratchhostservice.ExecStatus{
 				Done:       true,
 				ErrMsg:     "spawn failed",
 				StartedAt:  workerStart,
@@ -369,19 +392,19 @@ func TestSyncer_TerminalSyncDefersUntilOutputComplete(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	// The worker is done. Its stream can be empty since no pull lands.
+	// The host is done. Its stream can be empty since no pull lands.
 	mux := http.NewServeMux()
-	mux.HandleFunc("/exec/op/status", api.Handler(api.NoDepsInit, func(context.Context, scratchworkerservice.StatusRequest, *api.NoDeps) (*scratchworkerservice.ExecStatus, error) {
-		return &scratchworkerservice.ExecStatus{Done: true, TotalBytes: total}, nil
+	mux.HandleFunc("/exec/op/status", api.Handler(api.NoDepsInit, func(context.Context, scratchhostservice.OpRequest, *api.NoDeps) (*scratchhostservice.ExecStatus, error) {
+		return &scratchhostservice.ExecStatus{Done: true, TotalBytes: total}, nil
 	}))
-	mux.HandleFunc("/exec/op/output", api.StreamHandler(api.NoDepsInit, func(context.Context, scratchworkerservice.OutputRequest, *api.NoDeps) iter.Seq2[*scratchworkerservice.OutputFrame, error] {
-		return func(func(*scratchworkerservice.OutputFrame, error) bool) {}
+	mux.HandleFunc("/exec/op/output", api.StreamHandler(api.NoDepsInit, func(context.Context, scratchhostservice.OutputRequest, *api.NoDeps) iter.Seq2[*scratchhostservice.OutputFrame, error] {
+		return func(func(*scratchhostservice.OutputFrame, error) bool) {}
 	}))
-	worker := httptest.NewServer(mux)
-	defer worker.Close()
-	dial := func(schema.Scratch) (httpx.BasicClient, *url.URL, error) {
-		u, err := url.Parse(worker.URL)
-		return worker.Client(), u, err
+	host := httptest.NewServer(mux)
+	defer host.Close()
+	dial := func(Instance) (httpx.BasicClient, *url.URL, error) {
+		u, err := url.Parse(host.URL)
+		return host.Client(), u, err
 	}
 	execs := db.NewMemoryScratchExecs()
 	exec := schema.ScratchExec{ID: "op-1", ScratchID: "s-1", State: schema.ScratchExecPending}

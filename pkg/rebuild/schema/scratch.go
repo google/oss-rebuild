@@ -28,7 +28,7 @@ const (
 	ScratchDeleted  ScratchState = "deleted"
 )
 
-// MachineClass selects the VM size for a scratch.
+// MachineClass selects the host shape for a scratch.
 type MachineClass string
 
 const (
@@ -36,15 +36,16 @@ const (
 	MachineClassJumbo    MachineClass = "jumbo"
 )
 
-// Scratch is a per-build agent scratch environment. It binds a VM to an
-// agent for maintaining build-local state (Docker daemon storage, working
-// directory, build caches) on the VM's local SSD.
+// Scratch is a per-build agent scratch environment. It binds a microVM
+// guest to an agent for maintaining build-local state (Docker daemon
+// storage, working directory, build caches).
 type Scratch struct {
 	ID           string       `json:"id,omitempty" firestore:"id,omitempty"`
 	BuildID      string       `json:"build_id,omitempty" firestore:"build_id,omitempty"`
 	ObliviousID  string       `json:"oblivious_id,omitempty" firestore:"oblivious_id,omitempty"`
 	MachineClass MachineClass `json:"machine_class,omitempty" firestore:"machine_class,omitempty"`
-	VMName       string       `json:"vm_name,omitempty" firestore:"vm_name,omitempty"`
+	VMName       string       `json:"vm_name,omitempty" firestore:"vm_name,omitempty"` // per-VM era only
+	Host         string       `json:"host,omitempty" firestore:"host,omitempty"`       // set before admit
 	InternalIP   string       `json:"internal_ip,omitempty" firestore:"internal_ip,omitempty"`
 	Zone         string       `json:"zone,omitempty" firestore:"zone,omitempty"`
 	State        ScratchState `json:"state,omitempty" firestore:"state,omitempty"`
@@ -116,7 +117,7 @@ const (
 	ScratchExecPending   ScratchExecState = "pending"
 	ScratchExecCompleted ScratchExecState = "completed" // worker observed the command's exit (any code)
 	ScratchExecTimedOut  ScratchExecState = "timed_out" // worker- or broker-enforced deadline, or the output cap
-	ScratchExecLost      ScratchExecState = "lost"      // dispatch failed, scratch gone, or sync failure
+	ScratchExecLost      ScratchExecState = "lost"      // dispatch failed, scratch gone, sync failure, or killed
 )
 
 // Status is a structured diagnostic for a terminal failure. It is
@@ -212,6 +213,19 @@ func (r ScratchExecRequest) Validate() error {
 	}
 	if r.WaitSeconds < 0 {
 		return errors.New("wait_seconds must be >= 0")
+	}
+	return nil
+}
+
+// ScratchExecKillRequest is the agent's input to /scratch/exec/op/kill.
+type ScratchExecKillRequest struct {
+	ID string `form:"id,required"`
+}
+
+// Validate implements act.Input.
+func (r ScratchExecKillRequest) Validate() error {
+	if r.ID == "" {
+		return errors.New("id is required")
 	}
 	return nil
 }
