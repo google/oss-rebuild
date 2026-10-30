@@ -212,7 +212,7 @@ func TestFreeFormProposeFormalizesTheHandoff(t *testing.T) {
 		t.Fatalf("%d model calls, want 4: three tool calls and the answer", n)
 	}
 	first := h.model.request(0)
-	for _, want := range []string{"call handoff once", `"name":"check_artifact"`, `"name":"handoff"`, `"name":"run_in_container"`, "Work in the container until check_artifact reports a match, then call handoff"} {
+	for _, want := range []string{"call handoff once", `"name":"check_artifact"`, `"name":"handoff"`, `"name":"give_up"`, `"name":"run_in_container"`, "Work in the container until check_artifact reports a match, then call handoff"} {
 		if !strings.Contains(first, want) {
 			t.Errorf("the first model request lacks %q", want)
 		}
@@ -830,5 +830,22 @@ func TestFreeFormCarries(t *testing.T) {
 		if got := ff.carries(tc.inst); got != tc.want {
 			t.Errorf("%s: carries = %v, want %v", tc.name, got, tc.want)
 		}
+	}
+}
+
+// The give-up record is filed beside the transcript.
+func TestFreeFormGiveUpEndsTheSession(t *testing.T) {
+	h := freeFormTestAgent(t, []string{modelCalls("give_up", `{"reason":"the locale data comes from a CLDR build that is gone"}`), modelSays("Giving up.")}, formalized)
+	dir, _ := url.Parse("gs://sessions/s1/messages/2")
+	_, err := h.a.Propose(context.Background(), &ProposeOpts{ChatUploadURL: dir})
+	var gu gaveUp
+	if !errors.As(err, &gu) || !strings.Contains(gu.Reason, "CLDR build") {
+		t.Fatalf("Propose = %v, want the give-up with its reason", err)
+	}
+	if r := h.record(t, "-giveup.json"); !bytes.Contains(r["reason"], []byte("CLDR build")) {
+		t.Errorf("give-up record = %v", r)
+	}
+	if len(h.prompts) != 0 || h.a.ff.pending != nil {
+		t.Error("a session that gave up was formalized")
 	}
 }

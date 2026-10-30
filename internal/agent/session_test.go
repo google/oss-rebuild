@@ -379,3 +379,15 @@ func TestRunIterationsStopsAfterRepeatedRefusals(t *testing.T) {
 		}
 	}
 }
+
+func TestRunIterationsStopsOnGiveUp(t *testing.T) {
+	a := &fakeAgent{proposeErr: gaveUp{Reason: "the wheel ships a coverage file that is not in the source"}}
+	req := RunSessionReq{SessionID: "sess", MaxIterations: 5, InitialIteration: &schema.AgentIteration{Strategy: testStrategy()}}
+	done := runIterations(context.Background(), req, 1, a, RunSessionDeps{})
+	if done.StopReason != schema.AgentCompleteReasonGaveUp || !strings.Contains(done.Summary, "coverage file") {
+		t.Errorf("completion = %+v, want GAVE_UP with the reason", done)
+	}
+	if a.proposes != 1 {
+		t.Errorf("Propose called %d times, want the one that gave up", a.proposes)
+	}
+}

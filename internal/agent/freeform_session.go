@@ -15,13 +15,13 @@ import (
 	"google.golang.org/genai"
 )
 
-// A free-form session is a job-side chat with check_artifact and handoff
-// beside its tools. None of the loop runs on the VM.
+// A free-form session is a job-side chat with check_artifact, handoff and
+// give_up beside its tools. None of the loop runs on the VM.
 
 // openFreeForm is the driver's sessionOpener over a fresh chat.
 func (a *defaultAgent) openFreeForm(ctx context.Context, opts *ProposeOpts, prev *executionDetails) (freeFormSession, string, error) {
 	s := &chatSession{a: a, opts: opts, check: artifactCheck{runner: a.deps.ScratchRunner}}
-	tools := append(a.getTools(), s.check.tool(), s.handoffTool())
+	tools := append(a.getTools(), s.check.tool(), s.handoffTool(), giveUpTool(func(reason string) { s.giveUp = reason }))
 	chat, err := a.newChat(ctx, freeFormPrompt, s.tracing(tools))
 	if err != nil {
 		return nil, "", errors.Wrap(err, "starting the free-form chat")
@@ -38,6 +38,7 @@ type chatSession struct {
 	check   artifactCheck
 	trace   []toolCall      // every tool call, as executed
 	handoff json.RawMessage // the turn's handoff, if recorded
+	giveUp  string          // the turn's give_up reason, if recorded
 	part    int             // transcript contents written
 }
 
@@ -50,7 +51,8 @@ func (s *chatSession) followUp(ctx context.Context, prompt string) (json.RawMess
 }
 
 // turn sends prompt and runs the tool loop to the model's answer, filing each
-// content as it arrives.
+// content as it arrives. A give_up ends the turn in a gaveUp error, even after
+// a handoff.
 func (s *chatSession) turn(ctx context.Context, prompt string) (json.RawMessage, []toolCall, error) {
 	s.handoff = nil
 	var err error
@@ -61,6 +63,11 @@ func (s *chatSession) turn(ctx context.Context, prompt string) (json.RawMessage,
 		}
 		s.part++
 		s.a.ff.record(ctx, s.opts, fmt.Sprintf("%s-%d-%s.json", stamp(), s.part, content.Role), content)
+	}
+	if reason := s.giveUp; reason != "" {
+		s.giveUp = ""
+		s.a.ff.record(ctx, s.opts, stamp()+"-giveup.json", map[string]any{"reason": reason})
+		return nil, s.trace, gaveUp{Reason: reason}
 	}
 	if err != nil {
 		return nil, s.trace, errors.Wrap(err, "running the free-form chat")
