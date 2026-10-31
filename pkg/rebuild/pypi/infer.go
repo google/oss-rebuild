@@ -11,6 +11,7 @@ import (
 	"io"
 	"io/fs"
 	"log"
+	"maps"
 	"path"
 	re "regexp"
 	"slices"
@@ -68,8 +69,8 @@ func (Rebuilder) Published(ctx context.Context, t rebuild.Target, mux rebuild.Re
 //	  - a link named in commonRepoLinks, on a known repo host
 //	  - a link named in commonRepoLinks, on any host
 //	other mentions, release then project:
+//	  - a link under any other name, on a known repo host
 //	  - the first repository cited in the description
-//	  - a link under any other name, on a known repo host, sponsors excluded
 func (Rebuilder) InferRepo(ctx context.Context, t rebuild.Target, mux rebuild.RegistryMux) (string, error) {
 	var infos []pypireg.Info
 	if release, err := mux.PyPI.Release(ctx, t.Package, t.Version); err != nil {
@@ -116,23 +117,15 @@ func repoFromSourceLinks(info pypireg.Info) string {
 	return ""
 }
 
-// repoFromOtherLinks picks the first known repo host cited in the description,
-// else one linked under any other name.
+// repoFromOtherLinks picks a known repo host linked under any other name, else
+// the first one cited in the description.
 func repoFromOtherLinks(info pypireg.Info) string {
-	r := uri.FindCommonRepo(info.Description)
-	// TODO: Maybe revisit this sponsors logic?
-	if r != "" && !strings.Contains(r, "sponsors") {
-		return r
-	}
-	for _, url := range info.ProjectURLs {
-		if strings.Contains(url, "sponsors") {
-			continue
-		}
-		if repo := uri.FindCommonRepo(url); repo != "" {
+	for _, name := range slices.Sorted(maps.Keys(info.ProjectURLs)) {
+		if repo := uri.FindCommonRepo(info.ProjectURLs[name]); repo != "" {
 			return repo
 		}
 	}
-	return ""
+	return uri.FindCommonRepo(info.Description)
 }
 
 func (Rebuilder) CloneRepo(ctx context.Context, t rebuild.Target, repoURI string, ropt *gitx.RepositoryOptions) (r rebuild.RepoConfig, err error) {

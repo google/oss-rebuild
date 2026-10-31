@@ -366,7 +366,7 @@ func wheelZipReader(t *testing.T, pkg, version, wheel, metadata string) *zip.Rea
 	return zr
 }
 
-func TestInferRepoPrefersReleaseLinks(t *testing.T) {
+func TestInferRepo(t *testing.T) {
 	target := rebuild.Target{Ecosystem: rebuild.PyPI, Package: "charset-normalizer", Version: "2.0.12", Artifact: "charset_normalizer-2.0.12-py3-none-any.whl"}
 	for _, tc := range []struct {
 		name  string
@@ -396,6 +396,30 @@ func TestInferRepoPrefersReleaseLinks(t *testing.T) {
 				{URL: "https://pypi.org/pypi/charset-normalizer/json", Response: &http.Response{StatusCode: 200, Body: httpxtest.Body(`{"info":{"name":"charset-normalizer","project_urls":{"Code":"https://github.com/jawah/charset_normalizer"}}}`)}},
 			},
 			want: "https://github.com/jawah/charset_normalizer",
+		},
+		{
+			name: "a link under another name beats a repository cited in the description",
+			calls: []httpxtest.Call{
+				{URL: "https://pypi.org/pypi/charset-normalizer/2.0.12/json", Response: &http.Response{StatusCode: 200, Body: httpxtest.Body(`{"info":{"name":"charset-normalizer","version":"2.0.12","description":"builds on https://github.com/psf/requests","project_urls":{"Issue Tracker":"https://github.com/ousret/charset_normalizer/issues"}}}`)}},
+				{URL: "https://pypi.org/pypi/charset-normalizer/json", Response: &http.Response{StatusCode: 200, Body: httpxtest.Body(`{"info":{"name":"charset-normalizer"}}`)}},
+			},
+			want: "https://github.com/ousret/charset_normalizer",
+		},
+		{
+			name: "a sponsors page in the description is passed over",
+			calls: []httpxtest.Call{
+				{URL: "https://pypi.org/pypi/charset-normalizer/2.0.12/json", Response: &http.Response{StatusCode: 200, Body: httpxtest.Body(`{"info":{"name":"charset-normalizer","version":"2.0.12","description":"Sponsor https://github.com/sponsors/ousret or see https://github.com/ousret/charset_normalizer"}}`)}},
+				{URL: "https://pypi.org/pypi/charset-normalizer/json", Response: &http.Response{StatusCode: 200, Body: httpxtest.Body(`{"info":{"name":"charset-normalizer"}}`)}},
+			},
+			want: "https://github.com/ousret/charset_normalizer",
+		},
+		{
+			name: "links under other names are tried in name order",
+			calls: []httpxtest.Call{
+				{URL: "https://pypi.org/pypi/charset-normalizer/2.0.12/json", Response: &http.Response{StatusCode: 200, Body: httpxtest.Body(`{"info":{"name":"charset-normalizer","version":"2.0.12","project_urls":{"Tracker":"https://github.com/jawah/charset_normalizer/issues","Bug Reports":"https://github.com/ousret/charset_normalizer/issues"}}}`)}},
+				{URL: "https://pypi.org/pypi/charset-normalizer/json", Response: &http.Response{StatusCode: 200, Body: httpxtest.Body(`{"info":{"name":"charset-normalizer"}}`)}},
+			},
+			want: "https://github.com/ousret/charset_normalizer",
 		},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
