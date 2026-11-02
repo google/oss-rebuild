@@ -414,6 +414,30 @@ func TestInferRepo(t *testing.T) {
 			want: "https://github.com/ousret/charset_normalizer",
 		},
 		{
+			name: "a repository named after the package beats the first one cited",
+			calls: []httpxtest.Call{
+				{URL: "https://pypi.org/pypi/charset-normalizer/2.0.12/json", Response: &http.Response{StatusCode: 200, Body: httpxtest.Body(`{"info":{"name":"charset-normalizer","version":"2.0.12","description":"Fixes https://github.com/psf/requests/issues/5871. See https://github.com/Ousret/Charset_Normalizer"}}`)}},
+				{URL: "https://pypi.org/pypi/charset-normalizer/json", Response: &http.Response{StatusCode: 200, Body: httpxtest.Body(`{"info":{"name":"charset-normalizer"}}`)}},
+			},
+			want: "https://github.com/ousret/charset_normalizer",
+		},
+		{
+			name: "a repository named after the package in the description beats a link under another name",
+			calls: []httpxtest.Call{
+				{URL: "https://pypi.org/pypi/charset-normalizer/2.0.12/json", Response: &http.Response{StatusCode: 200, Body: httpxtest.Body(`{"info":{"name":"charset-normalizer","version":"2.0.12","description":"See https://github.com/ousret/charset_normalizer","project_urls":{"Changelog":"https://github.com/ousret/changelogs/blob/main/charset.md"}}}`)}},
+				{URL: "https://pypi.org/pypi/charset-normalizer/json", Response: &http.Response{StatusCode: 200, Body: httpxtest.Body(`{"info":{"name":"charset-normalizer"}}`)}},
+			},
+			want: "https://github.com/ousret/charset_normalizer",
+		},
+		{
+			name: "a repository named after the package with a python suffix still counts",
+			calls: []httpxtest.Call{
+				{URL: "https://pypi.org/pypi/charset-normalizer/2.0.12/json", Response: &http.Response{StatusCode: 200, Body: httpxtest.Body(`{"info":{"name":"charset-normalizer","version":"2.0.12","description":"A port of https://github.com/ousret/charset_normalizer","project_urls":{"Changelog":"https://github.com/jawah/charset-normalizer-python/blob/main/CHANGELOG.md"}}}`)}},
+				{URL: "https://pypi.org/pypi/charset-normalizer/json", Response: &http.Response{StatusCode: 200, Body: httpxtest.Body(`{"info":{"name":"charset-normalizer"}}`)}},
+			},
+			want: "https://github.com/jawah/charset-normalizer-python",
+		},
+		{
 			name: "links under other names are tried in name order",
 			calls: []httpxtest.Call{
 				{URL: "https://pypi.org/pypi/charset-normalizer/2.0.12/json", Response: &http.Response{StatusCode: 200, Body: httpxtest.Body(`{"info":{"name":"charset-normalizer","version":"2.0.12","project_urls":{"Tracker":"https://github.com/jawah/charset_normalizer/issues","Bug Reports":"https://github.com/ousret/charset_normalizer/issues"}}}`)}},
