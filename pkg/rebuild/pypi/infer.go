@@ -561,6 +561,10 @@ func inferBuild(ctx context.Context, t rebuild.Target, mux rebuild.RegistryMux, 
 		if err != nil {
 			return nil, errors.Wrap(err, "extracting cibuildwheel specs")
 		}
+		stripMode, err := inferStripMode(zr, tree, dir, tags, highest.LibcImpl, reqs)
+		if err != nil {
+			return nil, errors.Wrap(err, "inferring strip mode")
+		}
 		return &PlatformWheelBuild{
 			Location: rebuild.Location{
 				Repo:       rcfg.URI,
@@ -576,6 +580,7 @@ func inferBuild(ctx context.Context, t rebuild.Target, mux rebuild.RegistryMux, 
 			RegistryTime: a.UploadTime,
 			BaseImage:    inferBaseImage(platform.CibuildwheelPins, tags.Platform, a.UploadTime, cibwSpecs...),
 			BuildRoot:    inferBuildRoot(zr, tree),
+			StripMode:    stripMode,
 		}, nil
 	} else {
 		return &PureWheelBuild{

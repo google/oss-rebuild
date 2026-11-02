@@ -130,6 +130,22 @@ func (b *SdistBuild) GenerateFor(t rebuild.Target, be rebuild.BuildEnv) (rebuild
 	return b.ToWorkflow().GenerateFor(t, be)
 }
 
+// StripMode selects how ELF debug and symbol tables are removed from a
+// platform wheel. The zero value keeps them.
+type StripMode string
+
+const (
+	// StripModeAuditwheel passes "--strip" to auditwheel so debug and symbol
+	// tables are stripped from extensions and bundled libraries.
+	StripModeAuditwheel StripMode = "auditwheel-strip"
+	// StripModeLinkerAll passes "-Wl,-s" via LDFLAGS during the wheel build so
+	// GNU ld omits debug and symbol tables before computing .note.gnu.build-id.
+	StripModeLinkerAll StripMode = "linker-strip-all"
+	// StripModeDebug passes "-g0" via CFLAGS and CXXFLAGS during the wheel build
+	// so debug sections are omitted while preserving .symtab.
+	StripModeDebug StripMode = "debug"
+)
+
 // PlatformWheelBuild aggregates the options controlling a platform-specific wheel build.
 type PlatformWheelBuild struct {
 	rebuild.Location
@@ -146,6 +162,8 @@ type PlatformWheelBuild struct {
 	BaseImage string `json:"base_image,omitempty" yaml:"base_image,omitempty"`
 	// BuildRoot is the absolute path the build is run from, when set.
 	BuildRoot string `json:"build_root,omitempty" yaml:"build_root,omitempty"`
+	// StripMode selects how ELF debug and symbol tables are stripped, when set.
+	StripMode StripMode `json:"strip_mode,omitempty" yaml:"strip_mode,omitempty"`
 }
 
 var _ rebuild.Strategy = &PlatformWheelBuild{}
@@ -181,6 +199,21 @@ func validateBuildRoot(root string) error {
 	return nil
 }
 
+func (m StripMode) buildFlags() (stripEnv, auditwheelStrip string, err error) {
+	switch m {
+	case "":
+		return "", "", nil
+	case StripModeAuditwheel:
+		return "", "1", nil
+	case StripModeLinkerAll:
+		return `LDFLAGS="-Wl,-s"`, "", nil
+	case StripModeDebug:
+		return `CFLAGS="-g0" CXXFLAGS="-g0"`, "", nil
+	default:
+		return "", "", errors.Errorf("unsupported strip mode %q", m)
+	}
+}
+
 func (b *PlatformWheelBuild) ToWorkflow() (*rebuild.WorkflowStrategy, error) {
 	baseImage, err := b.resolveBaseImage()
 	if err != nil {
@@ -188,6 +221,10 @@ func (b *PlatformWheelBuild) ToWorkflow() (*rebuild.WorkflowStrategy, error) {
 	}
 	if err := validateBuildRoot(b.BuildRoot); err != nil {
 		return nil, errors.Wrap(err, "validating build root")
+	}
+	stripEnv, auditwheelStrip, err := b.StripMode.buildFlags()
+	if err != nil {
+		return nil, errors.Wrap(err, "validating strip mode")
 	}
 	var registryTime string
 	if !b.RegistryTime.IsZero() {
@@ -225,12 +262,14 @@ func (b *PlatformWheelBuild) ToWorkflow() (*rebuild.WorkflowStrategy, error) {
 		Build: []flow.Step{{
 			Uses: "pypi/build/platform-wheel",
 			With: map[string]string{
-				"dir":        b.Location.Dir,
-				"distDir":    distDir,
-				"buildRoot":  b.BuildRoot,
-				"locator":    "/deps/bin/",
-				"wheelCli":   "/deps/wheel-cli",
-				"venvOnPath": needsVenvOnPath(b.Requirements),
+				"dir":             b.Location.Dir,
+				"distDir":         distDir,
+				"buildRoot":       b.BuildRoot,
+				"stripEnv":        stripEnv,
+				"auditwheelStrip": auditwheelStrip,
+				"locator":         "/deps/bin/",
+				"wheelCli":        "/deps/wheel-cli",
+				"venvOnPath":      needsVenvOnPath(b.Requirements),
 				// auditwheel repair --plat requires a single policy tag rather than a compressed
 				// tag set, and the highest tag matches the build container policy.
 				"highestPlatformTag": platform.HighestLibcTagString(b.PlatformTag),
@@ -403,9 +442,9 @@ var toolkit = []*flow.Tool{
 				mkdir -p $(dirname {{.With.buildRoot}})
 				mkdir {{.With.buildRoot}}
 				cp -a . {{.With.buildRoot}}
-				{{if .With.venvOnPath}}PATH={{.With.locator}}:$PATH {{end}}{{.With.locator}}python3 -m build --wheel -n --outdir {{.With.distDir}} {{.With.buildRoot}}{{if and (ne .With.dir ".") (ne .With.dir "")}}/{{.With.dir}}{{end}}
+				{{if .With.venvOnPath}}PATH={{.With.locator}}:$PATH {{end}}{{if .With.stripEnv}}{{.With.stripEnv}} {{end}}{{.With.locator}}python3 -m build --wheel -n --outdir {{.With.distDir}} {{.With.buildRoot}}{{if and (ne .With.dir ".") (ne .With.dir "")}}/{{.With.dir}}{{end}}
 				{{else -}}
-				{{if .With.venvOnPath}}PATH={{.With.locator}}:$PATH {{end}}{{.With.locator}}python3 -m build --wheel -n{{if and (ne .With.dir ".") (ne .With.dir "")}} {{.With.dir}}{{end}}
+				{{if .With.venvOnPath}}PATH={{.With.locator}}:$PATH {{end}}{{if .With.stripEnv}}{{.With.stripEnv}} {{end}}{{.With.locator}}python3 -m build --wheel -n{{if and (ne .With.dir ".") (ne .With.dir "")}} {{.With.dir}}{{end}}
 				{{end -}}
 				{{if .With.highestPlatformTag -}}
 				mkdir -p {{.With.distDir}}/repaired
@@ -413,7 +452,7 @@ var toolkit = []*flow.Tool{
 				if [ ! -x "$AUDITWHEEL" ]; then
 				  AUDITWHEEL="auditwheel"
 				fi
-				$AUDITWHEEL repair {{.With.distDir}}/*.whl --plat {{.With.highestPlatformTag}} -w {{.With.distDir}}/repaired/
+				$AUDITWHEEL repair{{if .With.auditwheelStrip}} --strip{{end}} {{.With.distDir}}/*.whl --plat {{.With.highestPlatformTag}} -w {{.With.distDir}}/repaired/
 				rm -f {{.With.distDir}}/*.whl
 				mv {{.With.distDir}}/repaired/*.whl {{.With.distDir}}/
 				rm -rf {{.With.distDir}}/repaired

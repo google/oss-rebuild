@@ -204,6 +204,31 @@ pypi_platform_wheel_build:
 `,
 	},
 	{
+		name: "PlatformWheelBuildWithStripMode",
+		strategy: &pypi.PlatformWheelBuild{
+			Location: rebuild.Location{
+				Dir:  "the_dir",
+				Ref:  "the_ref",
+				Repo: "the_repo",
+			},
+			Requirements: []string{"req_a"},
+			PlatformTag:  "manylinux2014_x86_64",
+			StripMode:    pypi.StripModeAuditwheel,
+		},
+		jsonEncoded: `{"pypi_platform_wheel_build":{"repo":"the_repo","ref":"the_ref","dir":"the_dir","requirements":["req_a"],"platform_tag":"manylinux2014_x86_64","registry_time":"0001-01-01T00:00:00Z","strip_mode":"auditwheel-strip"}}`,
+		yamlEncoded: `
+pypi_platform_wheel_build:
+  location:
+    repo: the_repo
+    ref: the_ref
+    dir: the_dir
+  requirements:
+    - req_a
+  platform_tag: manylinux2014_x86_64
+  strip_mode: auditwheel-strip
+`,
+	},
+	{
 		name: "CratesioCargoPackage",
 		strategy: &cratesio.CratesIOCargoPackage{
 			Location: rebuild.Location{

@@ -20,22 +20,24 @@ type ProjectMetadata struct {
 	Version string `toml:"version"`
 }
 
-// CibuildwheelHooks represents build hooks in [tool.cibuildwheel], platform subtables, or override entries.
-type CibuildwheelHooks struct {
-	BeforeAll   any `toml:"before-all"`
-	BeforeBuild any `toml:"before-build"`
+// CibuildwheelOptions represents build hooks and options in [tool.cibuildwheel], platform subtables, or override entries.
+type CibuildwheelOptions struct {
+	BeforeAll          any `toml:"before-all"`
+	BeforeBuild        any `toml:"before-build"`
+	RepairWheelCommand any `toml:"repair-wheel-command"`
+	Environment        any `toml:"environment"`
 }
 
 // CibuildwheelOverride represents an entry in [[tool.cibuildwheel.overrides]].
 type CibuildwheelOverride struct {
 	Select any `toml:"select"`
-	CibuildwheelHooks
+	CibuildwheelOptions
 }
 
 // CibuildwheelConfig represents the [tool.cibuildwheel] table in pyproject.toml.
 type CibuildwheelConfig struct {
-	CibuildwheelHooks
-	Linux     CibuildwheelHooks      `toml:"linux"`
+	CibuildwheelOptions
+	Linux     CibuildwheelOptions    `toml:"linux"`
 	Overrides []CibuildwheelOverride `toml:"overrides"`
 }
 
