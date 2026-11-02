@@ -28,6 +28,9 @@ var (
 	// cibuildwheelReqPat matches an exact cibuildwheel requirement in a command,
 	// such as "pipx run cibuildwheel==2.16.2".
 	cibuildwheelReqPat = re.MustCompile(`\bcibuildwheel(?:\[[^\]]*\])?\s*==\s*(\d+\.\d+\.\d+)\b`)
+	// packageSpecPat matches a package name with an optional version pin, such
+	// as "graphviz-dev=14.1.5-r0" or "cairo-dev>=1.18".
+	packageSpecPat = re.MustCompile(`^(?P<pkg>[\w.+:()-]+)(?:(?P<op>[<>~=]=?|=~)[\w.+:-]+)?$`)
 )
 
 // ghaWorkflow holds the parts of a GitHub Actions workflow that can pin the
@@ -355,18 +358,15 @@ func shellWord(n *bash.Node, src []byte) string {
 	return ""
 }
 
+// cleanPackageToken returns the package spec to install or "" when the token
+// is not a plain package operand. Tokens with an "@" tag are rejected rather
+// than truncated.
 func cleanPackageToken(tok string) string {
-	if strings.Contains(tok, "/") {
-		return ""
-	}
 	switch path.Ext(tok) {
 	case ".rpm", ".deb", ".apk":
 		return ""
 	}
-	if idx := strings.IndexAny(tok, "=<>~@"); idx > 0 {
-		tok = tok[:idx]
-	}
-	if strings.ContainsAny(tok, "$`<>;&|*{}! \t") {
+	if !packageSpecPat.MatchString(tok) {
 		return ""
 	}
 	return tok
