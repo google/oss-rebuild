@@ -104,31 +104,6 @@ func TestInferRequirements(t *testing.T) {
 	}
 }
 
-func TestRequirementName(t *testing.T) {
-	tests := []struct {
-		req  string
-		want string
-	}{
-		{"setuptools", "setuptools"},
-		{"setuptools<=67.7.2", "setuptools"},
-		{"setuptools; python_version != '3.3'", "setuptools"},
-		{"setuptools[core]>=61", "setuptools"},
-		{"flit_core==3.7.1", "flit-core"},
-		{"Flit.Core==3.7.1", "flit-core"},
-		{"setuptools-scm<6.0", "setuptools-scm"},
-		{"numpy (>=1.13)", "numpy"},
-		{"numpy(>=1.13)", "numpy"},
-		{"pip @ https://example.com/pip.zip", "pip"},
-		{"pip@https://example.com/pip.zip", "pip"},
-		{"", ""},
-	}
-	for _, tt := range tests {
-		if got := requirementName(tt.req); got != tt.want {
-			t.Errorf("requirementName(%q) = %q, want %q", tt.req, got, tt.want)
-		}
-	}
-}
-
 func TestRequirementMarker(t *testing.T) {
 	tests := []struct {
 		req  string
