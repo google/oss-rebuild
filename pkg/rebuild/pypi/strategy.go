@@ -6,6 +6,7 @@ package pypi
 import (
 	"path"
 	re "regexp"
+	"slices"
 	"strings"
 	"time"
 
@@ -177,6 +178,13 @@ const (
 	rustupHome = "/root/.rustup"
 )
 
+// frontendTimewarpCutoff is the earliest registry_time at which pypi/deps/platform-wheel
+// installs the build frontend from the timewarped index rather than the live index.
+// PyPA build stabilized its -n and --outdir CLI flags in 0.7.0 (released 2021-10),
+// so historical wheels before 2022 keep pre-timewarp installation instead of failing
+// closed on missing frontend flags.
+var frontendTimewarpCutoff = time.Date(2022, time.January, 1, 0, 0, 0, 0, time.UTC)
+
 // rustVersionPat matches a pinned stable Rust release or dated nightly.
 var rustVersionPat = re.MustCompile(`^(\d+\.\d+\.\d+|nightly-\d{4}-\d{2}-\d{2})$`)
 
@@ -216,6 +224,20 @@ func (b *PlatformWheelBuild) ToWorkflow() (*rebuild.WorkflowStrategy, error) {
 	var registryTime string
 	if !b.RegistryTime.IsZero() {
 		registryTime = b.RegistryTime.Format(time.RFC3339)
+	}
+	liveFrontendPkgs, timewarpFrontendPkgs := "build wheel", ""
+	// NOTE: A zero RegistryTime is before frontendTimewarpCutoff, so unpinned and
+	// pre-cutoff builds keep the live index. Before the cutoff, a declared build
+	// must also come from the live index so pypi/install-deps cannot leave a
+	// pre-0.7.0 build without -n or --outdir.
+	if !b.RegistryTime.Before(frontendTimewarpCutoff) {
+		liveFrontendPkgs, timewarpFrontendPkgs = "", "build wheel"
+		// Only an unconditional declaration guarantees that pypi/install-deps installs build.
+		if slices.ContainsFunc(b.Requirements, func(r string) bool {
+			return requirementName(r) == "build" && requirementMarker(r) == ""
+		}) {
+			timewarpFrontendPkgs = "wheel"
+		}
 	}
 	distDir := "dist"
 	if b.Location.Dir != "" {
@@ -269,11 +291,13 @@ func (b *PlatformWheelBuild) ToWorkflow() (*rebuild.WorkflowStrategy, error) {
 		Deps: append([]flow.Step{{
 			Uses: "pypi/deps/platform-wheel",
 			With: map[string]string{
-				"registryTime": registryTime,
-				"requirements": flow.MustToJSON(b.Requirements),
-				"pythonTag":    b.PythonTag,
-				"abiTag":       b.ABITag,
-				"venv":         venv,
+				"registryTime":         registryTime,
+				"liveFrontendPkgs":     liveFrontendPkgs,
+				"timewarpFrontendPkgs": timewarpFrontendPkgs,
+				"requirements":         flow.MustToJSON(b.Requirements),
+				"pythonTag":            b.PythonTag,
+				"abiTag":               b.ABITag,
+				"venv":                 venv,
 			},
 		}}, rustDeps...),
 		Build: []flow.Step{{
@@ -405,17 +429,24 @@ var toolkit = []*flow.Tool{
 				},
 			},
 			{
-				// Fetch the PEP 517 frontend and wheel from the real index, before timewarp.
-				// auditwheel is deliberately absent. The build uses the one bundled with the
-				// PyPA image, which matches the image's patchelf and is what upstream used
-				// when building in the same image.
-				Runs: "{{.With.venv}}/bin/pip install build wheel",
+				// Before frontendTimewarpCutoff or without a registry time, fetch the PEP 517
+				// frontend and wheel from the live index so builds do not fail closed on early
+				// build CLI versions. auditwheel is deliberately absent. The build uses the one
+				// bundled with the PyPA image, which matches the image's patchelf and is what
+				// upstream used when building in the same image.
+				Runs: `{{if .With.liveFrontendPkgs}}{{.With.venv}}/bin/pip install {{.With.liveFrontendPkgs}}{{end}}`,
 			},
 			{
 				Uses: "pypi/setup-registry",
 				With: map[string]string{
 					"registryTime": "{{.With.registryTime}}",
 				},
+			},
+			{
+				// From frontendTimewarpCutoff onward, install the PEP 517 frontend under
+				// timewarp so build and transitive dependencies such as packaging match the
+				// build container's Python era.
+				Runs: `{{if .With.timewarpFrontendPkgs}}{{.With.venv}}/bin/pip install {{.With.timewarpFrontendPkgs}}{{end}}`,
 			},
 			{
 				Uses: "pypi/install-deps",
