@@ -127,11 +127,13 @@ func repoFromOtherLinks(info pypireg.Info) string {
 	return ""
 }
 
-// repoNamedAfter returns a picker for the first of otherRepoLinks named after pkg.
+// repoNamedAfter returns a picker for the first of otherRepoLinks named after
+// pkg, with or without a py or python affix, as in pycasbin or crate-python.
 func repoNamedAfter(pkg string) func(pypireg.Info) string {
+	named := re.MustCompile(`^(?:py-?|python-)?` + re.QuoteMeta(normalizeName(pkg)) + `(?:-py|-python)?$`)
 	return func(info pypireg.Info) string {
 		for _, repo := range otherRepoLinks(info) {
-			if normalizeName(strings.TrimSuffix(path.Base(repo), ".git")) == normalizeName(pkg) {
+			if named.MatchString(normalizeName(strings.TrimSuffix(path.Base(repo), ".git"))) {
 				return repo
 			}
 		}
