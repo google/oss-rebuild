@@ -833,7 +833,7 @@ func TestInferBaseImage(t *testing.T) {
 }
 
 func TestInferStrategyPlatformWheelSystemDeps(t *testing.T) {
-	repo := must(gitxtest.CreateRepoFromYAML(`commits:
+	pygraphvizRepoYAML := `commits:
   - id: release-commit
     tag: v1.14
     files:
@@ -855,57 +855,198 @@ func TestInferStrategyPlatformWheelSystemDeps(t *testing.T) {
         [[tool.cibuildwheel.overrides]]
         select = "pp*-musllinux*"
         before-all = "apk add pypy-only-dev"
-`, nil))
+`
 	tests := []struct {
-		name     string
-		filename string
-		wheelTag string
-		soName   string
-		want     []string
+		name        string
+		pkg         string
+		version     string
+		repoYAML    string
+		filename    string
+		wheelFiles  []archive.ZipEntry
+		wantSysDeps []string
+		wantEnv     map[string]string
 	}{
 		{
 			name:     "MusllinuxStandardABI",
+			pkg:      "pygraphviz",
+			version:  "1.14",
+			repoYAML: pygraphvizRepoYAML,
 			filename: "pygraphviz-1.14-cp310-cp310-musllinux_1_2_x86_64.whl",
-			wheelTag: "cp310-cp310-musllinux_1_2_x86_64",
-			soName:   "pygraphviz/_graphviz.cpython-310-x86_64-linux-musl.so",
-			want:     []string{"graphviz-dev", "so:libcgraph.so.6", "pc:libcgraph"},
-		},
-		{
-			name:     "ManylinuxFreeThreadedABI",
-			filename: "pygraphviz-1.14-cp313-cp313t-manylinux_2_28_x86_64.whl",
-			wheelTag: "cp313-cp313t-manylinux_2_28_x86_64",
-			soName:   "pygraphviz/_graphviz.cpython-313t-x86_64-linux-gnu.so",
-			want:     []string{"graphviz-devel", "python3-freethreading-devel", "libcgraph.so.6()(64bit)", "/usr/lib64/libcgraph.so"},
-		},
-	}
-	for _, tc := range tests {
-		t.Run(tc.name, func(t *testing.T) {
-			wheelURL := "https://files.pythonhosted.org/" + tc.filename
-			wheelBuf := must(archivetest.ZipFile([]archive.ZipEntry{
+			wheelFiles: []archive.ZipEntry{
 				{
 					FileHeader: &zip.FileHeader{Name: "pygraphviz-1.14.dist-info/WHEEL"},
-					Body:       []byte("Wheel-Version: 1.0\nGenerator: setuptools (70.0.0)\nRoot-Is-Purelib: false\nTag: " + tc.wheelTag + "\n"),
+					Body:       []byte("Wheel-Version: 1.0\nGenerator: setuptools (70.0.0)\nRoot-Is-Purelib: false\nTag: cp310-cp310-musllinux_1_2_x86_64\n"),
 				},
 				{
 					FileHeader: &zip.FileHeader{Name: "pygraphviz-1.14.dist-info/METADATA"},
 					Body:       []byte("Metadata-Version: 2.1\nName: pygraphviz\nVersion: 1.14\n"),
 				},
 				{
-					FileHeader: &zip.FileHeader{Name: tc.soName},
+					FileHeader: &zip.FileHeader{Name: "pygraphviz/_graphviz.cpython-310-x86_64-linux-musl.so"},
 					Body:       createTestELF([]string{"libc.so.6", "libcgraph-17278668.so.6.0.0"}, ""),
 				},
-			}))
-			releaseJSON := fmt.Sprintf(`{"info":{"name":"pygraphviz","version":"1.14"},"urls":[{"filename":%q,"url":%q,"size":%d,"upload_time_iso_8601":"2026-05-01T00:00:00Z"}]}`, tc.filename, wheelURL, wheelBuf.Len())
+			},
+			wantSysDeps: []string{"graphviz-dev", "so:libcgraph.so.6", "pc:libcgraph"},
+		},
+		{
+			name:     "ManylinuxFreeThreadedABI",
+			pkg:      "pygraphviz",
+			version:  "1.14",
+			repoYAML: pygraphvizRepoYAML,
+			filename: "pygraphviz-1.14-cp313-cp313t-manylinux_2_28_x86_64.whl",
+			wheelFiles: []archive.ZipEntry{
+				{
+					FileHeader: &zip.FileHeader{Name: "pygraphviz-1.14.dist-info/WHEEL"},
+					Body:       []byte("Wheel-Version: 1.0\nGenerator: setuptools (70.0.0)\nRoot-Is-Purelib: false\nTag: cp313-cp313t-manylinux_2_28_x86_64\n"),
+				},
+				{
+					FileHeader: &zip.FileHeader{Name: "pygraphviz-1.14.dist-info/METADATA"},
+					Body:       []byte("Metadata-Version: 2.1\nName: pygraphviz\nVersion: 1.14\n"),
+				},
+				{
+					FileHeader: &zip.FileHeader{Name: "pygraphviz/_graphviz.cpython-313t-x86_64-linux-gnu.so"},
+					Body:       createTestELF([]string{"libc.so.6", "libcgraph-17278668.so.6.0.0"}, ""),
+				},
+			},
+			wantSysDeps: []string{"graphviz-devel", "python3-freethreading-devel", "libcgraph.so.6()(64bit)", "/usr/lib64/libcgraph.so"},
+		},
+		{
+			name:    "CibuildwheelEnvironmentTableAndOverrides",
+			pkg:     "lxml",
+			version: "6.1.3",
+			repoYAML: `commits:
+  - id: release-commit
+    tag: lxml-6.1.3
+    files:
+      pyproject.toml: |
+        [project]
+        name = "lxml"
+        version = "6.1.3"
+        [build-system]
+        requires = ["Cython>=3.2.4", "setuptools"]
+        [tool.cibuildwheel]
+        environment = {STATIC_DEPS = "true", LIBXML2_VERSION = "2.14.6", LIBXSLT_VERSION = "1.1.43"}
+        [[tool.cibuildwheel.overrides]]
+        select = "*linux_*"
+        environment.CFLAGS = "-O3 -g1 -pipe -fPIC -flto"
+        [[tool.cibuildwheel.overrides]]
+        select = "*linux_x86_64"
+        environment.CFLAGS = "-O3 -g1 -pipe -fPIC -flto -march=core2 -mtune=generic"
+`,
+			filename: "lxml-6.1.3-cp312-cp312-manylinux_2_28_x86_64.whl",
+			wheelFiles: []archive.ZipEntry{
+				{
+					FileHeader: &zip.FileHeader{Name: "lxml-6.1.3.dist-info/WHEEL"},
+					Body:       []byte("Wheel-Version: 1.0\nGenerator: setuptools (75.0.0)\nRoot-Is-Purelib: false\nTag: cp312-cp312-manylinux_2_28_x86_64\n"),
+				},
+				{
+					FileHeader: &zip.FileHeader{Name: "lxml-6.1.3.dist-info/METADATA"},
+					Body:       []byte("Metadata-Version: 2.1\nName: lxml\nVersion: 6.1.3\n"),
+				},
+				{
+					FileHeader: &zip.FileHeader{Name: "lxml/etree.cpython-312-x86_64-linux-gnu.so"},
+					Body:       createTestELF([]string{"libc.so.6"}, ""),
+				},
+			},
+			wantEnv: map[string]string{
+				"CFLAGS":          "-O3 -g1 -pipe -fPIC -flto -march=core2 -mtune=generic",
+				"LIBXML2_VERSION": "2.14.6",
+				"LIBXSLT_VERSION": "1.1.43",
+				"STATIC_DEPS":     "true",
+			},
+		},
+		{
+			name:    "CibuildwheelClangEnvAppendsCompiler",
+			pkg:     "librt",
+			version: "0.9.0",
+			repoYAML: `commits:
+  - id: release-commit
+    tag: v0.9.0
+    files:
+      pyproject.toml: |
+        [project]
+        name = "librt"
+        version = "0.9.0"
+        [build-system]
+        requires = ["setuptools>=77.0.3"]
+        build-backend = "setuptools.build_meta"
+        [tool.cibuildwheel.linux]
+        before-all = ["yum install -y llvm-toolset || true"]
+        [tool.cibuildwheel.linux.environment]
+        CC = "clang"
+`,
+			filename: "librt-0.9.0-cp312-cp312-manylinux_2_28_x86_64.whl",
+			wheelFiles: []archive.ZipEntry{
+				{
+					FileHeader: &zip.FileHeader{Name: "librt-0.9.0.dist-info/WHEEL"},
+					Body:       []byte("Wheel-Version: 1.0\nGenerator: setuptools (80.9.0)\nRoot-Is-Purelib: false\nTag: cp312-cp312-manylinux_2_28_x86_64\n"),
+				},
+				{
+					FileHeader: &zip.FileHeader{Name: "librt-0.9.0.dist-info/METADATA"},
+					Body:       []byte("Metadata-Version: 2.1\nName: librt\nVersion: 0.9.0\n"),
+				},
+				{
+					FileHeader: &zip.FileHeader{Name: "librt/internal.cpython-312-x86_64-linux-gnu.so"},
+					Body:       createTestELF([]string{"libc.so.6"}, ""),
+				},
+			},
+			wantSysDeps: []string{"llvm-toolset", "clang"},
+			wantEnv:     map[string]string{"CC": "clang"},
+		},
+		{
+			name:    "CibuildwheelClangPlusPlusEnvAppendsCompiler",
+			pkg:     "cppext",
+			version: "0.1.0",
+			repoYAML: `commits:
+  - id: release-commit
+    tag: v0.1.0
+    files:
+      pyproject.toml: |
+        [project]
+        name = "cppext"
+        version = "0.1.0"
+        [build-system]
+        requires = ["setuptools>=77.0.3"]
+        build-backend = "setuptools.build_meta"
+        [tool.cibuildwheel.linux.environment]
+        CXX = "clang++"
+`,
+			filename: "cppext-0.1.0-cp312-cp312-manylinux_2_28_x86_64.whl",
+			wheelFiles: []archive.ZipEntry{
+				{
+					FileHeader: &zip.FileHeader{Name: "cppext-0.1.0.dist-info/WHEEL"},
+					Body:       []byte("Wheel-Version: 1.0\nGenerator: setuptools (80.9.0)\nRoot-Is-Purelib: false\nTag: cp312-cp312-manylinux_2_28_x86_64\n"),
+				},
+				{
+					FileHeader: &zip.FileHeader{Name: "cppext-0.1.0.dist-info/METADATA"},
+					Body:       []byte("Metadata-Version: 2.1\nName: cppext\nVersion: 0.1.0\n"),
+				},
+				{
+					FileHeader: &zip.FileHeader{Name: "cppext/_core.cpython-312-x86_64-linux-gnu.so"},
+					Body:       createTestELF([]string{"libc.so.6"}, ""),
+				},
+			},
+			wantSysDeps: []string{"clang"},
+			wantEnv:     map[string]string{"CXX": "clang++"},
+		},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			repo := must(gitxtest.CreateRepoFromYAML(tc.repoYAML, nil))
+			wheelURL := "https://files.pythonhosted.org/" + tc.filename
+			wheelBuf := must(archivetest.ZipFile(tc.wheelFiles))
+			releaseJSON := fmt.Sprintf(`{"info":{"name":%q,"version":%q},"urls":[{"filename":%q,"url":%q,"size":%d,"upload_time_iso_8601":"2026-05-01T00:00:00Z"}]}`, tc.pkg, tc.version, tc.filename, wheelURL, wheelBuf.Len())
+			releaseURL := fmt.Sprintf("https://pypi.org/pypi/%s/%s/json", tc.pkg, tc.version)
 			mux := rebuild.RegistryMux{PyPI: pypireg.HTTPRegistry{Client: &httpxtest.MockClient{
 				Calls: []httpxtest.Call{
-					{URL: "https://pypi.org/pypi/pygraphviz/1.14/json", Response: &http.Response{StatusCode: 200, Body: httpxtest.Body(releaseJSON)}},
-					{URL: "https://pypi.org/pypi/pygraphviz/1.14/json", Response: &http.Response{StatusCode: 200, Body: httpxtest.Body(releaseJSON)}},
+					{URL: releaseURL, Response: &http.Response{StatusCode: 200, Body: httpxtest.Body(releaseJSON)}},
+					{URL: releaseURL, Response: &http.Response{StatusCode: 200, Body: httpxtest.Body(releaseJSON)}},
 					{URL: wheelURL, Response: &http.Response{StatusCode: 200, Body: io.NopCloser(bytes.NewReader(wheelBuf.Bytes()))}},
 				},
 				URLValidator: httpxtest.NewURLValidator(t),
 			}}}
-			rcfg := &rebuild.RepoConfig{Repo: gitx.Repo{Repository: repo.Repository, Storer: repo.Storer}, URI: "https://github.com/pygraphviz/pygraphviz"}
-			target := rebuild.Target{Ecosystem: rebuild.PyPI, Package: "pygraphviz", Version: "1.14", Artifact: tc.filename}
+			rcfg := &rebuild.RepoConfig{Repo: gitx.Repo{Repository: repo.Repository, Storer: repo.Storer}, URI: "https://github.com/example/" + tc.pkg}
+			target := rebuild.Target{Ecosystem: rebuild.PyPI, Package: tc.pkg, Version: tc.version, Artifact: tc.filename}
 			strat, err := Rebuilder{}.InferStrategy(context.Background(), target, mux, rcfg, nil)
 			if err != nil {
 				t.Fatalf("InferStrategy() unexpected error: %v", err)
@@ -914,8 +1055,11 @@ func TestInferStrategyPlatformWheelSystemDeps(t *testing.T) {
 			if !ok {
 				t.Fatalf("InferStrategy() returned %T, want *PlatformWheelBuild", strat)
 			}
-			if diff := cmp.Diff(tc.want, got.SystemDeps); diff != "" {
+			if diff := cmp.Diff(tc.wantSysDeps, got.SystemDeps); diff != "" {
 				t.Errorf("PlatformWheelBuild.SystemDeps diff (-want +got):\n%s", diff)
+			}
+			if diff := cmp.Diff(tc.wantEnv, got.BuildEnv); diff != "" {
+				t.Errorf("PlatformWheelBuild.BuildEnv diff (-want +got):\n%s", diff)
 			}
 		})
 	}

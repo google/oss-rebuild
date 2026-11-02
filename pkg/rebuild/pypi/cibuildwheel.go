@@ -8,6 +8,7 @@ import (
 	"path"
 	re "regexp"
 	"slices"
+	"strconv"
 	"strings"
 
 	"github.com/google/oss-rebuild/pkg/rebuild/pypi/parsing"
@@ -108,23 +109,10 @@ func cibuildwheelSpecs(workflow []byte) (specs []string, usesCibuildwheel bool) 
 // extractCibuildwheelDependencies extracts system dependencies from
 // [tool.cibuildwheel] hooks and overrides in pyproject.toml under searchDir.
 func extractCibuildwheelDependencies(tree *git2.Tree, searchDir string, tags WheelTags, libc platform.LibcImpl) ([]string, error) {
-	pyprojPath := path.Clean(path.Join(searchDir, "pyproject.toml"))
-	f, err := tree.File(pyprojPath)
-	if errors.Is(err, git2.ErrFileNotFound) {
-		return nil, nil
-	} else if err != nil {
-		return nil, errors.Wrapf(err, "finding %s", pyprojPath)
-	}
-	pyProject, err := parsing.ReadPyProject(f)
+	cfg, pyprojPath, err := readCibuildwheelConfig(tree, searchDir)
 	if err != nil {
-		// A pyproject.toml that fails TOML decoding is a rejected candidate, not an infrastructure failure.
-		var decodeErr *toml.DecodeError
-		if errors.As(err, &decodeErr) {
-			return nil, nil
-		}
-		return nil, errors.Wrapf(err, "reading %s", pyprojPath)
+		return nil, err
 	}
-	cfg := pyProject.Tool.Cibuildwheel
 	// NOTE: In cibuildwheel, matching overrides replace base and linux hooks by
 	// default unless inherit is configured. Taking the union across all matching
 	// sections is a conservative over-approximation.
@@ -149,6 +137,141 @@ func extractCibuildwheelDependencies(tree *git2.Tree, searchDir string, tags Whe
 		deps = appendUnique(deps, scriptDeps...)
 	}
 	return deps, nil
+}
+
+// extractCibuildwheelEnvironment extracts build environment variables from
+// [tool.cibuildwheel] tables and matching overrides in pyproject.toml under
+// searchDir, with linux overriding top-level entries and matching overrides
+// overriding earlier values in order.
+func extractCibuildwheelEnvironment(tree *git2.Tree, searchDir string, tags WheelTags, libc platform.LibcImpl) (map[string]string, error) {
+	cfg, _, err := readCibuildwheelConfig(tree, searchDir)
+	if err != nil {
+		return nil, err
+	}
+	env := make(map[string]string)
+	maps.Copy(env, parseCibuildwheelEnvironment(cfg.Environment))
+	maps.Copy(env, parseCibuildwheelEnvironment(cfg.Linux.Environment))
+	for _, ov := range cfg.Overrides {
+		if overrideAppliesToTarget(ov.Select, tags, libc) {
+			maps.Copy(env, parseCibuildwheelEnvironment(ov.Environment))
+		}
+	}
+	if len(env) == 0 {
+		return nil, nil
+	}
+	return env, nil
+}
+
+func readCibuildwheelConfig(tree *git2.Tree, searchDir string) (parsing.CibuildwheelConfig, string, error) {
+	if tree == nil {
+		return parsing.CibuildwheelConfig{}, "", nil
+	}
+	pyprojPath := path.Clean(path.Join(searchDir, "pyproject.toml"))
+	f, err := tree.File(pyprojPath)
+	if errors.Is(err, git2.ErrFileNotFound) {
+		return parsing.CibuildwheelConfig{}, pyprojPath, nil
+	} else if err != nil {
+		return parsing.CibuildwheelConfig{}, pyprojPath, errors.Wrapf(err, "finding %s", pyprojPath)
+	}
+	pyProject, err := parsing.ReadPyProject(f)
+	if err != nil {
+		// A pyproject.toml that fails TOML decoding is a rejected candidate, not an infrastructure failure.
+		var decodeErr *toml.DecodeError
+		if errors.As(err, &decodeErr) {
+			return parsing.CibuildwheelConfig{}, pyprojPath, nil
+		}
+		return parsing.CibuildwheelConfig{}, pyprojPath, errors.Wrapf(err, "reading %s", pyprojPath)
+	}
+	return pyProject.Tool.Cibuildwheel, pyprojPath, nil
+}
+
+func parseCibuildwheelEnvironment(raw any) map[string]string {
+	switch v := raw.(type) {
+	case map[string]any:
+		out := make(map[string]string, len(v))
+		for k, item := range v {
+			if val, ok := tomlScalarString(item); ok && isSafeCibuildwheelEnv(k, val) {
+				out[k] = val
+			}
+		}
+		return out
+	case string:
+		src := []byte(v)
+		root, err := bash.NewParser().Parse(src)
+		if err != nil {
+			return nil
+		}
+		out := make(map[string]string)
+		for assign := range root.Find(bash.KindVariableAssignment) {
+			nameNode := assign.ChildByField(bash.FieldName)
+			if nameNode == nil {
+				continue
+			}
+			key := string(nameNode.Text(src))
+			valNode := assign.ChildByField(bash.FieldValue)
+			val := ""
+			if valNode != nil {
+				var ok bool
+				val, ok = shellLiteral(valNode, src)
+				if !ok {
+					continue
+				}
+			}
+			if isSafeCibuildwheelEnv(key, val) {
+				out[key] = val
+			}
+		}
+		return out
+	default:
+		return nil
+	}
+}
+
+func tomlScalarString(v any) (string, bool) {
+	switch v := v.(type) {
+	case string:
+		return v, true
+	case int64:
+		return strconv.FormatInt(v, 10), true
+	case bool:
+		return strconv.FormatBool(v), true
+	case float64:
+		return strconv.FormatFloat(v, 'f', -1, 64), true
+	default:
+		return "", false
+	}
+}
+
+var (
+	// blockedEnvPrefixes is an empirical blocklist of installer, wheel-repair,
+	// CI-runner, Rust-network, macOS, and test-driver prefixes that either conflict
+	// with offline rebuild phases or carry host-specific state.
+	blockedEnvPrefixes = []string{
+		"PIP_", "UV_", "AUDITWHEEL_", "CIBW_",
+		"RUNNER_", "GITHUB_", "CARGO_", "RUSTUP_",
+		"MACOSX_", "CMAKE_OSX_", "SDL_",
+	}
+	// blockedEnvNames is an empirical blocklist of search-path variables that
+	// depend on unexecuted before-all hooks as well as CI terminal, color, and
+	// runtime diagnostic settings that do not configure extension compilation.
+	blockedEnvNames = []string{
+		"PATH", "LD_LIBRARY_PATH", "DYLD_LIBRARY_PATH", "LIBRARY_PATH",
+		"CPATH", "C_INCLUDE_PATH", "CPLUS_INCLUDE_PATH", "PKG_CONFIG_PATH",
+		"CI", "ARCHFLAGS",
+		"COLOR", "FORCE_COLOR", "NO_COLOR", "PY_COLORS",
+		"CLICOLOR", "CLICOLOR_FORCE", "MYPY_FORCE_COLOR", "PRE_COMMIT_COLOR",
+		"COLUMNS", "LINES", "TERM",
+		"PYTHONUNBUFFERED", "PYTHONDEVMODE",
+	}
+)
+
+func isSafeCibuildwheelEnv(key, val string) bool {
+	if !buildEnvNamePat.MatchString(key) || !buildEnvValuePat.MatchString(val) || slices.Contains(blockedEnvNames, key) {
+		return false
+	}
+	return !slices.ContainsFunc(blockedEnvPrefixes, func(p string) bool {
+		return strings.HasPrefix(key, p)
+	})
 }
 
 func tomlStrings(v any) (out []string) {
@@ -395,11 +518,18 @@ func trailingArgs(root *bash.Node, src []byte) map[*bash.Node][]string {
 
 // shellWord returns the value of a word that needs no expansion, or "".
 func shellWord(n *bash.Node, src []byte) string {
+	s, _ := shellLiteral(n, src)
+	return s
+}
+
+// shellLiteral returns the unquoted value of a literal shell word and true, or
+// ("", false) when the node contains an expansion or substitution.
+func shellLiteral(n *bash.Node, src []byte) (string, bool) {
 	switch n.Kind {
 	case bash.KindWord, bash.KindNumber:
-		return string(n.Text(src))
+		return string(n.Text(src)), true
 	case bash.KindRawString:
-		return strings.Trim(string(n.Text(src)), "'")
+		return strings.TrimSuffix(strings.TrimPrefix(string(n.Text(src)), "'"), "'"), true
 	case bash.KindCommandName, bash.KindString, bash.KindConcatenation:
 		var b strings.Builder
 		for _, c := range n.Children {
@@ -410,15 +540,15 @@ func shellWord(n *bash.Node, src []byte) string {
 				b.Write(c.Text(src))
 				continue
 			}
-			s := shellWord(c, src)
-			if s == "" {
-				return ""
+			s, ok := shellLiteral(c, src)
+			if !ok {
+				return "", false
 			}
 			b.WriteString(s)
 		}
-		return b.String()
+		return b.String(), true
 	}
-	return ""
+	return "", false
 }
 
 // cleanPackageToken returns the package spec to install or "" when the token

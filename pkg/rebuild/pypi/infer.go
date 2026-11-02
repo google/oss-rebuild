@@ -569,6 +569,15 @@ func inferBuild(ctx context.Context, t rebuild.Target, mux rebuild.RegistryMux, 
 		if err != nil {
 			return nil, errors.Wrap(err, "inferring Rust version")
 		}
+		buildEnv, err := extractCibuildwheelEnvironment(tree, dir, tags, highest.LibcImpl)
+		if err != nil {
+			return nil, errors.Wrap(err, "extracting cibuildwheel environment")
+		}
+		// NOTE: PyPA manylinux and musllinux base images ship GCC by default and do
+		// not pre-install clang.
+		if buildEnv["CC"] == "clang" || buildEnv["CXX"] == "clang++" {
+			sysDeps = appendUnique(sysDeps, "clang")
+		}
 		return &PlatformWheelBuild{
 			Location: rebuild.Location{
 				Repo:       rcfg.URI,
@@ -580,6 +589,7 @@ func inferBuild(ctx context.Context, t rebuild.Target, mux rebuild.RegistryMux, 
 			ABITag:       tags.ABI,
 			PlatformTag:  tags.Platform,
 			Requirements: reqs,
+			BuildEnv:     buildEnv,
 			SystemDeps:   sysDeps,
 			RegistryTime: a.UploadTime,
 			BaseImage:    inferBaseImage(platform.CibuildwheelPins, tags.Platform, a.UploadTime, cibwSpecs...),
