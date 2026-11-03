@@ -37,12 +37,12 @@ func giveUpTool(record func(giveUpArgs)) *llm.FunctionDefinition {
 	return &llm.FunctionDefinition{
 		FunctionDeclaration: genai.FunctionDeclaration{
 			Name:        "give_up",
-			Description: "Declare that the artifact cannot be produced from the source at the ref, and end the session. Only with the evidence in hand: content generated from a resource that no longer exists, a release cut from a tree that was never published, a toolchain that cannot be obtained. A difference you have not explained is not evidence.",
+			Description: "End the session with the closest build you reached, when you cannot get closer to upstream. The job files the closest candidate, its commands, and what still differs for a person to finish.",
 			Parameters: &genai.Schema{
 				Type:     genai.TypeObject,
 				Required: []string{"reason"},
 				Properties: map[string]*genai.Schema{
-					"reason":  {Type: genai.TypeString, Description: "Two or three sentences: what the artifact holds that the source cannot produce, and how you know"},
+					"reason":  {Type: genai.TypeString, Description: "Two or three sentences: why you cannot get closer, and how you know"},
 					"closest": {Type: genai.TypeString, Description: "The path of the closest candidate check_artifact compared, if any"},
 					"build_commands": {
 						Type:        genai.TypeObject,
