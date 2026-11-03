@@ -573,18 +573,18 @@ resource "google_compute_firewall" "allow_outbound" {
   destination_ranges = ["0.0.0.0/0"]
 }
 
-# Scratch workers: reachable on port 8080 only from agent-api's
-# Direct VPC egress range. Workers have no external IPs.
-resource "google_compute_firewall" "scratch-worker-ingress" {
+# Scratch hosts expose only the broker's port 8080, to agent-api's Direct VPC
+# egress range. Guests are never VPC-addressable.
+resource "google_compute_firewall" "scratch-host-ingress" {
   count   = var.enable_scratch ? 1 : 0
-  name    = "${var.host}-scratch-worker-ingress"
+  name    = "${var.host}-scratch-host-ingress"
   network = google_compute_network.vpc[0].name
   allow {
     protocol = "tcp"
     ports    = ["8080"]
   }
   source_ranges = [google_compute_subnetwork.subnet[0].ip_cidr_range]
-  target_tags   = ["scratch"]
+  target_tags   = ["scratch-host"]
 }
 
 resource "google_project_service" "cloudscheduler" {
