@@ -7,16 +7,12 @@ import (
 	"context"
 	"maps"
 	"slices"
-	"strconv"
 
 	"github.com/google/oss-rebuild/pkg/act/api"
 	"github.com/google/oss-rebuild/pkg/scheduler"
 	"github.com/ncruces/go-sqlite3"
 	"github.com/pkg/errors"
 )
-
-// trendWeeks bounds the weekly history shown on an ecosystem tab.
-const trendWeeks = 12
 
 var _ api.HandlerFn[CoverageRequest, CoverageData, *Deps] = CoveragePage
 
@@ -25,19 +21,6 @@ type CoverageRequest struct {
 }
 
 func (CoverageRequest) Validate() error { return nil }
-
-// CoverageWeek is one week of an ecosystem's funnel, cumulative over the
-// packages attempted by the end of that week.
-type CoverageWeek struct {
-	Week        string
-	Attempted   int64
-	Reproduced  int64 // attested at their latest attempted version
-	Behind      int64 // attested an earlier version but not the latest
-	SharePct    int64 // Reproduced over Attempted
-	WeightedPct int64 // the same, weighting each package by its score
-	HasWeighted bool
-	NewlyBroken int64
-}
 
 // StageDone counts the campaigns one stage attested.
 type StageDone struct {
@@ -69,7 +52,6 @@ type CoverageEco struct {
 	NeedsTriage int64
 	Done        int64
 	DoneByStage []StageDone // ladder order, every stage present
-	Weeks       []CoverageWeek
 }
 
 // Campaigns counts the ecosystem's campaigns in every state.
@@ -80,27 +62,11 @@ type CoverageData struct {
 	AsOf     string
 	Eco      string        // selected tab, empty is the comparison view
 	Ecos     []CoverageEco // one per ecosystem, in name order
-	Detail   *CoverageEco  // the selected ecosystem with its weekly trend
+	Detail   *CoverageEco  // the selected ecosystem
 	Overview *Overview
 	Tiers    []EcoTiers // popularity tiers, by ecosystem
 	Releases *Releases  // release cohorts, nil if none enqueued
 	Spend    *Spend     // resource mix, nil without spend
-}
-
-func coverageWeekFromStmt(stmt *sqlite3.Stmt) CoverageWeek {
-	w := CoverageWeek{
-		Week:        stmt.ColumnText(0),
-		Attempted:   stmt.ColumnInt64(1),
-		Reproduced:  stmt.ColumnInt64(2),
-		Behind:      stmt.ColumnInt64(3),
-		SharePct:    int64(100 * stmt.ColumnFloat(4)),
-		NewlyBroken: stmt.ColumnInt64(6),
-	}
-	if weighted := stmt.ColumnFloat(5); weighted > 0 {
-		w.WeightedPct = int64(100 * weighted)
-		w.HasWeighted = true
-	}
-	return w
 }
 
 // ladder lists the stages cheapest first, as Stage.Next walks them.
@@ -218,18 +184,6 @@ func CoveragePage(ctx context.Context, req CoverageRequest, deps *Deps) (*Covera
 	if e := byEco[req.Eco]; e != nil {
 		data.Eco = req.Eco
 		data.Detail = e
-		err = forEachRow(deps.Analytics, `
-			SELECT week, packages_attempted, packages_current, packages_stale,
-				coverage, coalesce(weighted_coverage, 0), newly_broken
-			FROM coverage_weekly WHERE ecosystem = '`+req.Eco+`'
-			ORDER BY week DESC LIMIT `+strconv.Itoa(trendWeeks),
-			func(stmt *sqlite3.Stmt) error {
-				e.Weeks = append(e.Weeks, coverageWeekFromStmt(stmt))
-				return nil
-			})
-		if err != nil {
-			return nil, errors.Wrap(err, "querying coverage")
-		}
 		// An ecosystem tab shows only its own cohorts. Spend shares stay
 		// shares of every ecosystem's spend.
 		data.Tiers = onlyEco(data.Tiers, req.Eco, func(t EcoTiers) string { return t.Ecosystem })

@@ -5,11 +5,6 @@
  SPDX-License-Identifier: Apache-2.0
 -->
 
-<style>
-    th.group { text-align: center; color: var(--muted); font-weight: 400; }
-    .barcell { width: 25%; min-width: 120px; }
-</style>
-
 <h2>Coverage</h2>
 {{if not .Loaded}}
 <p>No analytics snapshot loaded. Start the dashboard with
@@ -119,48 +114,6 @@
 {{if not .Detail}}
 {{if not .Ecos}}
 <p>No attempts, signals, or campaigns in the snapshot.</p>
-{{else}}
-<table>
-    <tr>
-        <th></th>
-        <th class="group" colspan="5">Packages</th>
-        <th class="group" colspan="4">Campaigns{{template "def" "One campaign per package version."}}</th>
-    </tr>
-    <tr>
-        <th>Ecosystem</th>
-        <th>In scope{{template "def" "Ranked packages with a campaign or an attempt."}}</th>
-        <th>Attempted{{template "def" "In scope, with a completed build at any version."}}</th>
-        <th>Reproduced{{template "def" "Attested at the latest version attempted."}}</th>
-        <th>Success{{template "def" "Reproduced over attempted. A failure being retried counts against it until a retry succeeds."}}</th>
-        <th>Weighted{{template "def" "Success, weighting each package by its score."}}</th>
-        <th>Queued{{template "def" "Campaigns waiting for dispatch at their next stage."}}</th>
-        <th>In flight{{template "def" "Campaigns dispatched and awaiting an outcome."}}</th>
-        <th>Needs triage{{template "def" "Campaigns whose automated stages are exhausted, awaiting a person."}}</th>
-        <th>Done{{template "def" "Campaigns attested."}}</th>
-    </tr>
-    {{range .Ecos}}
-    <tr>
-        <td><a href="/coverage?eco={{.Ecosystem}}">{{.Ecosystem}}</a></td>
-        {{if .HasScope}}
-        <td>{{num .InScope}}</td>
-        <td>{{num .Attempted}}</td>
-        <td>{{num .Reproduced}}</td>
-        <td>{{.SuccessPct}}%</td>
-        <td>{{.WeightedPct}}%</td>
-        {{else}}
-        <td>&mdash;</td><td>&mdash;</td><td>&mdash;</td><td>&mdash;</td><td>&mdash;</td>
-        {{end}}
-        {{if .HasQueue}}
-        <td>{{num .Queued}}</td>
-        <td>{{num .InFlight}}</td>
-        <td>{{num .NeedsTriage}}</td>
-        <td>{{num .Done}}</td>
-        {{else}}
-        <td>&mdash;</td><td>&mdash;</td><td>&mdash;</td><td>&mdash;</td>
-        {{end}}
-    </tr>
-    {{end}}
-</table>
 {{end}}
 {{else}}
 {{with .Detail}}
@@ -187,33 +140,6 @@
 </div>
 {{else}}
 <p>No campaigns for {{.Ecosystem}}.</p>
-{{end}}
-{{if .Weeks}}
-<h3>Weekly{{template "def" "Cumulative through each week over the packages attempted by then."}}</h3>
-<table>
-    <tr>
-        <th>Week</th>
-        <th>Attempted{{template "def" "Packages with an attempt by the end of the week."}}</th>
-        <th>Reproduced{{template "def" "Attested at the latest version attempted by then."}}</th>
-        <th>Behind{{template "def" "An earlier version is attested but not the latest."}}</th>
-        <th>Share{{template "def" "Reproduced over attempted, so it moves as the queue reaches harder packages."}}</th>
-        <th class="barcell"></th>
-        <th>Weighted{{template "def" "Share, weighting each package by its score."}}</th>
-        <th>Newly broken{{template "def" "Latest version failed that week where the previous one had built."}}</th>
-    </tr>
-    {{range .Weeks}}
-    <tr>
-        <td>{{.Week}}</td>
-        <td>{{num .Attempted}}</td>
-        <td>{{num .Reproduced}}</td>
-        <td>{{num .Behind}}</td>
-        <td>{{.SharePct}}%</td>
-        <td class="barcell"><div class="bar" style="width: {{.SharePct}}%"></div></td>
-        <td>{{if .HasWeighted}}{{.WeightedPct}}%{{else}}&mdash;{{end}}</td>
-        <td>{{num .NewlyBroken}}</td>
-    </tr>
-    {{end}}
-</table>
 {{end}}
 {{end}}
 {{end}}

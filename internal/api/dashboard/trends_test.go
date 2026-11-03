@@ -80,10 +80,6 @@ func TestCoveragePage(t *testing.T) {
 		HasQueue: true, Queued: 1, InFlight: 1, Done: 3, NeedsTriage: 1,
 		DoneByStage: []StageDone{{Stage: scheduler.StageReplay, Done: 1}, {Stage: scheduler.StageInfer}, {Stage: scheduler.StageAgent, Done: 2, LLMDone: 1}},
 	}
-	npmWeeks := []CoverageWeek{
-		{Week: "2026-08-31", Attempted: 12, Reproduced: 9, Behind: 1, SharePct: 75, WeightedPct: 90, HasWeighted: true},
-		{Week: "2026-08-24", Attempted: 10, Reproduced: 6, Behind: 2, SharePct: 60, WeightedPct: 75, HasWeighted: true, NewlyBroken: 1},
-	}
 	maven := CoverageEco{Ecosystem: "maven"}
 	pypi := CoverageEco{Ecosystem: "pypi", HasScope: true}
 	for _, tc := range []struct {
@@ -101,7 +97,6 @@ func TestCoveragePage(t *testing.T) {
 			req:  CoverageRequest{Eco: "npm"},
 			want: func() CoverageData {
 				detail := npm
-				detail.Weeks = npmWeeks
 				// npm's tab keeps its cohorts and its share of all spend.
 				return CoverageData{Loaded: true, AsOf: "2026-09-01 00:00:00 UTC", Eco: "npm", Ecos: []CoverageEco{maven, detail, pypi}, Detail: &detail, Overview: coverageOverview,
 					Tiers: []EcoTiers{npmTiers}, Releases: &Releases{Years: releaseYears, Ecos: []EcoReleases{npmReleases}}, Spend: coverageSpend(npmSpend)}
