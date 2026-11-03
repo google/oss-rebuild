@@ -144,12 +144,14 @@ func TestFillSnapshotDB(t *testing.T) {
 		runs: []schema.Run{{ID: "run-1", BenchmarkName: "bench", Created: at(0)}},
 		sessions: []schema.AgentSession{
 			{
-				ID:        "s1",
-				ScratchID: "sc1",
-				Target:    rebuild.Target{Ecosystem: "pypi", Package: "pkgA", Version: "1.0", Artifact: "1.0.whl"},
-				Status:    schema.AgentSessionStatusCompleted,
-				Usage:     &schema.TokenUsage{Input: 100, Output: 50},
-				Created:   at(0),
+				ID:               "s1",
+				ScratchID:        "sc1",
+				Target:           rebuild.Target{Ecosystem: "pypi", Package: "pkgA", Version: "1.0", Artifact: "1.0.whl"},
+				Status:           schema.AgentSessionStatusCompleted,
+				IterationCount:   1,
+				SuccessIteration: "it1",
+				Usage:            &schema.TokenUsage{Input: 100, Output: 50},
+				Created:          at(0),
 			},
 		},
 		iterations: []schema.AgentIteration{
@@ -174,6 +176,9 @@ func TestFillSnapshotDB(t *testing.T) {
 	// Session target and token columns extract from the document.
 	assertCount(t, db, `SELECT count(*) FROM agent_sessions WHERE session_id='s1'
 		AND ecosystem='pypi' AND package='pkgA' AND input_tokens=100`, "1")
+	// An attested session won at iteration 1 is inference-rescue.
+	assertCount(t, db, `SELECT count(*) FROM agent_sessions WHERE session_id='s1'
+		AND iteration_count=1 AND agent_win_kind='inference-rescue'`, "1")
 	// Scratch lifetime derives in SQL.
 	assertCount(t, db, "SELECT count(*) FROM scratch_vms WHERE scratch_id='sc1' AND vm_seconds=600.0", "1")
 	assertCount(t, db, `SELECT count(*) FROM repo_metrics
