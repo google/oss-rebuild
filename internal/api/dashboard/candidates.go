@@ -546,7 +546,7 @@ func (d *deriver) result(call *TranscriptEvent) (resp *TranscriptEvent, result s
 }
 
 // purposeStages are the stage cells a call's purposes fill. A failed call
-// fails only the first cell of each.
+// fails only the first cell of its primary purpose.
 var purposeStages = map[schema.Purpose][]int{
 	schema.PurposeSource:  {stageSource},
 	schema.PurposeDeps:    {stageDeps},
@@ -612,10 +612,10 @@ func (d *deriver) agentCandidate(at time.Time) *Candidate {
 			if timeout > 0 {
 				st = Stage{"timeout", strconv.Itoa(timeout) + "s"}
 			}
-			for _, p := range w.All {
-				if i := purposeStages[p]; len(i) > 0 {
-					c.Stages[i[0]] = st
-				}
+			// The exit code is the whole call's, so the stages of its other
+			// purposes keep what they had.
+			if i := purposeStages[w.Purpose]; len(i) > 0 {
+				c.Stages[i[0]] = st
 			}
 		default:
 			for _, p := range w.All {

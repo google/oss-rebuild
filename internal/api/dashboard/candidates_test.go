@@ -187,6 +187,59 @@ func TestDeriveCandidates(t *testing.T) {
 	}
 }
 
+// TestFailedCallStages runs container calls up to one candidate. A failed
+// call fails only the first stage of its primary purpose, and a call that
+// succeeds marks every stage its purposes name. Calls without a purpose open
+// no candidate.
+func TestFailedCallStages(t *testing.T) {
+	type run struct {
+		cmd  string
+		all  []schema.Purpose // the primary purpose first
+		exit float64
+	}
+	pkg, deps, src := schema.PurposePackage, schema.PurposeDeps, schema.PurposeSource
+	for _, tc := range []struct {
+		runs []run
+		want string
+	}{
+		{[]run{{"cd /src && git checkout -- . && git clean -fdx && cargo package --no-verify", []schema.Purpose{pkg, src}, 101}}, "reused:✓ reused:✓ failed:✕ none:– none:– none:– none:– "},
+		{[]run{{"git checkout v2 && npm ci", []schema.Purpose{deps, src}, 1}, {"npm pack", []schema.Purpose{pkg}, 0}}, "reused:✓ failed:✕ ok:✓ ok:✓ none:– none:– none:– "},
+		{[]run{{"git checkout v2 && npm ci && npm pack", []schema.Purpose{pkg, deps, src}, 0}}, "ok:✓ ok:✓ ok:✓ ok:✓ none:– none:– none:– "},
+		{[]run{{"npm ci", nil, 0}, {"npm pack", nil, 0}}, ""},
+	} {
+		t0 := time.Date(2026, 10, 19, 3, 0, 0, 0, time.UTC)
+		var events []TranscriptEvent
+		for i, r := range tc.runs {
+			at := t0.Add(time.Duration(i) * time.Minute)
+			call := TranscriptEvent{Kind: "call", At: at, Tool: "run_in_container", Command: r.cmd, All: r.all}
+			if len(r.all) > 0 {
+				call.Purpose = r.all[0]
+			}
+			events = append(events, call,
+				TranscriptEvent{Kind: "response", At: at.Add(time.Second), Tool: "run_in_container", Response: map[string]any{"exit_code": r.exit}})
+		}
+		data := &SessionData{Trajectory: []IterationGroup{{Number: 2, Events: events}}}
+		deriveCandidates(data, t0, t0.Add(time.Hour))
+		if tc.want == "" {
+			if len(data.Candidates) != 0 {
+				t.Errorf("%v: %d candidates, want none", tc.runs, len(data.Candidates))
+			}
+			continue
+		}
+		if len(data.Candidates) != 1 {
+			t.Errorf("%v: %d candidates, want 1", tc.runs, len(data.Candidates))
+			continue
+		}
+		var got string
+		for _, s := range data.Candidates[0].Stages {
+			got += s.State + ":" + s.Label + " "
+		}
+		if got != tc.want {
+			t.Errorf("%v: stages %q, want %q", tc.runs, got, tc.want)
+		}
+	}
+}
+
 func TestArgsLine(t *testing.T) {
 	for _, tc := range []struct {
 		args map[string]any
