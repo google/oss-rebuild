@@ -144,9 +144,13 @@ func qemuArgv(bin string, cfg GuestConfig, l Layout, n GuestNet, slot int, cred 
 		"-kernel", l.Kernel,
 		"-initrd", l.Initrd,
 		"-append", kernelCmdline(cfg, n, slot, cred),
-		"-drive", "id=root,file=" + l.overlay(slot) + ",format=qcow2,if=none,cache=none,aio=native",
+		// The disks share the host page cache: the rootfs is cached once for every
+		// guest and rereads come from host memory.
+		// NOTE: cache=unsafe ignores the guest's flushes, which is fine because the
+		// disks are ephemeral and never need recovering after a crash.
+		"-drive", "id=root,file=" + l.overlay(slot) + ",format=qcow2,if=none,cache=unsafe,aio=threads",
 		"-device", "virtio-blk-device,drive=root",
-		"-drive", "id=scratch,file=" + l.scratch(slot) + ",format=qcow2,if=none,cache=none,aio=native",
+		"-drive", "id=scratch,file=" + l.scratch(slot) + ",format=qcow2,if=none,cache=unsafe,aio=threads",
 		"-device", "virtio-blk-device,drive=scratch",
 		"-netdev", "tap,id=net0,ifname=" + guestTap(slot) + ",script=no,downscript=no,vhost=on",
 		"-device", "virtio-net-device,netdev=net0,mac=" + guestMAC(slot),
