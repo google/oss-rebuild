@@ -359,6 +359,35 @@ func TestCache(t *testing.T) {
 	}
 }
 
+func TestCacheFreshnessDoesNotWaitOnQueries(t *testing.T) {
+	ctx := context.Background()
+	dest := testDest(t)
+	up := Upstream{FS: dest, Object: "probe.db.gz", Deltas: "deltas", Defs: []TableDef{probeTable}, Schema: 1, Watermark: probeWatermark}
+	now := dt(0)
+	buildBase(t, dest, up.Object, probes(10, now), now, 1)
+	c := must(OpenCache(ctx, up, time.Hour))
+	defer c.Close()
+	// A long query, like a page recompute after a delta, holds the copy.
+	held, release := make(chan struct{}), make(chan struct{})
+	defer close(release)
+	go c.Query(func(*sqlite3.Conn) error {
+		close(held)
+		<-release
+		return nil
+	})
+	<-held
+	got := make(chan time.Time, 1)
+	go func() { got <- c.Freshness() }()
+	select {
+	case f := <-got:
+		if !f.Equal(now) {
+			t.Errorf("Freshness = %v, want %v", f, now)
+		}
+	case <-time.After(5 * time.Second):
+		t.Error("Freshness waited on a running query")
+	}
+}
+
 // probes returns n probe documents with compressible bodies, so a base's
 // unpacked size dwarfs its compressed one.
 func probes(n int, when time.Time) []json.RawMessage {
@@ -502,6 +531,9 @@ func TestCacheFailedRehydrate(t *testing.T) {
 	}
 	if _, err := count(); err == nil {
 		t.Error("query succeeded with no local copy")
+	}
+	if !c.Freshness().Equal(now) {
+		t.Errorf("freshness with no local copy = %v, want the dropped copy's %v", c.Freshness(), now)
 	}
 	if names := files(); len(names) != 0 {
 		t.Errorf("cache dir after failed unpack = %v, want empty", names)
