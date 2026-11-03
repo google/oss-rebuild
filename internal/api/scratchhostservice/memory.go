@@ -7,6 +7,7 @@ import (
 	"bytes"
 	"os"
 	"strconv"
+	"strings"
 
 	"github.com/pkg/errors"
 )
@@ -19,6 +20,19 @@ func MemAvailableMB() (int, error) {
 	}
 	kb, err := procKB(b, "MemAvailable")
 	return int(kb >> 10), err
+}
+
+// LoadAverage reads the host's one-minute load average from /proc/loadavg.
+func LoadAverage() (float64, error) {
+	b, err := os.ReadFile("/proc/loadavg")
+	if err != nil {
+		return 0, err
+	}
+	f := strings.Fields(string(b))
+	if len(f) == 0 {
+		return 0, errors.New("empty /proc/loadavg")
+	}
+	return strconv.ParseFloat(f[0], 64)
 }
 
 // procKB returns the value of a "Name:   1234 kB" line of a procfs file.

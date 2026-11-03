@@ -8,6 +8,7 @@ import (
 	"io"
 	"log"
 	"os"
+	"runtime"
 	"slices"
 	"sync"
 	"time"
@@ -23,6 +24,7 @@ import (
 var (
 	ErrFull        = errors.New("host full")       // no slot is free
 	ErrLowMemory   = errors.New("host memory low") // cannot fit another guest
+	ErrBusy        = errors.New("host CPU busy")   // half the CPUs busy for a minute
 	ErrClosed      = errors.New("host closed")     // shutting down
 	ErrNoGuest     = errors.New("no such guest")   // nothing served for that scratch
 	ErrGuestExited = errors.New("guest exited")    // process ended without a delete
@@ -66,6 +68,10 @@ type slot struct {
 type exit struct {
 	reason string // the process's exit error
 }
+
+// youngGuest is how long a new guest counts as one busy CPU. The load
+// average lags its session's first commands by minutes.
+const youngGuest = 3 * time.Minute
 
 // NewHost returns an empty Host of slots guest slots, last served at start.
 func NewHost(start time.Time, slots int) *Host {
@@ -181,9 +187,10 @@ func (h *Host) discardLedger(scratchID string) bool {
 type GuestDeps struct {
 	Host           *Host
 	Config         Config
-	Exec           execx.CommandExecutor // runs the guest, qemu-img and ip(8)
-	ChannelCache   *ChannelCache         // guest exec paths and boot key
-	MemAvailableMB func() (int, error)   // the host's free memory, which gates admission
+	Exec           execx.CommandExecutor   // runs the guest, qemu-img and ip(8)
+	ChannelCache   *ChannelCache           // guest exec paths and boot key
+	MemAvailableMB func() (int, error)     // the host's free memory, which gates admission
+	LoadAverage    func() (float64, error) // the host's one-minute load, which gates admission
 }
 
 // GuestAdmit boots the session's guest and opens its exec ledger.
@@ -213,6 +220,23 @@ func GuestAdmit(ctx context.Context, req AdmitRequest, deps *GuestDeps) (*Guest,
 	}
 	if avail < deps.Config.Guest.MemMB {
 		return nil, api.AsStatus(codes.ResourceExhausted, errors.Wrapf(ErrLowMemory, "%d MB available, a guest takes up to %d", avail, deps.Config.Guest.MemMB))
+	}
+	// Refuse while the host's load, counting each young guest as a busy CPU,
+	// is at least half its CPUs.
+	load, err := deps.LoadAverage()
+	if err != nil {
+		return nil, api.AsStatus(codes.Internal, errors.Wrap(err, "reading host load"))
+	}
+	young := 0
+	for _, s := range h.slots {
+		if s.guest != nil && now.Sub(s.guest.Since) < youngGuest {
+			young++
+		}
+	}
+	// NOTE: The host's CPUs are hyperthread pairs, so once more than half are
+	// busy, guests share physical cores and all slow down.
+	if cpus := runtime.NumCPU(); 2*(load+float64(young)) >= float64(cpus) {
+		return nil, api.AsStatus(codes.ResourceExhausted, errors.Wrapf(ErrBusy, "load %.1f and %d new guests on %d CPUs", load, young, cpus))
 	}
 	delete(h.exited, req.ScratchID)
 	g := Guest{ScratchID: req.ScratchID, IP: deps.Config.Net.IPs[i].String(), Since: now}

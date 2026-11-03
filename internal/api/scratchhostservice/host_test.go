@@ -13,6 +13,7 @@ import (
 	"os"
 	"path/filepath"
 	"regexp"
+	"runtime"
 	"slices"
 	"strings"
 	"sync"
@@ -87,6 +88,7 @@ func testDepsN(t *testing.T, slots int) (*GuestDeps, *execx.MockCommandExecutor)
 		},
 		Exec:           mock,
 		MemAvailableMB: memAvailable(64 << 10),
+		LoadAverage:    loadAverage(0),
 	}
 	guestsOn(t, deps)
 	t.Cleanup(func() {
@@ -105,6 +107,10 @@ func testDepsN(t *testing.T, slots int) (*GuestDeps, *execx.MockCommandExecutor)
 
 func memAvailable(availMB int) func() (int, error) {
 	return func() (int, error) { return availMB, nil }
+}
+
+func loadAverage(load float64) func() (float64, error) {
+	return func() (float64, error) { return load, nil }
 }
 
 // keyParam matches the ssh keys on a kernel command line, which differ per
@@ -266,6 +272,40 @@ func TestGuestAdmit_RefusesWhenHostMemoryIsLow(t *testing.T) {
 	}
 	deps.MemAvailableMB = memAvailable(deps.Config.Guest.MemMB)
 	admit(t, deps, "scratch-b")
+}
+
+func TestGuestAdmit_RefusesWhenHostCPUIsBusy(t *testing.T) {
+	half := float64(runtime.NumCPU()) / 2
+	for _, tc := range []struct {
+		name     string
+		load     float64       // the host's one-minute load
+		guestAge time.Duration // age of the guest already on the host
+		wantBusy bool
+	}{
+		{"HalfBusy", half, youngGuest, true},
+		{"UnderHalfBusy", half - 0.5, youngGuest, false},
+		{"YoungGuestCountsAsBusy", half - 0.5, 0, true},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			synctest.Test(t, func(t *testing.T) {
+				deps, mock := testDepsN(t, 2)
+				admit(t, deps, "scratch-a")
+				time.Sleep(tc.guestAge)
+				deps.LoadAverage = loadAverage(tc.load)
+				if !tc.wantBusy {
+					admit(t, deps, "scratch-b")
+					return
+				}
+				issued := len(commands(mock))
+				if _, err := GuestAdmit(context.Background(), AdmitRequest{ScratchID: "scratch-b"}, deps); status.Code(err) != codes.ResourceExhausted || !strings.Contains(err.Error(), ErrBusy.Error()) {
+					t.Errorf("Admit = %v; want ResourceExhausted for a busy host", err)
+				}
+				if len(commands(mock)) != issued {
+					t.Error("refused admission ran commands; want nothing booted")
+				}
+			})
+		})
+	}
 }
 
 func TestGuestAdmit_FullWhileServing(t *testing.T) {
