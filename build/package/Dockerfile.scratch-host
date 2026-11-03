@@ -59,7 +59,7 @@ RUN <<EOF
  set -eux
  apt-get update
  apt-get install -y --no-install-recommends \
-     systemd-sysv udev dbus openssh-server ca-certificates curl wget gnupg \
+     systemd-sysv udev dbus openssh-server ca-certificates curl git wget gnupg \
      iproute2 iptables kmod e2fsprogs procps xz-utils
  rm -rf /var/lib/apt/lists/*
 EOF
