@@ -697,3 +697,37 @@ resource "google_cloud_run_v2_job" "rebuild-job" {
   }
   depends_on = [google_project_service.run]
 }
+
+# The daily snapshot rollup scans every Firestore collection into SQLite.
+resource "google_cloud_run_v2_job" "snapshot-rollup" {
+  name                = "snapshot-rollup"
+  location            = "us-central1"
+  deletion_protection = false
+  template {
+    template {
+      service_account = google_service_account.orchestrator.email
+      timeout         = "3600s"
+      max_retries     = 0
+      containers {
+        image = data.google_artifact_registry_docker_image.snapshot-rollup.self_link
+        args = [
+          "--project=${var.project}",
+          "--analytics-uri=gs://${google_storage_bucket.analytics.name}",
+          "--signals-db-uri=${var.signals_db_uri}",
+        ]
+        resources {
+          limits = {
+            cpu    = "4000m"
+            memory = "16G"
+          }
+        }
+      }
+    }
+  }
+  lifecycle {
+    ignore_changes = [
+      launch_stage,
+    ]
+  }
+  depends_on = [google_project_service.run]
+}
