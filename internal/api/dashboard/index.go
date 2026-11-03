@@ -43,7 +43,10 @@ type IndexData struct {
 	BenchmarkTargets []BenchmarkTarget
 	RecentRebuilds   []RebuildView
 	RecentSessions   []SessionView
-	Overview         *Overview // nil unless the snapshot has signals
+	RebuildTones     map[string]int // RecentRebuilds by Tone, for the filter chips
+	SessionsDone     int            // RecentSessions that have stopped
+	SessionsLive     int            // RecentSessions still going
+	Overview         *Overview      // nil unless the snapshot has signals
 }
 
 // recentSessionLimit bounds the number of agent sessions shown on the landing page.
@@ -135,8 +138,10 @@ func Index(ctx context.Context, _ IndexRequest, deps *Deps) (*IndexData, error) 
 		}
 	}
 	data.RecentRebuilds = make([]RebuildView, len(rebuilds))
+	data.RebuildTones = map[string]int{}
 	for i, rb := range rebuilds {
 		data.RecentRebuilds[i] = NewRebuildView(rb)
+		data.RebuildTones[data.RecentRebuilds[i].Tone()]++
 	}
 
 	// Fetch the most recent agent sessions (sessions only, not iterations).
@@ -151,6 +156,11 @@ func Index(ctx context.Context, _ IndexRequest, deps *Deps) (*IndexData, error) 
 		data.RecentSessions = make([]SessionView, len(sessions))
 		for i, s := range sessions {
 			data.RecentSessions[i] = NewSessionView(s)
+			if s.StopReason != "" {
+				data.SessionsDone++
+			} else {
+				data.SessionsLive++
+			}
 		}
 	}
 	return &data, nil

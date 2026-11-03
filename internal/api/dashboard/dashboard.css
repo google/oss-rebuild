@@ -88,9 +88,6 @@ th { background: var(--fill); color: var(--heading); font-weight: 600; font-size
 tr:last-child td { border-bottom: none; }
 tr:hover > td { background: color-mix(in srgb, var(--fill) 60%, transparent); }
 time { white-space: nowrap; }
-/* Lets long unbroken values (wheel names, prerelease versions with commit
-   hashes) break mid-token so the table fits. */
-td.wrap { overflow-wrap: anywhere; }
 
 .status-success { color: var(--accent); font-weight: 600; }
 .status-fail { color: var(--mismatch); font-weight: 600; }
@@ -103,6 +100,51 @@ td.wrap { overflow-wrap: anywhere; }
     border-radius: 50%;
     background: currentColor;
 }
+
+/* Record lists: a row per record over two lines, its identity and time on
+   the first and why it failed on the second, narrow enough for a phone. */
+.rows { list-style: none; margin: 0 0 20px; padding: 0; background: #fff; border: 1px solid var(--border); border-radius: 8px; overflow: hidden; }
+.row { display: flex; flex-direction: column; gap: 2px; padding: 9px 14px; border-bottom: 1px solid var(--border); }
+.row:last-child { border-bottom: none; }
+.row-head, .row-sub { display: flex; align-items: center; gap: 8px; min-width: 0; }
+.row-sub { padding-left: 16px; font-size: 0.85rem; color: var(--secondary); }
+.row-name { font-weight: 600; }
+.row-ver { flex-shrink: 0; max-width: 11em; color: var(--secondary); font-variant-numeric: tabular-nums; }
+.row-var { flex-shrink: 10; color: var(--muted); font-size: 0.85rem; }
+.row-name, .row-ver, .row-var, .cause, .note { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.row-end { flex: none; display: inline-flex; gap: 8px; margin-left: auto; color: var(--muted); font-size: 0.85rem; white-space: nowrap; }
+a.row-end:hover { color: var(--heading); text-decoration: none; }
+.tag { flex: none; padding: 0 7px; border: 1px solid var(--border); border-radius: 999px; background: var(--fill); color: var(--secondary); font-size: 0.72rem; font-weight: 600; line-height: 18px; }
+.stage { flex: none; padding: 0 5px; border: 1px solid color-mix(in srgb, var(--muted) 45%, transparent); border-radius: 3px; color: var(--secondary); font-size: 0.66rem; font-weight: 700; letter-spacing: 0.05em; line-height: 16px; text-transform: uppercase; }
+/* A failure message shows its start and keeps the whole message in its
+   title. Touch has no hover, so tapping one that is not a link expands it. */
+.cause { color: var(--secondary); font-family: ui-monospace, monospace; font-size: 0.8rem; }
+span.cause:focus { white-space: normal; overflow-wrap: anywhere; outline: none; }
+.pip { flex: none; width: 8px; height: 8px; border-radius: 50%; background: var(--viz-live); }
+.pip.ok { background: var(--viz-ok); }
+.pip.bad { background: var(--viz-bad); }
+.pip.warn { background: var(--viz-warn); }
+.tone-ok, .tone-bad, .tone-warn { font-weight: 600; }
+.tone-ok { color: var(--accent); }
+.tone-bad { color: var(--mismatch); }
+.tone-warn { color: var(--failure); }
+/* A package's page drops the package from its rows and names each row's
+   kind and outcome. A version's page also drops the version. */
+.row-kind, .row-outcome { display: none; }
+.rows.in-package .row-kind, .rows.in-package .row-outcome, .rows.in-version .row-outcome { display: inline; }
+.rows.in-package .row-pkg, .rows.in-version .row-pkg, .rows.in-version .row-ver { display: none; }
+/* Filter chips: hidden radios inside a .rowlist. Checking f-<key> leaves
+   only the is-<key> rows. */
+.list-head { display: flex; flex-wrap: wrap; align-items: baseline; justify-content: space-between; gap: 8px 16px; margin: 28px 0 12px; }
+.list-head h2 { margin: 0; }
+.chips { display: flex; flex-wrap: wrap; gap: 4px; }
+.chip { padding: 2px 10px; border: 1px solid var(--border); border-radius: 999px; background: #fff; color: var(--secondary); font-size: 0.82rem; font-weight: 600; cursor: pointer; }
+.tab-radio:checked + .chip { border-color: var(--heading); background: var(--heading); color: var(--bg); }
+.tab-radio:focus-visible + .chip { outline: 2px solid var(--accent); outline-offset: 2px; }
+.rowlist:has(.f-bad:checked) .row:not(.is-bad),
+.rowlist:has(.f-ok:checked) .row:not(.is-ok),
+.rowlist:has(.f-done:checked) .row:not(.is-done),
+.rowlist:has(.f-live:checked) .row:not(.is-live) { display: none; }
 
 /* Preformatted blocks (package & attempt views) */
 pre {
@@ -238,6 +280,7 @@ details.traj-body > summary { cursor: pointer; color: var(--secondary); font-siz
 }
 .tab {
     padding: 8px 16px;
+    white-space: nowrap;
     cursor: pointer;
     color: var(--muted);
     border-bottom: 2px solid transparent;
@@ -320,6 +363,10 @@ summary:hover { color: var(--heading); }
     .cards { grid-template-columns: repeat(auto-fill, minmax(140px, 1fr)); gap: 10px; }
     .card { padding: 14px 16px; }
     .card-value { font-size: 1.6rem; }
+    .row { padding: 10px 12px; }
+    .rows:not(.in-version) .row-var { display: none; }
+    .chip { padding: 8px 12px; }
+    .tabs { overflow-x: auto; scrollbar-width: none; }
 }
 
 @media print {

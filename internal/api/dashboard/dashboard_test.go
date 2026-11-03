@@ -162,8 +162,34 @@ func TestIndexHandlerSessions(t *testing.T) {
 	if err := IndexTmpl.Execute(&buf, got); err != nil {
 		t.Fatalf("rendering index template: %v", err)
 	}
-	if out := buf.String(); !strings.Contains(out, "Recent Agent Sessions") || !strings.Contains(out, "Build successful") {
+	if out := buf.String(); !strings.Contains(out, "Recent Agent Sessions") || !strings.Contains(out, `href="/session/s-new"`) {
 		t.Errorf("rendered index missing session content:\n%s", out)
+	}
+}
+
+func TestSessionViewOutcome(t *testing.T) {
+	for _, tc := range []struct {
+		name                  string
+		session               schema.AgentSession
+		outcome, tone, reason string
+	}{
+		{"Running", schema.AgentSession{Status: schema.AgentSessionStatusRunning}, "running", "live", ""},
+		{"Success", schema.AgentSession{StopReason: schema.AgentCompleteReasonSuccess, Summary: "Build successful"}, "reproduced", "ok", ""},
+		{"GaveUp", schema.AgentSession{StopReason: schema.AgentCompleteReasonGaveUp, Summary: "Gave up: The data files were never committed."}, "gave up", "warn", "The data files were never committed."},
+		{"Failed", schema.AgentSession{StopReason: schema.AgentCompleteReasonFailed, Summary: "Inference failed: generating strategy: no git repo"}, "failed", "bad", "no git repo"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			v := NewSessionView(tc.session)
+			if got := v.Outcome(); got != tc.outcome {
+				t.Errorf("Outcome() = %q, want %q", got, tc.outcome)
+			}
+			if got := v.Tone(); got != tc.tone {
+				t.Errorf("Tone() = %q, want %q", got, tc.tone)
+			}
+			if got := v.Reason(); got != tc.reason {
+				t.Errorf("Reason() = %q, want %q", got, tc.reason)
+			}
+		})
 	}
 }
 
@@ -204,7 +230,7 @@ func TestPackageHandler(t *testing.T) {
 		t.Fatalf("rendering package template: %v", err)
 	}
 	out := buf.String()
-	for _, want := range []string{"<td>Agent</td>", "<td>Rebuild</td>", "Build successful", "new-session"} {
+	for _, want := range []string{`class="tag row-kind">agent<`, `class="tag row-kind">rebuild<`, `href="/session/new-session"`, ">reproduced<"} {
 		if !strings.Contains(out, want) {
 			t.Errorf("rendered output missing %q:\n%s", want, out)
 		}

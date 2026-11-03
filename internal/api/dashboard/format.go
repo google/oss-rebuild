@@ -6,14 +6,21 @@ package dashboard
 import (
 	"fmt"
 	"html/template"
+	"path"
+	"regexp"
+	"slices"
 	"strconv"
+	"strings"
 	"time"
 )
 
 // pageFuncs are the display formatters every page template can call.
 var pageFuncs = template.FuncMap{
-	"num": groupDigits,
-	"ago": func(t time.Time) string { return since(time.Now(), t) },
+	"num":     groupDigits,
+	"ago":     func(t time.Time) string { return since(time.Now(), t) },
+	"stage":   failedStage,
+	"cause":   failureCause,
+	"variant": artifactVariant,
 }
 
 // groupDigits renders n with comma thousands separators: 14889 as 14,889.
@@ -44,4 +51,63 @@ func since(now, t time.Time) string {
 	default:
 		return t.Format("2006-01-02")
 	}
+}
+
+// failedStage names the stage an attempt failed in, read from the wrapping
+// RebuildPackage puts on its message: infer, build or compare. Empty for a
+// message without it.
+func failedStage(msg string) string {
+	switch {
+	case strings.HasPrefix(msg, "getting strategy: "):
+		return "infer"
+	case strings.Contains(msg, "comparing artifacts: "), strings.Contains(msg, "rebuild content mismatch"):
+		return "compare"
+	case strings.HasPrefix(msg, "executing rebuild: "):
+		return "build"
+	}
+	return ""
+}
+
+// failureWrappers are the prefixes the services add to a failure on its way
+// into an attempt's message or a session's summary. They read the same on
+// every failure.
+var failureWrappers = []string{
+	"getting strategy: ",
+	"fetching inference: ",
+	"failed to infer strategy: ",
+	"executing rebuild: ",
+	"Inference failed: ",
+	"generating strategy: ",
+	"AI-assisted inference failed: ",
+}
+
+var grpcFraming = regexp.MustCompile(`rpc error: code = \w+ desc = `)
+
+// failureCause is a failure message without its gRPC framing and leading
+// wrappers, the part that differs between failures.
+func failureCause(msg string) string {
+	msg = grpcFraming.ReplaceAllString(msg, "")
+	for {
+		i := slices.IndexFunc(failureWrappers, func(w string) bool { return strings.HasPrefix(msg, w) })
+		if i < 0 {
+			return msg
+		}
+		msg = msg[len(failureWrappers[i]):]
+	}
+}
+
+// artifactVariant is the part of an artifact's name between its version and
+// its extension, which tells apart a version's artifacts such as wheels by
+// their tags. Empty for a version's usual single artifact, and the whole name
+// when it does not carry the version.
+func artifactVariant(artifact, version string) string {
+	_, rest, ok := strings.Cut(artifact, "-"+version)
+	if !ok {
+		return artifact
+	}
+	if strings.HasPrefix(rest, ".") {
+		return ""
+	}
+	rest = strings.TrimPrefix(rest, "-")
+	return strings.TrimSuffix(rest, path.Ext(rest))
 }

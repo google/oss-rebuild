@@ -41,78 +41,35 @@
     {{end}}
 
     {{if .RecentRebuilds}}
-        <h2>Recent Rebuilds</h2>
-        <table>
-            <thead>
-                <tr>
-                    <th>Ecosystem</th>
-                    <th>Package</th>
-                    <th>Version</th>
-                    <th>Artifact</th>
-                    <th>Status</th>
-                    <th>RunID</th>
-                    <th>Attempt</th>
-                    <th>Completed</th>
-                </tr>
-            </thead>
-            <tbody>
-                {{range .RecentRebuilds}}
-                <tr>
-                    <td>{{.Ecosystem}}</td>
-                    <td><a href="/package/{{.Encoded.Ecosystem}}/{{.Encoded.Package}}">{{.Package}}</a></td>
-                    <td>{{.Version}}</td>
-                    <td class="wrap">{{.Artifact}}</td>
-                    <td>
-                        {{if .Success}}
-                            <span class="status-success">Success</span>
-                        {{else}}
-                            <span class="status-fail">Failed</span>
-                        {{end}}
-                    </td>
-                    <td>{{.RunID}}</td>
-                    <td><a href="/attempt/{{.Encoded.Ecosystem}}/{{.Encoded.Package}}/{{.Encoded.Version}}/{{.Encoded.Artifact}}/{{.RunID}}">view</a></td>
-                    <td>{{template "when" .Created}}</td>
-                </tr>
-                {{end}}
-            </tbody>
-        </table>
+    <section class="rowlist">
+        <div class="list-head">
+            <h2>Recent Rebuilds</h2>
+            {{- $failed := index .RebuildTones "bad"}}
+            <div class="chips" role="radiogroup" aria-label="Show rebuilds">
+                <input type="radio" class="tab-radio f-bad" name="rebuilds" id="rebuilds-bad"{{if $failed}} checked{{end}}><label class="chip" for="rebuilds-bad">Failed {{$failed}}</label>
+                <input type="radio" class="tab-radio f-ok" name="rebuilds" id="rebuilds-ok"><label class="chip" for="rebuilds-ok">Reproduced {{index .RebuildTones "ok"}}</label>
+                <input type="radio" class="tab-radio" name="rebuilds" id="rebuilds-all"{{if not $failed}} checked{{end}}><label class="chip" for="rebuilds-all">All {{len .RecentRebuilds}}</label>
+            </div>
+        </div>
+        <ul class="rows">
+            {{- range .RecentRebuilds}}{{template "rebuildRow" .}}{{end}}
+        </ul>
+    </section>
     {{end}}
 
     {{if .RecentSessions}}
-        <h2>Recent Agent Sessions</h2>
-        <table>
-            <thead>
-                <tr>
-                    <th>Ecosystem</th>
-                    <th>Package</th>
-                    <th>Version</th>
-                    <th>Status</th>
-                    <th>Summary</th>
-                    <th>Session</th>
-                    <th>Completed</th>
-                </tr>
-            </thead>
-            <tbody>
-                {{range .RecentSessions}}
-                <tr>
-                    <td>{{.Target.Ecosystem}}</td>
-                    <td><a href="/package/{{.Encoded.Ecosystem}}/{{.Encoded.Package}}">{{.Target.Package}}</a></td>
-                    <td>{{.Target.Version}}</td>
-                    <td>
-                        {{if eq .StopReason "SUCCESS"}}
-                            <span class="status-success">Success</span>
-                        {{else if .StopReason}}
-                            <span class="status-fail">{{.StopReason}}</span>
-                        {{else}}
-                            {{.Status}}
-                        {{end}}
-                    </td>
-                    <td><small>{{.Summary}}</small></td>
-                    <td><small><a href="/session/{{.ID}}">{{.ID}}</a></small></td>
-                    <td>{{template "when" .Created}}</td>
-                </tr>
-                {{end}}
-            </tbody>
-        </table>
+    <section class="rowlist">
+        <div class="list-head">
+            <h2>Recent Agent Sessions</h2>
+            <div class="chips" role="radiogroup" aria-label="Show agent sessions">
+                <input type="radio" class="tab-radio f-done" name="sessions" id="sessions-done"{{if .SessionsDone}} checked{{end}}><label class="chip" for="sessions-done">Finished {{.SessionsDone}}</label>
+                <input type="radio" class="tab-radio f-live" name="sessions" id="sessions-live"><label class="chip" for="sessions-live">Running {{.SessionsLive}}</label>
+                <input type="radio" class="tab-radio" name="sessions" id="sessions-all"{{if not .SessionsDone}} checked{{end}}><label class="chip" for="sessions-all">All {{len .RecentSessions}}</label>
+            </div>
+        </div>
+        <ul class="rows">
+            {{- range .RecentSessions}}{{template "sessionRow" .}}{{end}}
+        </ul>
+    </section>
     {{end}}
 {{end}}

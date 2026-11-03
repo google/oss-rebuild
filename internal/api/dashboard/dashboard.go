@@ -11,6 +11,7 @@ import (
 	"net/http"
 	"path"
 	"regexp"
+	"strings"
 
 	"cloud.google.com/go/storage"
 	"github.com/google/oss-rebuild/internal/db"
@@ -50,6 +51,8 @@ var (
 	chartsJS string
 	//go:embed viz.gohtml
 	vizHTML string
+	//go:embed rows.gohtml
+	rowsHTML string
 )
 
 // Hardcoded by the page templates, so the package owns the routes.
@@ -91,6 +94,7 @@ func init() {
 	// with system fonts.
 	template.Must(base.Parse(webfontsTmpl))
 	template.Must(base.Parse(vizHTML))
+	template.Must(base.Parse(rowsHTML))
 	page := func(src string) *template.Template {
 		return template.Must(template.Must(base.Clone()).Parse(src))
 	}
@@ -137,6 +141,17 @@ func NewRebuildView(rb rundex.Rebuild) RebuildView {
 	}
 }
 
+// Tone is the attempt's outcome as a status class: ok, bad, or live.
+func (v RebuildView) Tone() string {
+	switch {
+	case v.Success:
+		return "ok"
+	case v.Status == schema.RebuildStatusRunning:
+		return "live"
+	}
+	return "bad"
+}
+
 func applySuccessRegex(successRegex *regexp.Regexp, rebuilds []rundex.Rebuild) {
 	if successRegex == nil {
 		return
@@ -161,4 +176,42 @@ func NewSessionView(s schema.AgentSession) SessionView {
 		AgentSession: s,
 		Encoded:      packagePathEncoding.Encode(s.Target),
 	}
+}
+
+// Outcome is how the session ended, or its status while it runs.
+func (v SessionView) Outcome() string {
+	switch v.StopReason {
+	case "":
+		return strings.ToLower(v.Status)
+	case schema.AgentCompleteReasonSuccess:
+		return "reproduced"
+	case schema.AgentCompleteReasonGaveUp:
+		return "gave up"
+	}
+	return strings.ToLower(v.StopReason)
+}
+
+// Tone is Outcome as the status color classes name it.
+func (v SessionView) Tone() string {
+	switch v.StopReason {
+	case "":
+		return "live"
+	case schema.AgentCompleteReasonSuccess:
+		return "ok"
+	case schema.AgentCompleteReasonGaveUp:
+		return "warn"
+	}
+	return "bad"
+}
+
+// Reason is the model's own words for a give-up or the error behind a failure.
+func (v SessionView) Reason() string {
+	switch v.StopReason {
+	case "", schema.AgentCompleteReasonSuccess:
+		return ""
+	case schema.AgentCompleteReasonGaveUp:
+		r := strings.TrimPrefix(v.Summary, "Gave up: ")
+		return r
+	}
+	return failureCause(v.Summary)
 }

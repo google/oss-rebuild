@@ -6,6 +6,7 @@
 
 <style>
     .barcell { width: 30%; min-width: 150px; }
+    .cost-bar .bar { height: 6px; margin-top: 4px; }
 </style>
 
 <h2>Resources</h2>
@@ -70,24 +71,14 @@
 {{if not .TopPackages}}
 <p>No builder-time measurements in the window.</p>
 {{else}}
-<table>
-    <tr>
-        <th>Ecosystem</th>
-        <th>Package</th>
-        <th>Attempts</th>
-        <th>Builder min</th>
-        <th class="barcell"></th>
-    </tr>
-    {{range .TopPackages}}
-    <tr>
-        <td>{{.Ecosystem}}</td>
-        <td>{{.Package}}</td>
-        <td>{{num .Attempts}}</td>
-        <td>{{printf "%.1f" .BuilderMinutes}}</td>
-        <td class="barcell"><div class="bar" style="width: {{.BarPct}}%"></div></td>
-    </tr>
-    {{end}}
-</table>
+<ul class="rows">
+    {{- range .TopPackages}}
+    <li class="row">
+        <div class="row-head"><span class="row-name">{{.Package}}</span><span class="tag">{{.Ecosystem}}</span><span class="row-end">{{num .Attempts}} attempts · {{printf "%.1f" .BuilderMinutes}} builder min</span></div>
+        <div class="cost-bar"><div class="bar" style="width: {{.BarPct}}%"></div></div>
+    </li>
+    {{- end}}
+</ul>
 {{end}}
 {{end}}
 {{end}}
