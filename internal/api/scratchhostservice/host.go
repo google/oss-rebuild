@@ -21,10 +21,11 @@ import (
 
 // Errors the handlers map to status codes.
 var (
-	ErrFull        = errors.New("host full")     // no slot is free
-	ErrClosed      = errors.New("host closed")   // shutting down
-	ErrNoGuest     = errors.New("no such guest") // nothing served for that scratch
-	ErrGuestExited = errors.New("guest exited")  // process ended without a delete
+	ErrFull        = errors.New("host full")       // no slot is free
+	ErrLowMemory   = errors.New("host memory low") // cannot fit another guest
+	ErrClosed      = errors.New("host closed")     // shutting down
+	ErrNoGuest     = errors.New("no such guest")   // nothing served for that scratch
+	ErrGuestExited = errors.New("guest exited")    // process ended without a delete
 )
 
 // Config is the host's static configuration.
@@ -178,10 +179,11 @@ func (h *Host) discardLedger(scratchID string) bool {
 
 // GuestDeps wires the guest lifecycle handlers.
 type GuestDeps struct {
-	Host         *Host
-	Config       Config
-	Exec         execx.CommandExecutor // runs the guest, qemu-img and ip(8)
-	ChannelCache *ChannelCache         // guest exec paths and boot key
+	Host           *Host
+	Config         Config
+	Exec           execx.CommandExecutor // runs the guest, qemu-img and ip(8)
+	ChannelCache   *ChannelCache         // guest exec paths and boot key
+	MemAvailableMB func() (int, error)   // the host's free memory, which gates admission
 }
 
 // GuestAdmit boots the session's guest and opens its exec ledger.
@@ -203,6 +205,14 @@ func GuestAdmit(ctx context.Context, req AdmitRequest, deps *GuestDeps) (*Guest,
 	i := slices.IndexFunc(h.slots, func(s slot) bool { return s.guest == nil })
 	if i < 0 {
 		return nil, api.AsStatus(codes.ResourceExhausted, errors.Wrapf(ErrFull, "all %d slots serving", len(h.slots)))
+	}
+	// Slots overcommit memory, so ask the host whether one more guest fits.
+	avail, err := deps.MemAvailableMB()
+	if err != nil {
+		return nil, api.AsStatus(codes.Internal, errors.Wrap(err, "reading host memory"))
+	}
+	if avail < deps.Config.Guest.MemMB {
+		return nil, api.AsStatus(codes.ResourceExhausted, errors.Wrapf(ErrLowMemory, "%d MB available, a guest takes up to %d", avail, deps.Config.Guest.MemMB))
 	}
 	delete(h.exited, req.ScratchID)
 	g := Guest{ScratchID: req.ScratchID, IP: deps.Config.Net.IPs[i].String(), Since: now}

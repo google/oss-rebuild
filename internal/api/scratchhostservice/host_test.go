@@ -85,7 +85,8 @@ func testDepsN(t *testing.T, slots int) (*GuestDeps, *execx.MockCommandExecutor)
 			QEMUBin:    "qemu-system-x86_64",
 			QEMUImgBin: "qemu-img",
 		},
-		Exec: mock,
+		Exec:           mock,
+		MemAvailableMB: memAvailable(64 << 10),
 	}
 	guestsOn(t, deps)
 	t.Cleanup(func() {
@@ -100,6 +101,10 @@ func testDepsN(t *testing.T, slots int) (*GuestDeps, *execx.MockCommandExecutor)
 		}
 	})
 	return deps, mock
+}
+
+func memAvailable(availMB int) func() (int, error) {
+	return func() (int, error) { return availMB, nil }
 }
 
 // keyParam matches the ssh keys on a kernel command line, which differ per
@@ -244,6 +249,23 @@ func TestGuestAdmit_Idempotent(t *testing.T) {
 	if guestProc(t, deps) != p || len(commands(mock)) != issued {
 		t.Error("re-admission touched the guest; want it left alone")
 	}
+}
+
+func TestGuestAdmit_RefusesWhenHostMemoryIsLow(t *testing.T) {
+	deps, mock := testDepsN(t, 2)
+	ctx := context.Background()
+	admit(t, deps, "scratch-a")
+	// A free slot is not enough without memory for a full-size guest.
+	deps.MemAvailableMB = memAvailable(deps.Config.Guest.MemMB - 1)
+	issued := len(commands(mock))
+	if _, err := GuestAdmit(ctx, AdmitRequest{ScratchID: "scratch-b"}, deps); status.Code(err) != codes.ResourceExhausted || !strings.Contains(err.Error(), ErrLowMemory.Error()) {
+		t.Errorf("Admit on a host short of memory = %v; want ResourceExhausted for low memory", err)
+	}
+	if len(commands(mock)) != issued {
+		t.Error("refused admission ran commands; want nothing booted")
+	}
+	deps.MemAvailableMB = memAvailable(deps.Config.Guest.MemMB)
+	admit(t, deps, "scratch-b")
 }
 
 func TestGuestAdmit_FullWhileServing(t *testing.T) {

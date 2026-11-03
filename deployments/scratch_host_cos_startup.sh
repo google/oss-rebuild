@@ -49,12 +49,23 @@ iptables -w -C INPUT -p tcp --dport 8080 -j ACCEPT 2>/dev/null || iptables -w -A
 iptables -w -C INPUT -i "$BRIDGE" -m conntrack --ctstate NEW -j DROP 2>/dev/null ||
     iptables -w -I INPUT 1 -i "$BRIDGE" -m conntrack --ctstate NEW -j DROP
 
-# deployments/services.tf sizes the guests and counts them. Memory less a
-# reserve is split evenly, never overcommitted.
+# deployments/services.tf sets the guest size, the slot count, and how far
+# guest memory is overcommitted.
 HOST_RESERVE_MB=2048
 GUEST_VCPU=${guest_vcpu}
 SLOTS=${slots}
-GUEST_MEM_MB=$(( ($(awk '/^MemTotal:/ {print $2}' /proc/meminfo) / 1024 - HOST_RESERVE_MB) / SLOTS ))
+MEM_OVERCOMMIT=${mem_overcommit}
+MEM_MB=$(( $(awk '/^MemTotal:/ {print $2}' /proc/meminfo) / 1024 ))
+GUEST_MEM_MB=$(( (MEM_MB - HOST_RESERVE_MB) * MEM_OVERCOMMIT / SLOTS ))
+
+# Compressed swap of half the host's memory absorbs guest bursts past it,
+# where the OOM killer would end a guest.
+if ! grep -q '^/dev/zram0 ' /proc/swaps; then
+    modprobe zram
+    echo "$(( $(awk '/^MemTotal:/ {print $2}' /proc/meminfo) / 2 ))K" > /sys/block/zram0/disksize
+    mkswap /dev/zram0
+    swapon /dev/zram0
+fi
 
 # The broker's unit reads the guest shape and MTU from here. The MTU must
 # match the bridge.
