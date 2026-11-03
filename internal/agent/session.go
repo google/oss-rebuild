@@ -93,6 +93,8 @@ type Agent interface {
 	Check(ctx context.Context, opts *ProposeOpts, proposal *schema.StrategyOneOf) (refusal string, err error)
 	RecordIteration(*schema.AgentIteration)
 	Usage() schema.TokenUsage // agent's cumulative LLM token consumption
+	// ProposedBy names what proposed the last strategy, an AgentWonBy value.
+	ProposedBy() string
 }
 
 type RunSessionReq struct {
@@ -422,6 +424,7 @@ func runIterations(ctx context.Context, req RunSessionReq, iterNum int, a Agent,
 				StopReason:         schema.AgentCompleteReasonSuccess,
 				Summary:            "Build successful",
 				SuccessIterationID: iteration.ID,
+				WonBy:              a.ProposedBy(),
 			}
 		case schema.AgentIterationStatusFailed:
 			a.RecordIteration(iteration)
