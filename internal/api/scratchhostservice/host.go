@@ -8,6 +8,7 @@ import (
 	"io"
 	"log"
 	"os"
+	"slices"
 	"sync"
 	"time"
 
@@ -36,80 +37,94 @@ type Config struct {
 	QEMUImgBin string // resolved through PATH
 }
 
-// Host is the broker's state: its one guest slot and every session's exec
-// ledger. Lifecycle handlers hold the mutex across their steps. The guest's
-// process is the authority on the slot, so a guest that dies on its own
+// Host is the broker's state: its guest slots and every session's exec
+// ledger. Lifecycle handlers hold the mutex across their steps. Each guest's
+// process is the authority on its slot, so a guest that dies on its own
 // frees it.
 type Host struct {
 	mu         sync.Mutex
 	closed     bool
-	lastServed time.Time          // last guest, or else startup
-	guest      *Guest             // nil when the slot is free
-	proc       execx.Handle       // the guest's QEMU process
-	stop       context.CancelFunc // the only way to end the guest
-	exited     *exit              // until deleted or readmitted
+	lastServed time.Time        // last admit or loss, else startup
+	slots      []slot           // capacity. The zero slot is free
+	exited     map[string]*exit // until deleted or readmitted
 
 	ledgerMu sync.Mutex         // op reads never wait on a boot
 	ledgers  map[string]*Ledger // by scratch id, until deletion
 }
 
+// slot is one guest's place on the host. Its index names the guest's tap,
+// address and directory.
+type slot struct {
+	guest *Guest             // nil when the slot is free
+	proc  execx.Handle       // the guest's QEMU process
+	stop  context.CancelFunc // the only way to end the guest
+}
+
 // exit records a guest that ended without a delete, so the readiness probe
 // reports the death instead of timing out.
 type exit struct {
-	scratchID string
-	reason    string // the process's exit error
+	reason string // the process's exit error
 }
 
-// NewHost returns an empty Host that reads as last served at start.
-func NewHost(start time.Time) *Host {
-	return &Host{lastServed: start.UTC(), ledgers: map[string]*Ledger{}}
+// NewHost returns an empty Host of slots guest slots, last served at start.
+func NewHost(start time.Time, slots int) *Host {
+	return &Host{lastServed: start.UTC(), slots: make([]slot, slots), exited: map[string]*exit{}, ledgers: map[string]*Ledger{}}
 }
 
-// Close refuses further admission and stops the guest, giving QEMU its
-// TERM. The tap and disks stay, and the next boot clears or reuses them.
+// Close refuses further admission and stops every guest, giving QEMU its
+// TERM. Taps and disks stay, and the next boot clears or reuses them.
 func (h *Host) Close() {
 	h.mu.Lock()
 	defer h.mu.Unlock()
 	h.closed = true
-	if h.guest != nil {
-		h.stop()
-		<-h.proc.Done()
-		h.guest, h.proc, h.stop = nil, nil, nil
+	for i, s := range h.slots {
+		if s.guest != nil {
+			s.stop()
+			<-s.proc.Done()
+			h.slots[i] = slot{}
+		}
 	}
 }
 
-// live returns the slot's guest if its process runs, and clears the slot
-// otherwise. Must hold the mutex.
-func (h *Host) live(now time.Time) *Guest {
-	if h.guest == nil {
-		return nil
-	}
-	select {
-	case <-h.proc.Done():
+// live clears the slots whose guest process has ended, recording each as
+// exited. Must hold the mutex.
+func (h *Host) live(now time.Time) {
+	for i, s := range h.slots {
+		if s.guest == nil {
+			continue
+		}
+		select {
+		case <-s.proc.Done():
+		default:
+			continue
+		}
 		reason := "exit status 0"
-		if err := h.proc.Wait(); err != nil {
+		if err := s.proc.Wait(); err != nil {
 			reason = err.Error()
 		}
-		log.Printf("guest for %s exited on its own: %s", h.guest.ScratchID, reason)
-		h.exited = &exit{scratchID: h.guest.ScratchID, reason: reason}
-		h.stop() // release the dead guest's context
-		h.guest, h.proc, h.stop = nil, nil, nil
+		log.Printf("guest for %s exited on its own: %s", s.guest.ScratchID, reason)
+		h.exited[s.guest.ScratchID] = &exit{reason: reason}
+		s.stop() // release the dead guest's context
+		h.slots[i] = slot{}
 		h.lastServed = now
-		return nil
-	default:
-		return h.guest
 	}
+}
+
+// find returns the slot serving scratchID, or -1. Must hold the mutex.
+func (h *Host) find(scratchID string) int {
+	return slices.IndexFunc(h.slots, func(s slot) bool { return s.guest != nil && s.guest.ScratchID == scratchID })
 }
 
 // liveGuest returns the live guest serving scratchID, or ErrNoGuest.
 func (h *Host) liveGuest(now time.Time, scratchID string) (Guest, error) {
 	h.mu.Lock()
 	defer h.mu.Unlock()
-	if g := h.live(now); g != nil && g.ScratchID == scratchID {
-		return *g, nil
+	h.live(now)
+	if i := h.find(scratchID); i >= 0 {
+		return *h.slots[i].guest, nil
 	}
-	if h.exited != nil && h.exited.scratchID == scratchID {
-		return Guest{}, errors.Wrapf(ErrGuestExited, "%s: %s", scratchID, h.exited.reason)
+	if e, ok := h.exited[scratchID]; ok {
+		return Guest{}, errors.Wrapf(ErrGuestExited, "%s: %s", scratchID, e.reason)
 	}
 	return Guest{}, errors.Wrapf(ErrNoGuest, "%s", scratchID)
 }
@@ -179,29 +194,30 @@ func GuestAdmit(ctx context.Context, req AdmitRequest, deps *GuestDeps) (*Guest,
 	if h.closed {
 		return nil, api.AsStatus(codes.Unavailable, ErrClosed)
 	}
-	if g := h.live(time.Now().UTC()); g != nil {
-		if g.ScratchID == req.ScratchID {
-			live := *g
-			return &live, nil
-		}
-		return nil, api.AsStatus(codes.ResourceExhausted, errors.Wrapf(ErrFull, "serving %s", g.ScratchID))
+	now := time.Now().UTC()
+	h.live(now)
+	if i := h.find(req.ScratchID); i >= 0 {
+		live := *h.slots[i].guest
+		return &live, nil
 	}
-	if h.exited != nil && h.exited.scratchID == req.ScratchID {
-		h.exited = nil
+	i := slices.IndexFunc(h.slots, func(s slot) bool { return s.guest == nil })
+	if i < 0 {
+		return nil, api.AsStatus(codes.ResourceExhausted, errors.Wrapf(ErrFull, "all %d slots serving", len(h.slots)))
 	}
-	g := Guest{ScratchID: req.ScratchID, IP: deps.Config.Net.IP.String(), Since: time.Now().UTC()}
+	delete(h.exited, req.ScratchID)
+	g := Guest{ScratchID: req.ScratchID, IP: deps.Config.Net.IPs[i].String(), Since: now}
 	// The guest outlives this request.
 	guestCtx, stop := context.WithCancel(context.WithoutCancel(ctx))
-	proc, err := boot(ctx, guestCtx, deps)
+	proc, err := boot(ctx, guestCtx, deps, i)
 	if err != nil {
-		teardown(context.Background(), deps, proc, stop, g.IP)
+		teardown(context.Background(), deps, i, proc, stop, g.IP)
 		return nil, api.AsStatus(codes.Internal, errors.Wrapf(err, "booting guest for %s", req.ScratchID))
 	}
 	if err := h.openLedger(req.ScratchID, deps.Config.Layout.execDir(req.ScratchID), deps.Config.Guest.MaxOutputBytes); err != nil {
-		teardown(context.Background(), deps, proc, stop, g.IP)
+		teardown(context.Background(), deps, i, proc, stop, g.IP)
 		return nil, api.AsStatus(codes.Internal, errors.Wrapf(err, "exec ledger for %s", req.ScratchID))
 	}
-	h.guest, h.proc, h.stop = &g, proc, stop
+	h.slots[i] = slot{guest: &g, proc: proc, stop: stop}
 	h.lastServed = g.Since
 	out := g
 	return &out, nil
@@ -219,18 +235,17 @@ func GuestDelete(ctx context.Context, req GuestRequest, deps *GuestDeps) (*act.N
 		err   error
 	)
 	// Dead guests are torn down too: their disks and tap remain.
-	if h.guest != nil && h.guest.ScratchID == req.ScratchID {
+	if i := h.find(req.ScratchID); i >= 0 {
+		s := h.slots[i]
 		found = true
-		err = teardown(ctx, deps, h.proc, h.stop, h.guest.IP)
-		h.guest, h.proc, h.stop = nil, nil, nil
+		err = teardown(ctx, deps, i, s.proc, s.stop, s.guest.IP)
+		h.slots[i] = slot{}
 		h.lastServed = time.Now().UTC()
 	}
 	if h.discardLedger(req.ScratchID) {
 		found = true
 	}
-	if h.exited != nil && h.exited.scratchID == req.ScratchID {
-		h.exited = nil
-	}
+	delete(h.exited, req.ScratchID)
 	if !found {
 		return nil, api.AsStatus(codes.NotFound, errors.Wrapf(ErrNoGuest, "%s", req.ScratchID))
 	}
@@ -240,16 +255,18 @@ func GuestDelete(ctx context.Context, req GuestRequest, deps *GuestDeps) (*act.N
 	return &act.NoOutput{}, nil
 }
 
-// Guests reports the live guest.
+// Guests reports the live guests.
 func Guests(_ context.Context, _ ListRequest, deps *GuestDeps) (*GuestList, error) {
 	h := deps.Host
 	h.mu.Lock()
 	defer h.mu.Unlock()
 	// Liveness first: noticing a death moves lastServed.
-	g := h.live(time.Now().UTC())
-	out := &GuestList{Guests: []Guest{}, LastServed: h.lastServed}
-	if g != nil {
-		out.Guests = append(out.Guests, *g)
+	h.live(time.Now().UTC())
+	out := &GuestList{Guests: []Guest{}, Slots: len(h.slots), LastServed: h.lastServed}
+	for _, s := range h.slots {
+		if s.guest != nil {
+			out.Guests = append(out.Guests, *s.guest)
+		}
 	}
 	return out, nil
 }
@@ -276,35 +293,35 @@ func GuestHealth(ctx context.Context, req GuestRequest, deps *GuestDeps) (*act.N
 	return &act.NoOutput{}, nil
 }
 
-// boot creates the guest's disks, tap and process, in that order. guestCtx
-// bounds the guest's life. On failure the caller tears the slot down, and
-// the handle is nil unless every step succeeded.
-func boot(ctx, guestCtx context.Context, deps *GuestDeps) (execx.Handle, error) {
+// boot creates slot i's disks, tap and guest process, in that order.
+// guestCtx bounds the guest's life. On failure the caller tears the slot
+// down, and the handle is nil unless every step succeeded.
+func boot(ctx, guestCtx context.Context, deps *GuestDeps, i int) (execx.Handle, error) {
 	cfg := deps.Config
 	l := cfg.Layout
 	// A guest that died on its own leaves its disks, and ensureTap reuses its tap.
-	if err := os.RemoveAll(l.GuestDir); err != nil {
+	if err := os.RemoveAll(l.slotDir(i)); err != nil {
 		return nil, errors.Wrap(err, "clearing guest dir")
 	}
-	if err := os.MkdirAll(l.GuestDir, 0o755); err != nil {
+	if err := os.MkdirAll(l.slotDir(i), 0o755); err != nil {
 		return nil, errors.Wrap(err, "guest dir")
 	}
 	// Metadata-only overlays over the shared read-only images.
-	if err := createOverlay(ctx, deps.Exec, cfg.QEMUImgBin, l.overlay(), l.Rootfs); err != nil {
+	if err := createOverlay(ctx, deps.Exec, cfg.QEMUImgBin, l.overlay(i), l.Rootfs); err != nil {
 		return nil, errors.Wrap(err, "root overlay")
 	}
-	if err := createOverlay(ctx, deps.Exec, cfg.QEMUImgBin, l.scratch(), l.Scratch); err != nil {
+	if err := createOverlay(ctx, deps.Exec, cfg.QEMUImgBin, l.scratch(i), l.Scratch); err != nil {
 		return nil, errors.Wrap(err, "scratch overlay")
 	}
-	if err := ensureTap(ctx, deps.Exec, guestTap, cfg.Bridge, cfg.Guest.MTU); err != nil {
+	if err := ensureTap(ctx, deps.Exec, guestTap(i), cfg.Bridge, cfg.Guest.MTU); err != nil {
 		return nil, errors.Wrap(err, "guest tap")
 	}
-	credential, err := deps.ChannelCache.GuestCredential(cfg.Net.IP.String())
+	credential, err := deps.ChannelCache.GuestCredential(cfg.Net.IPs[i].String())
 	if err != nil {
 		return nil, errors.Wrap(err, "guest credential")
 	}
 	// QEMU's stderr is the only record of a boot that never reached the console log.
-	argv := qemuArgv(cfg.QEMUBin, cfg.Guest, l, cfg.Net, credential)
+	argv := qemuArgv(cfg.QEMUBin, cfg.Guest, l, cfg.Net, i, credential)
 	proc, err := deps.Exec.Start(guestCtx, execx.CommandOptions{Output: os.Stderr, StopGrace: stopGrace}, argv[0], argv[1:]...)
 	if err != nil {
 		return nil, errors.Wrap(err, "starting guest")
@@ -312,10 +329,10 @@ func boot(ctx, guestCtx context.Context, deps *GuestDeps) (execx.Handle, error) 
 	return proc, nil
 }
 
-// teardown closes the guest's channel, stops it, and removes its tap and
-// disks. Every step runs even if an earlier one fails. proc is nil when
+// teardown closes slot i's channel, stops its guest, and removes its tap
+// and disks. Every step runs even if an earlier one fails. proc is nil when
 // the guest never started.
-func teardown(ctx context.Context, deps *GuestDeps, proc execx.Handle, stop context.CancelFunc, ip string) error {
+func teardown(ctx context.Context, deps *GuestDeps, i int, proc execx.Handle, stop context.CancelFunc, ip string) error {
 	var firstErr error
 	fail := func(err error, what string) {
 		log.Printf("teardown: %s: %v", what, err)
@@ -328,10 +345,10 @@ func teardown(ctx context.Context, deps *GuestDeps, proc execx.Handle, stop cont
 	if proc != nil {
 		<-proc.Done()
 	}
-	if err := removeTap(ctx, deps.Exec, guestTap); err != nil {
+	if err := removeTap(ctx, deps.Exec, guestTap(i)); err != nil {
 		fail(err, "removing tap")
 	}
-	if err := os.RemoveAll(deps.Config.Layout.GuestDir); err != nil {
+	if err := os.RemoveAll(deps.Config.Layout.slotDir(i)); err != nil {
 		fail(err, "removing guest dir")
 	}
 	return firstErr
