@@ -45,14 +45,22 @@ func (SessionRequest) Validate() error { return nil }
 type TranscriptEvent struct {
 	Kind     string // prompt | model | thought | call | response | proposal | exec | build | handoff | review | formalize | giveup
 	Title    string
-	At       time.Time // zero for the proposal, which anchors its iteration
-	Command  string    // call only: the command argument, shown verbatim
+	At       time.Time        // zero for the proposal, which anchors its iteration
+	Command  string           // call only: the command argument, shown verbatim
+	Purpose  schema.Purpose   // call only: what a shell command was for, from the session's purposes
+	All      []schema.Purpose // call only: every purpose its parts serve, Purpose included
 	Body     string
 	Note     string // summary line when the body renders collapsed
 	Open     bool   // render the body expanded rather than behind a toggle
 	Href     string // optional link rendered after the title
 	HrefText string
 	Build    *BuildAttemptView // build only
+	Tool     string            // call and response only: the function name
+	Args     map[string]any    // call only
+	Response map[string]any    // response only
+	Review   *ReviewView       // review only
+	object   string            // call only: the transcript object, relative to messages/
+	call     int               // call only: index among the object's function calls
 }
 
 // IterationGroup is one iteration's slice of the trajectory: the transcript
@@ -87,6 +95,23 @@ type SessionData struct {
 	Trajectory []IterationGroup
 	Execs      []ExecView
 	Warnings   []string
+	Candidates []*Candidate
+	Lead       []Call // the calls before the first candidate
+	Strip      Strip
+	Verdict    Verdict
+	ToolCalls  int
+	Compared   int     // candidates compared with upstream
+	Matches    int     // comparisons that matched
+	Refused    int     // matches the review refused
+	CoreHours  float64 // the session's tokens and guest time
+}
+
+// StageNames heads the candidate table's stage columns.
+func (SessionData) StageNames() []string { return StageNames }
+
+// StageIndex names the stage columns the template treats specially.
+func (SessionData) StageIndex() struct{ Compare, Review, Verify int } {
+	return struct{ Compare, Review, Verify int }{stageCompare, stageReview, stageVerify}
 }
 
 // Session renders one agent session's trajectory: the session record joined
@@ -106,7 +131,7 @@ func Session(ctx context.Context, req SessionRequest, deps *Deps) (*SessionData,
 		Usage:   usageString(s.Usage),
 	}
 	if !s.Updated.IsZero() && !s.Created.IsZero() {
-		data.Duration = s.Updated.Sub(s.Created).Round(time.Second).String()
+		data.Duration = humanDuration(s.Updated.Sub(s.Created))
 	}
 	groups := make(map[int]*IterationGroup)
 	groupFor := func(n int) *IterationGroup {
@@ -132,16 +157,19 @@ func Session(ctx context.Context, req SessionRequest, deps *Deps) (*SessionData,
 		}
 		g.RecordUsage = usageString(iters[i].Usage)
 	}
-	// The transcript and the exec ledger live in different stores and
-	// neither load informs the other, so they run together.
+	// The transcript, its purposes, and the exec ledger live apart and no
+	// load informs another, so they run together.
 	var (
 		wg            sync.WaitGroup
 		transcriptErr error
 		execs         []schema.ScratchExec
 		execErr       error
+		purposes      *schema.SessionPurposes
+		purposesErr   error
 	)
 	if deps.GCSClient != nil && deps.SessionsBucket != "" {
 		wg.Go(func() { transcriptErr = loadTranscript(ctx, deps, s.ID, groupFor) })
+		wg.Go(func() { purposes, purposesErr = loadPurposes(ctx, deps, s.ID) })
 	} else {
 		data.Warnings = append(data.Warnings, "transcripts not configured: pass -sessions-bucket")
 	}
@@ -155,6 +183,10 @@ func Session(ctx context.Context, req SessionRequest, deps *Deps) (*SessionData,
 	if execErr != nil {
 		data.Warnings = append(data.Warnings, fmt.Sprintf("loading scratch execs: %v", execErr))
 	}
+	if purposesErr != nil {
+		data.Warnings = append(data.Warnings, fmt.Sprintf("loading purposes: %v", purposesErr))
+	}
+	data.Warnings = append(data.Warnings, applyPurposes(groups, purposes)...)
 	for _, e := range execs {
 		data.Execs = append(data.Execs, newExecView(s.ID, e))
 	}
@@ -164,6 +196,35 @@ func Session(ctx context.Context, req SessionRequest, deps *Deps) (*SessionData,
 		data.Trajectory = append(data.Trajectory, *g)
 	}
 	sort.Slice(data.Trajectory, func(i, j int) bool { return data.Trajectory[i].Number < data.Trajectory[j].Number })
+	end := s.Updated
+	if s.StopReason == "" {
+		end = time.Now()
+	}
+	deriveCandidates(data, s.Created, end)
+	for _, c := range data.Candidates {
+		if c.Compare != nil && c.Compare.Err == "" {
+			data.Compared++
+			if c.Compare.Match {
+				data.Matches++
+			}
+		}
+		if c.Review != nil && c.Review.Refused() {
+			data.Refused++
+		}
+	}
+	for _, g := range data.Trajectory {
+		for _, e := range g.Events {
+			if e.Kind == "call" {
+				data.ToolCalls++
+			}
+		}
+	}
+	if u := s.Usage; u != nil {
+		data.CoreHours = float64(u.Input-u.CachedInput)*inputCoreHPerToken + float64(u.CachedInput)*cachedCoreHPerToken + float64(u.Output)*outputCoreHPerToken
+	}
+	if end.After(s.Created) {
+		data.CoreHours += end.Sub(s.Created).Seconds() * guestCoreHPerSecond
+	}
 	return data, nil
 }
 
@@ -275,12 +336,13 @@ func hostToolCommand(script string) string {
 
 // BuildStep is one machinery dispatch of a build attempt.
 type BuildStep struct {
-	Label    string
-	Script   string
-	State    schema.ScratchExecState
-	ExitCode int
-	Duration string
-	OutPath  string
+	Label             string
+	Script            string
+	State             schema.ScratchExecState
+	ExitCode          int
+	Duration          string
+	OutPath           string
+	Started, Finished time.Time // on the worker's clock, zero when unmeasured
 }
 
 // BuildAttemptView is one build's dispatches in order.
@@ -295,9 +357,11 @@ type BuildAttemptView struct {
 // iterOfBuildID maps build labels iter-<n> and iter-<n>-canon to iteration n.
 var iterOfBuildID = regexp.MustCompile(`^iter-(\d+)(?:-canon)?$`)
 
-// composeTrajectory adds the exec ledger to the iteration groups. Machinery
-// collapses into one attempt per build. Keepalives, tool execs the transcript
-// shows as a call, and execs outside every window stay in the ledger only.
+// composeTrajectory adds the exec ledger to the iteration groups. Build steps
+// collapse into one attempt per build. Keepalives, tool execs the transcript
+// shows as calls, and execs outside every window stay in the ledger only. An
+// exec without a label, or with one the page does not know, is reported and
+// shown as is.
 func composeTrajectory(data *SessionData, groups map[int]*IterationGroup, groupFor func(int) *IterationGroup) {
 	hasTranscript := false
 	for _, g := range groups {
@@ -333,7 +397,7 @@ func composeTrajectory(data *SessionData, groups map[int]*IterationGroup, groupF
 			if a.Iter > 0 {
 				v.Iter = a.Iter
 			}
-			a.Steps = append(a.Steps, BuildStep{Label: cls.label, Script: cls.script, State: v.State, ExitCode: v.ExitCode, Duration: v.Duration, OutPath: v.OutPath})
+			a.Steps = append(a.Steps, BuildStep{Label: cls.label, Script: cls.script, State: v.State, ExitCode: v.ExitCode, Duration: v.Duration, OutPath: v.OutPath, Started: v.StartedAt, Finished: v.FinishedAt})
 			continue
 		case execToolContainer, execToolCheck, execToolHost:
 			// The transcript shows these as calls.
@@ -593,7 +657,8 @@ func loadTranscript(ctx context.Context, deps *Deps, sessionID string, groupFor 
 	it := deps.GCSClient.Bucket(deps.SessionsBucket).Objects(ctx, &storage.Query{Prefix: prefix})
 	type entry struct {
 		name transcriptName
-		obj  string
+		obj  string // the object
+		rel  string // its name relative to the prefix, as purposes name it
 		body []byte
 		ok   bool
 	}
@@ -606,11 +671,12 @@ func loadTranscript(ctx context.Context, deps *Deps, sessionID string, groupFor 
 		if err != nil {
 			return errors.Wrap(err, "listing transcript objects")
 		}
-		name, ok := parseTranscriptName(strings.TrimPrefix(attrs.Name, prefix))
+		rel := strings.TrimPrefix(attrs.Name, prefix)
+		name, ok := parseTranscriptName(rel)
 		if !ok {
 			continue
 		}
-		entries = append(entries, entry{name: name, obj: attrs.Name})
+		entries = append(entries, entry{name: name, obj: attrs.Name, rel: rel})
 	}
 	sort.Slice(entries, func(i, j int) bool {
 		a, b := entries[i].name, entries[j].name
@@ -640,7 +706,7 @@ func loadTranscript(ctx context.Context, deps *Deps, sessionID string, groupFor 
 			continue
 		}
 		g := groupFor(e.name.Iter)
-		g.Events = append(g.Events, eventsFrom(e.name, e.body)...)
+		g.Events = append(g.Events, eventsFrom(e.name, e.rel, e.body)...)
 	}
 	return nil
 }
@@ -654,8 +720,62 @@ func readCapped(ctx context.Context, deps *Deps, object string) ([]byte, error) 
 	return io.ReadAll(io.LimitReader(r, maxTranscriptObjectBytes))
 }
 
-// eventsFrom renders one transcript object into display events.
-func eventsFrom(name transcriptName, body []byte) []TranscriptEvent {
+// loadPurposes reads the session's purposes, nil when it has none.
+func loadPurposes(ctx context.Context, deps *Deps, sessionID string) (*schema.SessionPurposes, error) {
+	body, err := readCapped(ctx, deps, schema.SessionPurposesObject(sessionID))
+	if errors.Is(err, storage.ErrObjectNotExist) {
+		return nil, nil
+	}
+	if err != nil {
+		return nil, err
+	}
+	var p schema.SessionPurposes
+	if err := json.Unmarshal(body, &p); err != nil {
+		return nil, errors.Wrap(err, "decoding purposes")
+	}
+	return &p, nil
+}
+
+// applyPurposes sets each call's purposes from the session's purposes and
+// returns a warning for each value it does not know. Without purposes the
+// calls stay unclassified.
+func applyPurposes(groups map[int]*IterationGroup, p *schema.SessionPurposes) (warnings []string) {
+	if p == nil {
+		return nil
+	}
+	type key struct {
+		object string
+		call   int
+	}
+	byCall := make(map[key]schema.CallPurpose, len(p.Calls))
+	for _, c := range p.Calls {
+		byCall[key{c.Object, c.Call}] = c
+	}
+	unknown := map[schema.Purpose]bool{}
+	for _, g := range groups {
+		for i := range g.Events {
+			e := &g.Events[i]
+			if e.Kind != "call" {
+				continue
+			}
+			c := byCall[key{e.object, e.call}]
+			e.Purpose, e.All = c.Purpose, c.All
+			for _, u := range append([]schema.Purpose{c.Purpose}, c.All...) {
+				if u != "" && !slices.Contains(schema.Purposes, u) {
+					unknown[u] = true
+				}
+			}
+		}
+	}
+	for _, u := range slices.Sorted(maps.Keys(unknown)) {
+		warnings = append(warnings, fmt.Sprintf("unknown call purpose %q", u))
+	}
+	return warnings
+}
+
+// eventsFrom renders one transcript object, named object relative to
+// messages/, into display events.
+func eventsFrom(name transcriptName, object string, body []byte) []TranscriptEvent {
 	when := name.Time
 	if name.Record != "" {
 		return recordEvents(name, body)
@@ -679,11 +799,15 @@ func eventsFrom(name transcriptName, body []byte) []TranscriptEvent {
 		return []TranscriptEvent{{Kind: name.Role, Title: name.Role + " (undecodable)", At: when, Body: string(body), Note: "show raw"}}
 	}
 	var out []TranscriptEvent
+	calls := 0
 	for _, p := range content.Parts {
 		switch {
 		case p == nil:
 		case p.FunctionCall != nil:
-			out = append(out, callEvent(p.FunctionCall, when))
+			e := callEvent(p.FunctionCall, when)
+			e.object, e.call = object, calls
+			calls++
+			out = append(out, e)
 		case p.FunctionResponse != nil:
 			out = append(out, responseEvent(p.FunctionResponse, when))
 		case p.Text != "":
@@ -744,8 +868,9 @@ func recordEvents(name transcriptName, body []byte) []TranscriptEvent {
 		if r, ok := raw["review"]; ok {
 			inner = r
 		}
-		verdict, text := reviewText(inner)
-		return []TranscriptEvent{{Kind: "review", Title: title + " · " + verdict, At: when, Body: text, Note: "show review"}}
+		r := parseReview(inner)
+		r.Carried = carried != ""
+		return []TranscriptEvent{{Kind: "review", Title: title + " · " + r.Verdict, At: when, Body: r.Text(), Note: "show review", Review: r}}
 	case "formalize":
 		var r struct {
 			Response string          `json:"response"`
@@ -782,21 +907,84 @@ func recordEvents(name transcriptName, body []byte) []TranscriptEvent {
 	return nil
 }
 
-// reviewText renders a filed buildpolicy.Review. It returns the verdict word
-// and a body of the rationale and violations.
-func reviewText(body []byte) (string, string) {
+// ReviewView is a judgment as the agent files it: the reviewer's verdict
+// with its rationale, violations, and declarations.
+type ReviewView struct {
+	Verdict      string // allow | declare | reject | undecodable
+	Rationale    string
+	Findings     []Finding
+	Declarations []buildpolicy.Declaration
+	Carried      bool   // repeats the handoff review for the candidate it accepted
+	raw          string // the body when it does not decode
+}
+
+// Finding is one rule a review holds against the proposal.
+type Finding struct {
+	Rule  string
+	Title string // the rule's statement
+	Why   string // the reviewer's reason
+	Line  string // quoted from the proposal
+}
+
+func parseReview(body []byte) *ReviewView {
 	var r buildpolicy.Review
 	if err := json.Unmarshal(body, &r); err != nil {
-		return "undecodable", string(body)
+		return &ReviewView{Verdict: "undecodable", raw: string(body)}
+	}
+	v := &ReviewView{Verdict: r.Verdict, Rationale: r.Rationale, Declarations: r.Declarations}
+	for _, f := range r.Violations {
+		v.Findings = append(v.Findings, Finding{Rule: f.Rule, Title: buildpolicy.Title(f.Rule), Why: f.Why, Line: f.Line})
+	}
+	if v.Verdict == "" {
+		v.Verdict = buildpolicy.VerdictAllow
+	}
+	return v
+}
+
+// Rules lists the rules the review holds against the proposal, in order.
+func (r *ReviewView) Rules() []string {
+	var rules []string
+	for _, f := range r.Findings {
+		if !slices.Contains(rules, f.Rule) {
+			rules = append(rules, f.Rule)
+		}
+	}
+	return rules
+}
+
+// Chip sums up the verdict in a few words.
+func (r *ReviewView) Chip() string {
+	switch {
+	case r.Refused() && len(r.Findings) > 0:
+		return "Refused · " + strings.Join(r.Rules(), ", ")
+	case r.Refused():
+		return "Refused"
+	}
+	return strings.ToUpper(r.Verdict[:1]) + r.Verdict[1:]
+}
+
+// Refused reports whether the review turned the proposal away.
+func (r *ReviewView) Refused() bool {
+	return r.Verdict == buildpolicy.VerdictReject
+}
+
+// Text renders the review as the transcript shows it.
+func (r *ReviewView) Text() string {
+	if r.raw != "" {
+		return r.raw
 	}
 	var b strings.Builder
 	if r.Rationale != "" {
 		b.WriteString(r.Rationale + "\n")
 	}
-	for _, v := range r.Violations {
-		fmt.Fprintf(&b, "\n%s %s\n  %s\n", v.Rule, v.Why, v.Line)
+	for _, f := range r.Findings {
+		label := f.Why
+		if label == "" {
+			label = f.Title
+		}
+		fmt.Fprintf(&b, "\n%s %s\n  %s\n", f.Rule, label, f.Line)
 	}
-	return r.Verdict, strings.TrimSpace(b.String())
+	return strings.TrimSpace(b.String())
 }
 
 // prettyJSON re-indents a JSON value for display, or returns it as is.
@@ -813,7 +1001,7 @@ func prettyJSON(raw json.RawMessage) string {
 }
 
 func callEvent(c *genai.FunctionCall, when time.Time) TranscriptEvent {
-	e := TranscriptEvent{Kind: "call", Title: c.Name, At: when}
+	e := TranscriptEvent{Kind: "call", Title: c.Name, At: when, Tool: c.Name, Args: c.Args}
 	if cmd, ok := c.Args["command"].(string); ok {
 		e.Command = cmd
 		if timeout, ok := c.Args["timeout_seconds"].(float64); ok {
@@ -828,7 +1016,7 @@ func callEvent(c *genai.FunctionCall, when time.Time) TranscriptEvent {
 }
 
 func responseEvent(r *genai.FunctionResponse, when time.Time) TranscriptEvent {
-	e := TranscriptEvent{Kind: "response", Title: r.Name + " result", At: when, Note: "show output"}
+	e := TranscriptEvent{Kind: "response", Title: r.Name + " result", At: when, Note: "show output", Tool: r.Name, Response: r.Response}
 	if code, ok := r.Response["exit_code"].(float64); ok {
 		e.Note = fmt.Sprintf("show output (exit %d)", int(code))
 	}

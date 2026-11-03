@@ -4,32 +4,151 @@
  SPDX-License-Identifier: Apache-2.0
 -->
 
-    <h2>Agent Session</h2>
-    <div class="session">
-        <div class="session-head">
-            <a href="/package/{{.Session.Encoded.Ecosystem}}/{{.Session.Encoded.Package}}/version/{{.Session.Encoded.Version}}"><strong>{{.Session.Target.Ecosystem}}:{{.Session.Target.Package}} {{.Session.Target.Version}}</strong></a>
-            {{if eq .Session.StopReason "SUCCESS"}}<span class="status-success">Success</span>
-            {{else if .Session.StopReason}}<span class="status-fail">{{.Session.StopReason}}</span>
-            {{else if eq .Session.Status "RUNNING"}}<span class="status-running">Running</span>
-            {{else}}<span>{{.Session.Status}}</span>{{end}}
-            <span class="badge">{{if .Session.ExecutionMode}}{{.Session.ExecutionMode}}{{else}}gcb{{end}}</span>
-            <span class="session-meta">{{if .Session.ExecutionName}}hosted{{else}}local{{end}} · {{template "when" .Session.Created}}</span>
+    {{- $s := .Session}}
+    <div class="page-head">
+        <div class="crumbs"><a href="/packages?eco={{$s.Target.Ecosystem}}">{{$s.Target.Ecosystem}}</a> / <a href="/package/{{$s.Encoded.Ecosystem}}/{{$s.Encoded.Package}}">{{$s.Target.Package}}</a> / <a href="/package/{{$s.Encoded.Ecosystem}}/{{$s.Encoded.Package}}/version/{{$s.Encoded.Version}}">{{$s.Target.Version}}</a></div>
+        <div class="title-row">
+            <h1>Agent session</h1>
+            <span class="outcome tone-{{$s.Tone}}">{{$s.Outcome}}</span>
+            <span class="session-meta mono" title="{{$s.ID}}">{{printf "%.13s" $s.ID}} · {{if $s.ExecutionMode}}{{$s.ExecutionMode}}{{else}}gcb{{end}}{{with $s.Model}} · {{.}}{{end}} · {{template "when" $s.Created}}</span>
         </div>
-        {{if .Session.Summary}}<div class="session-summary">{{.Session.Summary}}</div>{{end}}
-        <div class="kv">
-            <div><span class="kv-label">session</span><span class="kv-value mono" title="{{.Session.ID}}">{{.Session.ID}}</span></div>
-            {{if .Session.ScratchID}}<div><span class="kv-label">scratch</span><span class="kv-value mono" title="{{.Session.ScratchID}}">{{.Session.ScratchID}}</span></div>{{end}}
-            {{if .Session.Model}}<div><span class="kv-label">model</span><span class="kv-value">{{.Session.Model}}</span></div>{{end}}
-            <div><span class="kv-label">duration</span><span class="kv-value">{{if .Duration}}{{.Duration}}{{else}}n/a{{end}}</span></div>
-            {{if .Usage}}<div><span class="kv-label">tokens</span><span class="kv-value">{{.Usage}}</span></div>{{end}}
-            {{if .Session.MaxIterations}}<div><span class="kv-label">max iterations</span><span class="kv-value">{{.Session.MaxIterations}}</span></div>{{end}}
-            {{if .Session.RunID}}<div><span class="kv-label">run</span><span class="kv-value mono" title="{{.Session.RunID}}">{{.Session.RunID}}</span></div>{{end}}
-        </div>
+        {{with $s.Summary}}<p class="session-summary">{{.}}</p>{{end}}
     </div>
 
     {{range .Warnings}}<p class="hint">Warning: {{.}}</p>{{end}}
 
-    <h3>Trajectory</h3>
+    <section class="card figs">
+        <div><span class="fig-label">Duration</span><span class="fig-value">{{if .Duration}}{{.Duration}}{{else}}n/a{{end}}</span></div>
+        <div><span class="fig-label">Tool calls</span><span class="fig-value">{{.ToolCalls}}</span></div>
+        <div><span class="fig-label">Candidates</span><span class="fig-value">{{len .Candidates}} <small>{{.Compared}} compared</small></span></div>
+        <div><span class="fig-label">Matches</span><span class="fig-value{{if .Matches}} tone-ok{{end}}">{{.Matches}}{{if .Refused}} <small>{{.Refused}} refused</small>{{end}}</span></div>
+        <div title="{{.Usage}}"><span class="fig-label">Cost</span><span class="fig-value">{{printf "%.1f" .CoreHours}} <small>core-h</small></span></div>
+    </section>
+
+    {{with .Strip}}{{if .Spans}}
+    <section class="card strip-card">
+        <div class="strip-head"><span class="eyebrow">Where the time went</span><span class="mono">{{.Start.Format "15:04:05"}} to {{.End.Format "15:04:05"}}</span></div>
+        <div class="strip" role="img" aria-label="Session time by activity">{{range .Spans}}<span class="sp sp-{{.Kind}}" style="left: {{.Left}}%; width: {{.Width}}%" title="{{.Title}}"></span>{{end}}</div>
+        <div class="strip-ticks" aria-hidden="true">{{range .Ticks}}<span style="left: {{.Left}}%">{{.Label}}</span>{{end}}</div>
+        <div class="legend">{{range .Totals}}<span class="legend-item"><i class="swatch sp-{{.Kind}}"></i>{{.Label}} <b>{{.Took}}</b></span>{{end}}</div>
+    </section>
+    {{end}}{{end}}
+
+    {{if .Candidates}}
+    <section class="card cands">
+        <div class="cands-head"><span class="eyebrow">Candidates</span><span><button type="button" class="linkish" data-drawers="open">Expand all calls</button><button type="button" class="linkish" data-drawers="close">Collapse</button></span></div>
+        <div class="cand-grid cand-cols" aria-hidden="true"><span></span><span>Started</span><span>What changed</span><span class="r">Calls after</span><span class="stages">{{range .StageNames}}<span>{{.}}</span>{{end}}</span><span class="r">Time</span></div>
+        {{with .Lead}}
+        <div class="cand">
+            <input type="checkbox" class="drawer-toggle" id="drawer-0" hidden>
+            <div class="cand-grid"><label class="row-hit" for="drawer-0"><span></span><span></span><span class="chg">Before the first candidate</span><span class="calls-toggle">{{len .}}</span></label></div>
+            <div class="drawer">{{range .}}{{template "callrow" .}}{{end}}</div>
+        </div>
+        {{end}}
+        <ol class="cand-list">
+        {{- range $c := .Candidates}}
+        <li class="cand" id="cand-{{$c.N}}">
+            <input type="checkbox" class="drawer-toggle" id="drawer-{{$c.N}}" hidden>
+            <div class="cand-grid">
+                <label class="row-hit" for="drawer-{{$c.N}}">
+                    <span class="n">{{$c.N}}</span>
+                    <span class="t mono">{{$c.At.Format "15:04:05"}}</span>
+                    <span class="chg{{if not $c.Job}} mono{{end}}" title="{{$c.Command}}">{{$c.Change}}</span>
+                    <span class="calls-toggle">{{with $c.After}}{{len .}}{{else}}none{{end}}</span>
+                </label>
+                <span class="stages">
+                {{- range $i, $st := $c.Stages}}
+                    {{- if and (eq $i $.StageIndex.Compare) $c.Compare}}<details class="pop" name="pops" id="pop-{{$c.N}}-compare"><summary class="cell st-{{$st.State}}" title="Compare details">{{$st.Label}}</summary>{{template "comparePop" $c}}</details>
+                    {{- else if and (eq $i $.StageIndex.Review) $c.Review}}<details class="pop" name="pops" id="pop-{{$c.N}}-review"><summary class="cell st-{{$st.State}}" title="Review details">{{$st.Label}}</summary>{{template "reviewPop" $c}}</details>
+                    {{- else}}<span class="cell st-{{$st.State}}">{{$st.Label}}</span>{{end}}
+                {{- end}}
+                </span>
+                <span class="took">{{$c.Took}}</span>
+            </div>
+            <div class="drawer">
+                <div class="facts">
+                    <div class="fact-wide"><span class="fact-k">Outcome</span><span class="fact-v">{{$c.Outcome}}</span></div>
+                    <div><span class="fact-k">Started</span><span class="fact-v mono">{{$c.At.Format "15:04:05"}}</span></div>
+                    {{with $c.Took}}<div><span class="fact-k">Took</span><span class="fact-v">{{.}}</span></div>{{end}}
+                    {{if $c.Job}}<div><span class="fact-k">Job build</span><span class="fact-v mono">{{$c.Command}}</span></div>{{end}}
+                    {{with $c.Compare}}<div><span class="fact-k">Compare</span><button type="button" class="linkish" data-pop="pop-{{$c.N}}-compare">{{.Chip}} ›</button></div>{{end}}
+                    {{with $c.Review}}<div><span class="fact-k">Review</span><button type="button" class="linkish" data-pop="pop-{{$c.N}}-review">{{.Chip}} ›</button></div>{{end}}
+                </div>
+                {{if not $c.Job}}<pre class="drawer-cmd">{{$c.Command}}</pre>{{end}}
+                {{range $c.After}}{{template "callrow" .}}{{end}}
+            </div>
+        </li>
+        {{- end}}
+        </ol>
+        {{with .Verdict}}
+        <div class="cand verdict">
+            <input type="checkbox" class="drawer-toggle" id="drawer-verdict" hidden>
+            <div class="cand-grid">
+                <label class="row-hit" for="drawer-verdict">
+                    <span class="n"><i class="pip {{.Tone}}"></i></span>
+                    <span class="t mono">{{if ne .Kind "running"}}{{.At.Format "15:04:05"}}{{end}}</span>
+                    <span class="chg"><b class="tone-{{.Tone}}">{{.Label}}</b>{{with .Line}} · {{.}}{{end}}</span>
+                    <span class="calls-toggle">details</span>
+                </label>
+                <span class="verdict-box">
+                    {{- if .Accepted}}Candidate {{.Accepted.N}} · {{.Accepted.Review.Chip}}{{if eq (index .Accepted.Stages $.StageIndex.Verify).State "ok"}} · verified{{end}}
+                    {{- else if .Matched}}Candidate {{.Matched.N}} matched · {{with .Matched.Review}}{{.Chip}}{{else}}never handed off{{end}}
+                    {{- else if .Closest}}Closest: candidate {{.Closest.N}} · {{.Closest.Compare.Chip}}
+                    {{- else}}No candidate compared{{end -}}
+                </span>
+                <span class="took">{{$.Duration}}</span>
+            </div>
+            <div class="drawer">
+                <div class="facts">
+                    <div><span class="fact-k">Verdict</span><span class="fact-v tone-{{.Tone}}">{{.Label}}</span></div>
+                    <div><span class="fact-k">Stop reason</span><span class="fact-v mono">{{if $.Session.StopReason}}{{$.Session.StopReason}}{{else}}{{$.Session.Status}}{{end}}</span></div>
+                    {{with .Accepted}}<div><span class="fact-k">Accepted</span><a class="fact-v" href="#cand-{{.N}}">candidate {{.N}}</a></div>{{end}}
+                    {{with .Matched}}<div><span class="fact-k">Matched</span><a class="fact-v" href="#cand-{{.N}}">candidate {{.N}}</a></div>{{end}}
+                    {{with .Closest}}<div><span class="fact-k">Closest</span><a class="fact-v" href="#cand-{{.N}}">candidate {{.N}}, {{.Compare.Chip}}</a></div>{{end}}
+                    {{with .Summary}}<div class="fact-wide"><span class="fact-k">Summary</span><span class="fact-v">{{.}}</span></div>{{end}}
+                </div>
+                {{with .Remaining}}<p class="drawer-sum"><span class="eyebrow">What still differs</span></p><div class="drawer-text">{{.}}</div>{{end}}
+                {{with .Commands}}<p class="drawer-sum"><span class="eyebrow">Commands for the closest candidate</span></p><pre class="drawer-cmd">{{.}}</pre>{{end}}
+            </div>
+        </div>
+        {{end}}
+        <div class="legend cand-legend">
+            <span class="legend-item"><span class="cell st-ok">✓</span>passed</span>
+            <span class="legend-item"><span class="cell st-reused">✓</span>reused</span>
+            <span class="legend-item"><span class="cell st-timeout">Ns</span>timed out</span>
+            <span class="legend-item"><span class="cell st-failed">✕</span>failed</span>
+            <span class="legend-item"><span class="cell st-off">N</span>entries off</span>
+            <span class="legend-item"><span class="cell st-match">=</span>match</span>
+            <span class="legend-item"><span class="cell st-none">–</span>not reached</span>
+            <span class="legend-item"><span class="cell notch"></span>opens the compare or review details</span>
+        </div>
+    </section>
+    <script>
+        // Drawers and popouts are native toggles. This wires the controls that
+        // reach across rows: expand all, a review row opening its popout, a
+        // diffr link opening the drawer it points into.
+        for (const b of document.querySelectorAll('[data-drawers]')) b.addEventListener('click', () => {
+            for (const t of document.querySelectorAll('.drawer-toggle')) t.checked = b.dataset.drawers === 'open';
+        });
+        for (const b of document.querySelectorAll('[data-pop]')) b.addEventListener('click', e => {
+            e.stopPropagation();
+            const d = document.getElementById(b.dataset.pop);
+            if (d) { d.open = true; d.scrollIntoView({block: 'nearest'}); }
+        });
+        for (const a of document.querySelectorAll('[data-drawer]')) a.addEventListener('click', () => {
+            const t = document.getElementById(a.dataset.drawer);
+            if (t) t.checked = true;
+            a.closest('details')?.removeAttribute('open');
+        });
+        for (const b of document.querySelectorAll('.pop-close')) b.addEventListener('click', () => b.closest('details').removeAttribute('open'));
+        document.addEventListener('click', e => {
+            for (const d of document.querySelectorAll('details.pop[open]')) if (!d.contains(e.target)) d.removeAttribute('open');
+        });
+    </script>
+    {{end}}
+
+    <details class="transcript">
+        <summary><h2>Transcript</h2></summary>
     {{if .Trajectory}}
     {{range .Trajectory}}
     <div class="traj-iter">
@@ -82,8 +201,10 @@
     {{else}}
     <p class="hint">No trajectory recorded.</p>
     {{end}}
+    </details>
 
-    <h3>Scratch execs</h3>
+    <details class="transcript">
+        <summary><h2>Scratch execs</h2></summary>
     {{if .Execs}}
     <table>
         <thead><tr><th>Iter</th><th>Queued</th><th>Label</th><th>State</th><th>Exit</th><th>Duration</th><th>Command</th><th>Output</th></tr></thead>
@@ -105,4 +226,31 @@
     {{else}}
     <p class="hint">No scratch execs recorded.</p>
     {{end}}
+    </details>
 {{end}}
+
+{{define "callrow"}}<div class="callrow{{if .Bad}} bad{{end}}" id="{{.ID}}"><span class="mono">{{.At.Format "15:04:05"}}</span><span class="tool">{{.Tool}}</span>{{if .Review}}<button type="button" class="linkish" data-pop="pop-{{.Drawer}}-review">{{.Cmd}} ›</button>{{else}}<code class="ell">{{.Cmd}}</code>{{end}}<span class="res" title="{{.Detail}}">{{.Result}}</span></div>{{end}}
+
+{{define "comparePop"}}{{with .Compare}}<div class="popout" role="dialog" aria-label="Compare, candidate {{$.N}}">
+    <div class="pop-head"><b>Compare · candidate {{$.N}}</b><span class="mono">{{.By}}, {{.At.Format "15:04:05"}}</span><button type="button" class="pop-close" aria-label="Close">✕</button></div>
+    <div class="pop-chips"><span class="pchip {{if .Match}}tone-ok{{else if .Err}}tone-bad{{else}}tone-warn{{end}}">{{.Chip}}</span>{{if and .Candidate (not .Match)}}<span class="mono">{{.Candidate}}… vs {{.Upstream}}…</span>{{else if .Candidate}}<span class="mono">{{.Candidate}}… on both sides</span>{{end}}</div>
+    {{with .Err}}<p class="pop-lead">{{.}}</p>{{end}}
+    {{if .Match}}<p class="pop-lead">The stabilized candidate equals the stabilized upstream.</p>{{end}}
+    {{range .Groups}}{{$g := .}}<div class="pop-group"><span class="eyebrow">{{.Label}}</span>
+        {{range .Entries}}<div class="pop-item"><span class="pop-tag m-{{$g.Kind}}">{{$g.Mark}}</span><div><span class="mono">{{.Path}}</span>{{with .Note}}<span class="pop-note">{{.}}</span>{{end}}</div></div>{{end}}
+    </div>{{end}}
+    <div class="pop-foot"><span>{{if .Groups}}− is the candidate, + is upstream.{{end}} {{.Note}}</span>{{with .Diffr}}<a href="#{{.ID}}" data-drawer="drawer-{{.Drawer}}">Agent’s diffr at {{.At.Format "15:04:05"}} ›</a>{{end}}{{if $.Review}}<button type="button" class="linkish" data-pop="pop-{{$.N}}-review">Review details ›</button>{{end}}</div>
+</div>{{end}}{{end}}
+
+{{define "reviewPop"}}{{with .Review}}<div class="popout" role="dialog" aria-label="Review, candidate {{$.N}}">
+    <div class="pop-head"><b>Review · candidate {{$.N}}</b><span class="mono">handoff review, {{$.ReviewAt.Format "15:04:05"}}</span><button type="button" class="pop-close" aria-label="Close">✕</button></div>
+    <div class="pop-chips"><span class="pchip {{if .Refused}}tone-bad{{else}}tone-ok{{end}}">{{.Chip}}</span></div>
+    {{with .Rationale}}<p class="pop-lead">{{.}}</p>{{end}}
+    {{with .Findings}}<div class="pop-group"><span class="eyebrow">{{if $.Review.Refused}}Violations{{else}}Findings{{end}} ({{len .}})</span>
+        {{range .}}<div class="pop-item"><span class="pop-tag m-rule">{{.Rule}}</span><div><span class="pop-main">{{.Title}}</span>{{with .Why}}<span class="pop-note">{{.}}</span>{{end}}{{with .Line}}<pre class="pop-code">{{.}}</pre>{{end}}</div></div>{{end}}
+    </div>{{end}}
+    {{with .Declarations}}<div class="pop-group"><span class="eyebrow">Declarations ({{len .}})</span>
+        {{range .}}<div class="pop-item"><span class="pop-tag m-decl">{{.Kind}}</span><div><span class="pop-main">{{.Mechanism}}</span>{{range .Paths}}<span class="pop-note mono">{{.}}</span>{{end}}</div></div>{{end}}
+    </div>{{end}}
+    {{if $.Compare}}<div class="pop-foot"><span></span><button type="button" class="linkish" data-pop="pop-{{$.N}}-compare">Compare details ›</button></div>{{end}}
+</div>{{end}}{{end}}
