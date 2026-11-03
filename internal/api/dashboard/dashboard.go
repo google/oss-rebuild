@@ -5,6 +5,7 @@ package dashboard
 
 import (
 	_ "embed"
+	"fmt"
 	"html/template"
 	"io"
 	"mime"
@@ -150,6 +151,22 @@ func (v RebuildView) Tone() string {
 		return "live"
 	}
 	return "bad"
+}
+
+// Outcome is Tone in words.
+func (v RebuildView) Outcome() string {
+	switch v.Tone() {
+	case "ok":
+		return "reproduced"
+	case "live":
+		return "running"
+	}
+	return "failed"
+}
+
+// Href is the attempt's page.
+func (v RebuildView) Href() string {
+	return fmt.Sprintf("/attempt/%s/%s/%s/%s/%s", v.Encoded.Ecosystem, v.Encoded.Package, v.Encoded.Version, v.Encoded.Artifact, v.RunID)
 }
 
 func applySuccessRegex(successRegex *regexp.Regexp, rebuilds []rundex.Rebuild) {
