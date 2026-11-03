@@ -335,6 +335,8 @@ summary:hover { color: var(--heading); }
    tooltip key reads. */
 .ok { --c: var(--viz-ok); }
 .warn { --c: var(--viz-warn); }
+/* A failure with a retry waiting or running: warn, faded toward queued. */
+.retry { --c: color-mix(in srgb, var(--viz-warn) 40%, var(--viz-none)); }
 .bad { --c: var(--viz-bad); }
 .none { --c: var(--viz-none); }
 .live { --c: var(--viz-live); }

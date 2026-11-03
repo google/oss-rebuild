@@ -13,26 +13,27 @@ import (
 // EcoBand is one ecosystem's card in a page's overview band.
 type EcoBand struct {
 	Ecosystem  string
-	InScope    int64
-	Started    int64
+	InScope    int64      // ranked, with a campaign or attempt
+	Attempted  int64      // a build completed at any version
 	Reproduced int64      // attested at latest attempted version
+	Retrying   int64      // not reproduced, campaign queued or running
+	InFlight   int64      // unattempted, campaign dispatched
+	Queued     int64      // unattempted, waiting, none dispatched
 	EverBuilt  int64      // any version attested
 	Growth     [][2]int64 // [unix hour, packages ever attested]
 }
 
-// Pct is Reproduced over InScope, in whole percent.
+// Pct is Reproduced over Attempted, in whole percent. A retrying failure
+// counts against it until a retry succeeds.
 func (e EcoBand) Pct() int64 {
-	if e.InScope == 0 {
+	if e.Attempted == 0 {
 		return 0
 	}
-	return 100 * e.Reproduced / e.InScope
+	return 100 * e.Reproduced / e.Attempted
 }
 
-// Pending counts the started packages not reproduced.
-func (e EcoBand) Pending() int64 { return max(0, e.Started-e.Reproduced) }
-
-// Unstarted counts the in-scope packages not started.
-func (e EcoBand) Unstarted() int64 { return max(0, e.InScope-e.Started) }
+// NotReproduced counts attempted packages neither reproduced nor retrying.
+func (e EcoBand) NotReproduced() int64 { return max(0, e.Attempted-e.Reproduced-e.Retrying) }
 
 // DayStat is one day of completed builds and their cost.
 type DayStat struct {
@@ -85,19 +86,13 @@ func loadActivity(a Analytics, where string) (Activity, error) {
 	return act, nil
 }
 
-// Overview backs the home and coverage pages' header band.
+// Overview backs the home and coverage pages' header band. Its figures are
+// derived, so AsOf is the rollup watermark.
 type Overview struct {
-	AsOf       string
-	InScope    int64
-	Started    int64
-	Reproduced int64
-	Ecos       []EcoBand
-	Activity   Activity // every day of the build history
-}
-
-// Total folds the ecosystems into one band.
-func (o Overview) Total() EcoBand {
-	return EcoBand{Ecosystem: "All ecosystems", InScope: o.InScope, Started: o.Started, Reproduced: o.Reproduced}
+	AsOf     string
+	Total    EcoBand // all ecosystems in one band
+	Ecos     []EcoBand
+	Activity Activity // every day of the build history
 }
 
 // Only selects one ecosystem's card, or every card for an empty eco.
@@ -116,10 +111,11 @@ func (o Overview) Only(eco string) []EcoBand {
 // loadOverview returns nil when no ecosystem has published signals, since
 // there is no scope to measure.
 func loadOverview(a Analytics) (*Overview, error) {
-	o := &Overview{AsOf: asOf(a)}
+	o := &Overview{Total: EcoBand{Ecosystem: "All ecosystems"}}
 	index := map[string]int{}
 	err := forEachRow(a, `
-		SELECT c.ecosystem, c.universe_packages, c.tracked_packages, c.current_packages, coalesce(p.built, 0)
+		SELECT c.ecosystem, c.tracked_packages, c.attempted_packages, c.current_packages,
+			c.retrying_packages, c.in_flight_packages, c.queued_packages, coalesce(p.built, 0)
 		FROM signal_coverage c
 		LEFT JOIN (SELECT ecosystem, sum(ever_built) AS built FROM package_stats GROUP BY 1) p ON p.ecosystem = c.ecosystem
 		ORDER BY 1`,
@@ -127,15 +123,22 @@ func loadOverview(a Analytics) (*Overview, error) {
 			e := EcoBand{
 				Ecosystem:  stmt.ColumnText(0),
 				InScope:    stmt.ColumnInt64(1),
-				Started:    stmt.ColumnInt64(2),
+				Attempted:  stmt.ColumnInt64(2),
 				Reproduced: stmt.ColumnInt64(3),
-				EverBuilt:  stmt.ColumnInt64(4),
+				Retrying:   stmt.ColumnInt64(4),
+				InFlight:   stmt.ColumnInt64(5),
+				Queued:     stmt.ColumnInt64(6),
+				EverBuilt:  stmt.ColumnInt64(7),
 			}
 			index[e.Ecosystem] = len(o.Ecos)
 			o.Ecos = append(o.Ecos, e)
-			o.InScope += e.InScope
-			o.Started += e.Started
-			o.Reproduced += e.Reproduced
+			t := &o.Total
+			t.InScope += e.InScope
+			t.Attempted += e.Attempted
+			t.Reproduced += e.Reproduced
+			t.Retrying += e.Retrying
+			t.InFlight += e.InFlight
+			t.Queued += e.Queued
 			return nil
 		})
 	if err != nil {
@@ -143,6 +146,9 @@ func loadOverview(a Analytics) (*Overview, error) {
 	}
 	if len(o.Ecos) == 0 {
 		return nil, nil
+	}
+	if o.AsOf, err = rolledUpAt(a); err != nil {
+		return nil, err
 	}
 	// Hour buckets keep the series small.
 	err = forEachRow(a, `

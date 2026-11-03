@@ -8,8 +8,8 @@
     <section class="card hero">
         <div class="hero-main">
             <div class="eyebrow">Packages reproduced</div>
-            <div class="hero-figure">{{num .Reproduced}}</div>
-            <div class="hero-sub"><b>{{.Total.Pct}}%</b> of {{num .InScope}} in scope across {{len .Ecos}} ecosystems, {{num .Started}} started</div>
+            <div class="hero-figure">{{num .Total.Reproduced}}</div>
+            <div class="hero-sub"><b>{{.Total.Pct}}%</b> of {{num .Total.Attempted}} attempted, {{num .Total.InScope}} in scope across {{len .Ecos}} ecosystems</div>
             {{template "standing" .Total}}
             {{template "standing-legend"}}
         </div>
@@ -23,7 +23,7 @@
         </div>
     </section>
     {{template "ecocards" .Ecos}}
-    <p class="asof">Snapshot as of {{.AsOf}}</p>
+    <p class="asof">Counts from the rollup at {{.AsOf}}</p>
     <script type="application/json" id="overview">{{.}}</script>
     <script type="application/json" id="overview-activity">{{.Activity}}</script>
     {{end}}

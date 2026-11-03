@@ -8,7 +8,7 @@
     <section class="card eco-card">
         <div class="eco-head"><h3>{{.Ecosystem}}</h3><a href="/coverage?eco={{.Ecosystem}}">Coverage</a></div>
         <div class="figure"><span class="figure-value">{{num .Reproduced}}</span><span class="figure-pct">{{.Pct}}%</span></div>
-        <div class="figure-label">reproduced of {{num .InScope}} in scope</div>
+        <div class="figure-label">reproduced of {{num .Attempted}} attempted, {{num .InScope}} in scope</div>
         {{template "standing" .}}
         <div class="chart" data-chart="growth" data-src="overview" data-eco="{{.Ecosystem}}" data-label="{{.Ecosystem}} packages reproduced at any version over time"></div>
         <div class="chart-note">Reproduced at any version, cumulative: {{num .EverBuilt}}</div>
@@ -19,14 +19,18 @@
 {{- define "standing"}}
 <div class="segbar" data-title="{{.Ecosystem}}">
     {{- if .Reproduced}}<span class="seg ok" style="flex-grow: {{.Reproduced}}" data-c="ok" data-v="{{num .Reproduced}}" data-k="reproduced"></span>{{end}}
-    {{- with .Pending}}<span class="seg warn" style="flex-grow: {{.}}" data-c="warn" data-v="{{num .}}" data-k="started, not reproduced"></span>{{end}}
-    {{- with .Unstarted}}<span class="seg none" style="flex-grow: {{.}}" data-c="none" data-v="{{num .}}" data-k="not started"></span>{{end -}}
+    {{- with .NotReproduced}}<span class="seg warn" style="flex-grow: {{.}}" data-c="warn" data-v="{{num .}}" data-k="not reproduced"></span>{{end}}
+    {{- if .Retrying}}<span class="seg retry" style="flex-grow: {{.Retrying}}" data-c="retry" data-v="{{num .Retrying}}" data-k="not reproduced, retrying"></span>{{end}}
+    {{- if .InFlight}}<span class="seg live" style="flex-grow: {{.InFlight}}" data-c="live" data-v="{{num .InFlight}}" data-k="in flight"></span>{{end}}
+    {{- if .Queued}}<span class="seg none" style="flex-grow: {{.Queued}}" data-c="none" data-v="{{num .Queued}}" data-k="queued"></span>{{end -}}
 </div>
 {{- end}}
 {{- define "standing-legend"}}
 <div class="legend">
     <span class="legend-item"><i class="swatch ok"></i>Reproduced</span>
-    <span class="legend-item"><i class="swatch warn"></i>Started, not reproduced</span>
-    <span class="legend-item"><i class="swatch none"></i>Not started</span>
+    <span class="legend-item"><i class="swatch warn"></i>Not reproduced</span>
+    <span class="legend-item"><i class="swatch retry"></i>Retrying</span>
+    <span class="legend-item"><i class="swatch live"></i>In flight</span>
+    <span class="legend-item"><i class="swatch none"></i>Queued</span>
 </div>
 {{- end}}
