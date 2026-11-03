@@ -4,6 +4,7 @@
 package dashboard
 
 import (
+	"math"
 	"strconv"
 	"strings"
 
@@ -36,12 +37,18 @@ func (t TierBand) Pct() int64 {
 // whole ecosystem.
 func (t TierBand) Label() string {
 	if t.Packages < t.Tier {
-		return "All " + groupDigits(t.Packages)
+		return "All " + thousands(t.Packages)
 	}
-	if t.Tier >= 1000 && t.Tier%1000 == 0 {
-		return "Top " + strconv.FormatInt(t.Tier/1000, 10) + "k"
+	return "Top " + thousands(t.Tier)
+}
+
+// thousands renders n past 1,000 in thousands with a k suffix, to one
+// decimal: 5000 as 5k, 3973 as 4k, 1250 as 1.3k.
+func thousands(n int64) string {
+	if n < 1000 {
+		return strconv.FormatInt(n, 10)
 	}
-	return "Top " + groupDigits(t.Tier)
+	return strconv.FormatFloat(math.Round(float64(n)/100)/10, 'f', -1, 64) + "k"
 }
 
 // Title names the tier for its bar's readout.
