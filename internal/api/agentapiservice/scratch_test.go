@@ -8,6 +8,7 @@ import (
 	"errors"
 	"fmt"
 	"maps"
+	"slices"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -514,7 +515,6 @@ type MemoryGCE struct {
 	log       []string // human-readable: "InsertInstanceFromTemplate(zone,name,...)" etc.
 	instances map[string]Instance
 	labels    map[string]map[string]string // instance key -> labels
-	stopped   map[string]bool              // instance key -> stopped (true means terminated, missing/false means running)
 	// failQueue[op] is a FIFO of errors to return on successive invocations
 	// of op (one per call). op keys mirror the log prefixes:
 	// "InsertInstanceFromTemplate", "DeleteInstance", ...
@@ -530,20 +530,8 @@ func NewMemoryGCE() *MemoryGCE {
 	return &MemoryGCE{
 		instances: map[string]Instance{},
 		labels:    map[string]map[string]string{},
-		stopped:   map[string]bool{},
 		failQueue: map[string][]error{},
 	}
-}
-
-// SeedStopped pre-creates a stopped instance with the given labels. Used by
-// tests to populate the warm pool without going through Insert+Stop.
-func (m *MemoryGCE) SeedStopped(zone, name string, labels map[string]string, internalIP string) {
-	m.mu.Lock()
-	defer m.mu.Unlock()
-	key := zone + "/" + name
-	m.instances[key] = Instance{Name: name, Zone: zone, InternalIP: internalIP}
-	m.labels[key] = copyLabels(labels)
-	m.stopped[key] = true
 }
 
 func copyLabels(in map[string]string) map[string]string {
@@ -631,69 +619,54 @@ func (m *MemoryGCE) InsertInstanceFromTemplate(_ context.Context, zone, name, te
 		ip = fmt.Sprintf("10.0.0.%d", m.ipSeq)
 	}
 	m.nextIP = ""
-	inst := Instance{Name: name, Zone: zone, InternalIP: ip}
+	inst := Instance{
+		Name: name, Zone: zone, InternalIP: ip,
+		Labels: copyLabels(labels), LabelFingerprint: "fp0", Created: time.Now().UTC(),
+	}
 	m.instances[key] = inst
 	m.labels[key] = copyLabels(labels)
 	// Newly-inserted instances are running.
 	return inst, nil
 }
 
-func (m *MemoryGCE) ListStoppedInstances(_ context.Context, zone string, labels map[string]string) ([]Instance, error) {
+func (m *MemoryGCE) ListRunningInstances(_ context.Context, zone string, labels map[string]string) ([]Instance, error) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
-	m.record("ListStoppedInstances(%s,%v)", zone, labels)
-	if err := m.checkFail("ListStoppedInstances"); err != nil {
+	m.record("ListRunningInstances(%s,%v)", zone, labels)
+	if err := m.checkFail("ListRunningInstances"); err != nil {
 		return nil, err
 	}
 	var out []Instance
 	for key, inst := range m.instances {
-		if inst.Zone != zone {
-			continue
-		}
-		if !m.stopped[key] {
-			continue
-		}
-		if !labelsMatch(m.labels[key], labels) {
+		if inst.Zone != zone || !labelsMatch(m.labels[key], labels) {
 			continue
 		}
 		out = append(out, inst)
 	}
+	// Name order, so a fan-out over candidates is deterministic.
+	slices.SortFunc(out, func(a, b Instance) int { return strings.Compare(a.Name, b.Name) })
 	return out, nil
 }
 
-func (m *MemoryGCE) StartInstance(_ context.Context, zone, name string) (Instance, error) {
+func (m *MemoryGCE) SetLabels(_ context.Context, zone, name string, labels map[string]string, fingerprint string) error {
 	m.mu.Lock()
 	defer m.mu.Unlock()
-	m.record("StartInstance(%s,%s)", zone, name)
-	if err := m.checkFail("StartInstance"); err != nil {
-		return Instance{}, err
+	m.record("SetLabels(%s,%s,%v)", zone, name, labels)
+	if err := m.checkFail("SetLabels"); err != nil {
+		return err
 	}
 	key := zone + "/" + name
 	inst, ok := m.instances[key]
 	if !ok {
-		return Instance{}, errors.New("instance not found")
-	}
-	delete(m.stopped, key)
-	// Real Compute can change the InternalIP on start; mint a fresh one
-	// so callers must use the returned value rather than the seeded one.
-	m.ipSeq++
-	inst.InternalIP = fmt.Sprintf("10.0.0.%d", m.ipSeq)
-	m.instances[key] = inst
-	return inst, nil
-}
-
-func (m *MemoryGCE) StopInstance(_ context.Context, zone, name string) error {
-	m.mu.Lock()
-	defer m.mu.Unlock()
-	m.record("StopInstance(%s,%s)", zone, name)
-	if err := m.checkFail("StopInstance"); err != nil {
-		return err
-	}
-	key := zone + "/" + name
-	if _, ok := m.instances[key]; !ok {
 		return errors.New("instance not found")
 	}
-	m.stopped[key] = true
+	if inst.LabelFingerprint != fingerprint {
+		return errors.New("labelFingerprint mismatch")
+	}
+	m.labels[key] = copyLabels(labels)
+	inst.Labels = copyLabels(labels)
+	inst.LabelFingerprint = fingerprint + "+"
+	m.instances[key] = inst
 	return nil
 }
 
