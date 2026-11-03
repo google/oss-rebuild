@@ -421,7 +421,7 @@ details.pop[open] > summary.cell { box-shadow: 0 0 0 2px var(--heading); }
 .muted { color: var(--muted); }
 .bar { background-color: var(--accent); height: 12px; border-radius: 2px; min-width: 1px; }
 .info { display: inline-block; position: relative; margin-left: 5px; width: 1.15em; height: 1.15em; line-height: 1.15em; border-radius: 50%; border: 1px solid var(--border); background: var(--fill); color: var(--muted); font-size: 0.72rem; font-weight: 600; text-align: center; vertical-align: middle; cursor: help; }
-.info::after { content: attr(data-tip); position: absolute; left: 50%; top: calc(100% + 6px); transform: translateX(-50%); width: max-content; max-width: 22em; padding: 6px 10px; border-radius: 4px; background: var(--heading); color: var(--bg); font-size: 0.8rem; font-weight: 400; line-height: 1.4; text-align: left; white-space: normal; display: none; z-index: 1; }
+.info::after { content: attr(data-tip); position: absolute; left: 50%; top: calc(100% + 6px); transform: translateX(-50%); width: max-content; max-width: 22em; padding: 6px 10px; border-radius: 4px; background: var(--heading); color: var(--bg); font-size: 0.8rem; font-weight: 400; letter-spacing: normal; text-transform: none; line-height: 1.4; text-align: left; white-space: normal; display: none; z-index: 1; }
 .info:hover::after, .info:focus-visible::after { display: block; }
 .info:focus-visible { outline-offset: 1px; }
 
