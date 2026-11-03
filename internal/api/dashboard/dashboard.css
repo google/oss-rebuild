@@ -482,6 +482,8 @@ summary:hover { color: var(--heading); }
 .hero-figure { font-size: 3.4rem; margin: 8px 0 6px; }
 .hero-sub { color: var(--secondary); margin-bottom: 18px; }
 .hero-sub b, .chart-sub b { color: var(--heading); }
+/* A clause that wraps as one unit, so a figure keeps its noun. */
+.nobreak { white-space: nowrap; }
 .chart-title { display: flex; align-items: center; font-weight: 600; color: var(--heading); font-size: 0.95rem; margin-bottom: 4px; }
 .chart-sub { color: var(--secondary); font-size: 0.85rem; }
 .chart-note { color: var(--muted); font-size: 0.8rem; }
