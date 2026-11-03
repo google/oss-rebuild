@@ -7,5 +7,8 @@
 // occupancy, so a restarted broker is empty. Exec records outlive their
 // guest until the session is deleted.
 //
+// Guests need no GCP credentials, so they get none. The host refuses them
+// the metadata server's API, which they would otherwise reach as the host.
+//
 // TODO: Serve multiple guests per host.
 package scratchhostservice
