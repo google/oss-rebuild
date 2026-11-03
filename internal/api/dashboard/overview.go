@@ -91,10 +91,8 @@ func loadActivity(a Analytics, where string) (Activity, error) {
 
 // Overview backs the coverage page's header band: each ecosystem's standing
 // across its packages in scope, how it got there, and the build activity
-// behind it. Every figure comes from derived tables, so AsOf is the watermark
-// of the rollup that materialized them.
+// behind it.
 type Overview struct {
-	AsOf     string
 	Total    EcoBand // all ecosystems in one band
 	Ecos     []EcoBand
 	Activity Activity // every day of the build history
@@ -151,9 +149,6 @@ func loadOverview(a Analytics) (*Overview, error) {
 	}
 	if len(o.Ecos) == 0 {
 		return nil, nil
-	}
-	if o.AsOf, err = rolledUpAt(a); err != nil {
-		return nil, err
 	}
 	// Hour buckets keep the series small.
 	err = forEachRow(a, `
