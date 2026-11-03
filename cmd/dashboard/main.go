@@ -51,6 +51,10 @@ var (
 	snapReader *rundex.SQLite        // process-level snapshot reader when -rundex is set
 	snapCache  dashboard.Analytics   // the snapshot cache, backing the trend views
 	snapReady  = make(chan struct{}) // closed once snapReader and snapCache are set
+
+	fsReader  *rundex.FirestoreClient // rundex reads when -rundex is empty
+	gcsClient *storage.Client         // set when a bucket flag is given
+	execs     db.ScratchExecs         // set when -project is given
 )
 
 func DashboardInit(ctx context.Context) (*dashboard.Deps, error) {
@@ -61,6 +65,8 @@ func DashboardInit(ctx context.Context) (*dashboard.Deps, error) {
 		BenchmarkName:  benchName,
 		SuccessRegex:   successPat,
 		Registry:       registry,
+		GCSClient:      gcsClient,
+		Execs:          execs,
 	}
 	if *rundexURI != "" {
 		select {
@@ -72,25 +78,9 @@ func DashboardInit(ctx context.Context) (*dashboard.Deps, error) {
 		deps.Sessions = snapReader
 		deps.Analytics = snapCache
 	} else {
-		rundexClient, err := rundex.NewFirestore(ctx, *project)
-		if err != nil {
-			return nil, err
-		}
-		deps.Rundex = rundexClient
-		deps.Sessions = rundexClient
+		deps.Rundex = fsReader
+		deps.Sessions = fsReader
 	}
-	if *logsBucket != "" || *sessionsBucket != "" {
-		storageClient, err := storage.NewClient(ctx)
-		if err != nil {
-			return nil, err
-		}
-		deps.GCSClient = storageClient
-	}
-	fsClient, err := firestore.NewClient(ctx, *project)
-	if err != nil {
-		return nil, err
-	}
-	deps.Execs = db.NewFirestoreScratchExecs(fsClient)
 	return deps, nil
 }
 
@@ -140,6 +130,25 @@ func main() {
 		log.Fatalf("Failed to create egress client: %v", err)
 	}
 	registry = meta.NewRegistryMux(egressClient)
+	if *rundexURI == "" {
+		fsReader, err = rundex.NewFirestore(context.Background(), *project)
+		if err != nil {
+			log.Fatalf("Failed to create rundex client: %v", err)
+		}
+	}
+	if *logsBucket != "" || *sessionsBucket != "" {
+		gcsClient, err = storage.NewClient(context.Background())
+		if err != nil {
+			log.Fatalf("Failed to create storage client: %v", err)
+		}
+	}
+	if *project != "" {
+		fs, err := firestore.NewClient(context.Background(), *project)
+		if err != nil {
+			log.Fatalf("Failed to create firestore client: %v", err)
+		}
+		execs = db.NewFirestoreScratchExecs(fs)
+	}
 	// Without a benchmark the index omits its status grid and recent-rebuild
 	// list, which suits a deployment that serves the whole snapshot.
 	if *bench != "" {
