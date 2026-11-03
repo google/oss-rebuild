@@ -94,7 +94,7 @@ func cibuildwheelSpecs(workflow []byte) []string {
 
 // extractCibuildwheelDependencies extracts system dependencies from
 // [tool.cibuildwheel] hooks and overrides in pyproject.toml under searchDir.
-func extractCibuildwheelDependencies(tree *git2.Tree, searchDir string, libc platform.LibcImpl) ([]string, error) {
+func extractCibuildwheelDependencies(tree *git2.Tree, searchDir string, tags WheelTags, libc platform.LibcImpl) ([]string, error) {
 	pyprojPath := path.Clean(path.Join(searchDir, "pyproject.toml"))
 	f, err := tree.File(pyprojPath)
 	if errors.Is(err, git2.ErrFileNotFound) {
@@ -122,7 +122,7 @@ func extractCibuildwheelDependencies(tree *git2.Tree, searchDir string, libc pla
 		tomlStrings(cfg.Linux.BeforeBuild),
 	)
 	for _, ov := range cfg.Overrides {
-		if overrideAppliesToTarget(ov.Select, libc) {
+		if overrideAppliesToTarget(ov.Select, tags, libc) {
 			scripts = append(scripts, tomlStrings(ov.BeforeAll)...)
 			scripts = append(scripts, tomlStrings(ov.BeforeBuild)...)
 		}
@@ -141,10 +141,12 @@ func extractCibuildwheelDependencies(tree *git2.Tree, searchDir string, libc pla
 func tomlStrings(v any) (out []string) {
 	switch v := v.(type) {
 	case string:
-		return []string{v}
+		if strings.TrimSpace(v) != "" {
+			return []string{v}
+		}
 	case []any:
 		for _, item := range v {
-			if s, ok := item.(string); ok {
+			if s, ok := item.(string); ok && strings.TrimSpace(s) != "" {
 				out = append(out, s)
 			}
 		}
@@ -152,39 +154,87 @@ func tomlStrings(v any) (out []string) {
 	return out
 }
 
-func overrideAppliesToTarget(selectVal any, libc platform.LibcImpl) bool {
+// maxBraceExpansions and maxSelectorLen bound the work brace expansion does on
+// a select pattern from an untrusted pyproject.toml.
+const (
+	maxBraceExpansions = 1024
+	maxSelectorLen     = 256
+)
+
+func overrideAppliesToTarget(selectVal any, tags WheelTags, libc platform.LibcImpl) bool {
+	if selectVal == nil {
+		return true
+	}
 	selectors := tomlStrings(selectVal)
-	return len(selectors) == 0 || slices.ContainsFunc(selectors, func(sel string) bool {
+	buildIDs := cibuildwheelBuildIDs(tags, libc)
+	// NOTE: cibuildwheel expands "{a,b}" braces before fnmatch and fnmatch
+	// negates character classes with "!" instead of "^".
+	return slices.ContainsFunc(selectors, func(sel string) bool {
 		return slices.ContainsFunc(strings.Fields(strings.ToLower(sel)), func(pat string) bool {
-			return selectorPatternApplies(pat, libc)
+			for _, expanded := range expandBraces(pat) {
+				glob := strings.ReplaceAll(expanded, "[!", "[^")
+				if slices.ContainsFunc(buildIDs, func(id string) bool {
+					matched, err := path.Match(glob, id)
+					return err == nil && matched
+				}) {
+					return true
+				}
+			}
+			return false
 		})
 	})
 }
 
-var (
-	nonLinuxTokens = []string{"macos", "win", "ios", "android", "pyodide"}
-	nonX8664Tokens = []string{"i686", "aarch64", "arm64", "armv7l", "ppc64le", "s390x", "riscv64"}
-)
-
-// selectorPatternApplies checks whether a cibuildwheel select glob (such as
-// "*-manylinux*" or "cp310-manylinux_x86_64") can match an x86_64 Linux target
-// with the given libc, using substring checks without consulting the Python tag.
-func selectorPatternApplies(pat string, libc platform.LibcImpl) bool {
-	contains := func(sub string) bool { return strings.Contains(pat, sub) }
-	if slices.ContainsFunc(nonLinuxTokens, contains) {
-		return false
-	}
-	if !contains("x86_64") && !contains("amd64") && slices.ContainsFunc(nonX8664Tokens, contains) {
-		return false
-	}
+// NOTE: platform.SelectBaseImage enforces x86_64 as the only supported architecture.
+// Generic "py3-none-manylinux*" wheel tags produce "py3-<os>_x86_64" identifiers and
+// skip "cp*" overrides, failing open to fewer inferred dependencies.
+func cibuildwheelBuildIDs(tags WheelTags, libc platform.LibcImpl) []string {
+	var osName string
 	switch libc {
 	case platform.Glibc:
-		return !contains("musllinux") || contains("manylinux")
+		osName = "manylinux"
 	case platform.Musl:
-		return !contains("manylinux") || contains("musllinux")
+		osName = "musllinux"
 	default:
-		return true
+		return nil
 	}
+	var ids []string
+	for pyTag := range strings.SplitSeq(strings.ToLower(cibuildwheelPythonTag(tags)), ".") {
+		if pyTag != "" {
+			ids = append(ids, pyTag+"-"+osName+"_x86_64")
+		}
+	}
+	return ids
+}
+
+// cibuildwheelPythonTag returns the Python selector prefix cibuildwheel uses in
+// build identifiers for a wheel's Python and ABI tags, such as "cp313t" for
+// free-threaded CPython wheels and "cp310" otherwise.
+func cibuildwheelPythonTag(tags WheelTags) string {
+	if strings.HasPrefix(tags.ABI, "cp") && strings.HasSuffix(tags.ABI, "t") {
+		return tags.ABI
+	}
+	return tags.Python
+}
+
+// expandBraces expands the unnested "{a,b}" groups in pat.
+func expandBraces(pat string) []string {
+	pre, rest, ok := strings.Cut(pat, "{")
+	group, post, closed := strings.Cut(rest, "}")
+	if !ok || !closed || len(pat) > maxSelectorLen {
+		return []string{pat}
+	}
+	tails := expandBraces(post)
+	var out []string
+	for _, alt := range strings.Split(group, ",") {
+		for _, tail := range tails {
+			if len(out) == maxBraceExpansions {
+				return out
+			}
+			out = append(out, pre+alt+tail)
+		}
+	}
+	return out
 }
 
 type pkgManager struct {

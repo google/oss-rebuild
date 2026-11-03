@@ -527,7 +527,7 @@ func inferBuild(ctx context.Context, t rebuild.Target, mux rebuild.RegistryMux, 
 		if err != nil {
 			return nil, errors.Wrapf(err, "determining target libc for wheel %s", a.Filename)
 		}
-		sysDeps, err := extractCibuildwheelDependencies(tree, dir, highest.LibcImpl)
+		sysDeps, err := extractCibuildwheelDependencies(tree, dir, tags, highest.LibcImpl)
 		if err != nil {
 			return nil, errors.Wrap(err, "extracting cibuildwheel dependencies")
 		}
