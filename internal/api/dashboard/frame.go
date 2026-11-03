@@ -7,7 +7,6 @@ import (
 	"context"
 	"fmt"
 	"strings"
-	"sync"
 	"time"
 
 	"github.com/google/oss-rebuild/pkg/act"
@@ -56,42 +55,43 @@ func (f Frame) Nav() []Section {
 func (f *Frame) setFrame(v Frame) { *f = v }
 
 // Framed fills the frame of the page h returns, for page data that embeds
-// Frame.
-func Framed[I act.Input, O any](h api.HandlerFn[I, O, *Deps]) api.HandlerFn[I, O, *Deps] {
+// Frame. The snapshot's figures come from pages like a top-level page's data.
+func Framed[I act.Input, O any](pages *SnapshotPages, h api.HandlerFn[I, O, *Deps]) api.HandlerFn[I, O, *Deps] {
+	snapshot := pages.snapshotFrame()
 	return func(ctx context.Context, req I, deps *Deps) (*O, error) {
 		o, err := h(ctx, req, deps)
 		if f, ok := any(o).(interface{ setFrame(Frame) }); ok && o != nil && err == nil {
-			f.setFrame(loadFrame(ctx, deps))
+			f.setFrame(loadFrame(ctx, snapshot, deps))
 		}
 		return o, err
 	}
 }
 
-// snapshotFrame caches the snapshot's figures, which change only with it.
-var snapshotFrame struct {
-	sync.Mutex
-	fresh time.Time
-	frame Frame
+// frameRequest keys the snapshot's figures, of which there is one set.
+type frameRequest struct{}
+
+func (frameRequest) Validate() error { return nil }
+
+// snapshotFrame serves the snapshot's figures, which change only with it.
+func (s *SnapshotPages) snapshotFrame() api.HandlerFn[frameRequest, Frame, *Deps] {
+	s.frameOnce.Do(func() {
+		s.frame = PerSnapshot(s, func(_ context.Context, _ frameRequest, deps *Deps) (*Frame, error) {
+			f, err := loadSnapshotFrame(deps.Analytics)
+			return &f, err
+		}, nil)
+	})
+	return s.frame
 }
 
 // loadFrame reads the sidebar's figures. A figure that fails to load is left
 // out rather than failing the page.
-func loadFrame(ctx context.Context, deps *Deps) Frame {
+func loadFrame(ctx context.Context, snapshot api.HandlerFn[frameRequest, Frame, *Deps], deps *Deps) Frame {
 	f := Frame{Sections: append([]Section(nil), sections...)}
-	if a := deps.Analytics; a != nil {
-		snapshotFrame.Lock()
-		if fresh := a.Freshness(); !fresh.Equal(snapshotFrame.fresh) {
-			if sf, err := loadSnapshotFrame(a); err == nil {
-				snapshotFrame.fresh, snapshotFrame.frame = fresh, sf
-			} else {
-				snapshotFrame.fresh, snapshotFrame.frame = time.Time{}, Frame{}
-			}
-		}
-		if sf := snapshotFrame.frame; sf.Sections != nil {
+	if deps.Analytics != nil {
+		if sf, err := snapshot(ctx, frameRequest{}, deps); err == nil {
 			f.AsOf = sf.AsOf
 			copy(f.Sections, sf.Sections)
 		}
-		snapshotFrame.Unlock()
 	}
 	return f
 }

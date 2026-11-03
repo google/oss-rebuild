@@ -27,11 +27,13 @@ const (
 )
 
 // SnapshotPages holds the data of pages that read nothing but the snapshot,
-// each computed once per snapshot version and request. A page renders per
-// request from a copy of its data, so the frame's live figures and relative
-// times stay current.
+// each computed once per snapshot version and request, and the snapshot's
+// figures in every page's frame. A page renders per request from a copy of
+// its data, so the frame's live figures and relative times stay current.
 type SnapshotPages struct {
-	pages []warmer
+	pages     []warmer
+	frameOnce sync.Once
+	frame     api.HandlerFn[frameRequest, Frame, *Deps]
 }
 
 // warmer is a page whose data Warm keeps current.
