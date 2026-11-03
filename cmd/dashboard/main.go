@@ -9,9 +9,12 @@ import (
 	"fmt"
 	"log"
 	"net/http"
+	"os"
+	"os/signal"
 	"path/filepath"
 	"regexp"
 	"strconv"
+	"syscall"
 	"time"
 
 	"cloud.google.com/go/firestore"
@@ -116,6 +119,11 @@ func main() {
 			snapReader = rundex.NewSQLite(cache)
 			close(snapReady)
 			log.Printf("Serving rundex reads from %s (fresh through %s)", *rundexURI, cache.Freshness().Format(time.RFC3339))
+			stop := make(chan os.Signal, 1)
+			signal.Notify(stop, syscall.SIGTERM, os.Interrupt)
+			<-stop
+			cache.Close() // removes the local snapshot copy
+			os.Exit(0)
 		}()
 	}
 	if *logsBucket == "" {

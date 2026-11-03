@@ -11,6 +11,7 @@ import (
 	"os"
 	"path/filepath"
 	"sync"
+	"syscall"
 	"time"
 
 	"github.com/go-git/go-billy/v5"
@@ -64,11 +65,16 @@ type Cache struct {
 	applied string // newest applied segment name
 }
 
+// cacheDirPrefix and the owner's pid start each cache directory's name, so a
+// later cache can tell a dead owner's copy from a live one.
+const cacheDirPrefix = "docdb-cache-"
+
 // OpenCache hydrates a cache of up's base object and refreshes it in the
 // background every interval until Close. A base from any era but
 // up.Schema is refused.
 func OpenCache(ctx context.Context, up Upstream, interval time.Duration) (*Cache, error) {
-	dir, err := os.MkdirTemp("", "docdb-cache-")
+	sweepOrphans()
+	dir, err := os.MkdirTemp("", fmt.Sprintf("%s%d-", cacheDirPrefix, os.Getpid()))
 	if err != nil {
 		return nil, errors.Wrap(err, "creating cache directory")
 	}
@@ -119,6 +125,29 @@ func (c *Cache) Close() error {
 		c.db = nil
 	}
 	return os.RemoveAll(c.dir)
+}
+
+// sweepOrphans removes the cache directories of processes that died without
+// Close. Each holds a full copy until the temp directory is cleared.
+func sweepOrphans() {
+	dirs, _ := filepath.Glob(filepath.Join(os.TempDir(), cacheDirPrefix+"*"))
+	for _, dir := range dirs {
+		var pid int
+		if _, err := fmt.Sscanf(filepath.Base(dir), cacheDirPrefix+"%d-", &pid); err != nil || alive(pid) {
+			continue
+		}
+		os.RemoveAll(dir)
+	}
+}
+
+// alive reports whether a process with pid may exist. Only a confirmed exit
+// reads as dead. A reused pid reads as alive, which delays its sweep.
+func alive(pid int) bool {
+	p, err := os.FindProcess(pid)
+	if err != nil {
+		return false
+	}
+	return !errors.Is(p.Signal(syscall.Signal(0)), os.ErrProcessDone)
 }
 
 func (c *Cache) refreshLoop(ctx context.Context) {
