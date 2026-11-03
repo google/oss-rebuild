@@ -18,7 +18,9 @@ type Retrier struct {
 
 // Do calls fn until it succeeds, returns an error not configured to retry, or
 // runs out of attempts. The last fn invocation's error is returned unwrapped.
-// A context cancellation during wait is returned wrapped.
+// A context cancellation during wait is returned wrapped. An attempt that ends
+// in its own deadline while ctx is live, such as a request timeout, is retried
+// whatever Retryable says.
 func (r Retrier) Do(ctx context.Context, fn func() error) error {
 	if r.Limiter == nil { // no limiter configured
 		return fn()
@@ -33,10 +35,16 @@ func (r Retrier) Do(ctx context.Context, fn func() error) error {
 			r.Limiter.Success()
 			return nil
 		}
-		if r.Retryable != nil && !r.Retryable(err) {
+		if r.Retryable != nil && !r.Retryable(err) && !attemptTimedOut(ctx, err) {
 			return err
 		}
 		r.Limiter.Backoff()
 	}
 	return err
+}
+
+// attemptTimedOut reports whether err is a deadline the attempt set for itself:
+// with ctx still live, the deadline cannot be the caller's.
+func attemptTimedOut(ctx context.Context, err error) bool {
+	return errors.Is(err, context.DeadlineExceeded) && ctx.Err() == nil
 }

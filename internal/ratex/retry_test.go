@@ -107,3 +107,32 @@ func TestDoWithoutLimiter(t *testing.T) {
 		t.Errorf("err = %v, want errTerminal", err)
 	}
 }
+
+func TestDoRetriesAttemptDeadline(t *testing.T) {
+	// A request timeout surfaces as DeadlineExceeded, which a Retryable that
+	// guards caller cancellation refuses. With ctx live it is the attempt's own.
+	var calls int
+	err := newTestRetrier(3, func(error) bool { return false }).Do(context.Background(), func() error {
+		if calls++; calls == 1 {
+			return errors.Wrap(context.DeadlineExceeded, "doRequest")
+		}
+		return nil
+	})
+	if err != nil || calls != 2 {
+		t.Errorf("err = %v after %d calls, want success on the second", err, calls)
+	}
+}
+
+func TestDoStopsOnCallerDeadline(t *testing.T) {
+	ctx, cancel := context.WithTimeout(context.Background(), time.Millisecond)
+	defer cancel()
+	var calls int
+	err := newTestRetrier(3, func(error) bool { return false }).Do(ctx, func() error {
+		calls++
+		<-ctx.Done()
+		return ctx.Err()
+	})
+	if !errors.Is(err, context.DeadlineExceeded) || calls != 1 {
+		t.Errorf("err = %v after %d calls, want the caller's deadline after one", err, calls)
+	}
+}
