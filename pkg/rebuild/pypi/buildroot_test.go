@@ -103,7 +103,7 @@ func readWheel(t *testing.T, entries ...archive.ZipEntry) *zip.Reader {
 	return must(zip.NewReader(bytes.NewReader(whl), int64(len(whl))))
 }
 
-func TestCandidateRoots(t *testing.T) {
+func TestCandidatePaths(t *testing.T) {
 	files := map[string]bool{
 		"pkg/_speedups.c":           true,
 		"pkg/_parser.c":             true,
@@ -181,15 +181,15 @@ func TestCandidateRoots(t *testing.T) {
 	}
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
-			gotDWARF, gotRodata, skipped := candidateRoots(readWheel(t, tc.entries...), files)
-			if diff := cmp.Diff(tc.wantDWARF, gotDWARF); diff != "" {
-				t.Errorf("candidateRoots() DWARF diff (-want +got):\n%s", diff)
+			dwarfPaths, rodataPaths, skipped := candidatePaths(readWheel(t, tc.entries...), files)
+			if diff := cmp.Diff(tc.wantDWARF, dwarfPaths.roots); diff != "" {
+				t.Errorf("candidatePaths() DWARF diff (-want +got):\n%s", diff)
 			}
-			if diff := cmp.Diff(tc.wantRodata, gotRodata); diff != "" {
-				t.Errorf("candidateRoots() .rodata diff (-want +got):\n%s", diff)
+			if diff := cmp.Diff(tc.wantRodata, rodataPaths.roots); diff != "" {
+				t.Errorf("candidatePaths() .rodata diff (-want +got):\n%s", diff)
 			}
 			if len(skipped) != tc.wantSkipped {
-				t.Errorf("candidateRoots() skipped %d sections, want %d: %v", len(skipped), tc.wantSkipped, skipped)
+				t.Errorf("candidatePaths() skipped %d sections, want %d: %v", len(skipped), tc.wantSkipped, skipped)
 			}
 		})
 	}
@@ -431,4 +431,68 @@ func TestMostCommonRootOfRodataPaths(t *testing.T) {
 			}
 		})
 	}
+}
+
+// elfWithLineFiles returns a minimal ELF shared object with a DWARF line table
+// of the given version containing the given include directory and file names.
+func elfWithLineFiles(version uint16, compDir, includeDir string, fileNames ...string) []byte {
+	const (
+		formString    = 0x08
+		formUdata     = 0x0f
+		formSecOffset = 0x17
+		lnctPath      = 0x1
+		lnctDirIndex  = 0x2
+	)
+	abbrev := []byte{1, byte(dwarf.TagCompileUnit), 0, byte(dwarf.AttrCompDir), formString, byte(dwarf.AttrStmtList), formSecOffset, 0, 0, 0}
+	die := binary.LittleEndian.AppendUint32(slices.Concat([]byte{1}, []byte(compDir), []byte{0}), 0)
+	var cuHeader, lineHeader, tables []byte
+	dirIdx := byte(0)
+	if version >= 5 {
+		cuHeader = binary.LittleEndian.AppendUint16(nil, version)
+		cuHeader = append(cuHeader, 1, 8) // DW_UT_compile, address size
+		cuHeader = binary.LittleEndian.AppendUint32(cuHeader, 0)
+		lineHeader = binary.LittleEndian.AppendUint16(nil, version)
+		lineHeader = append(lineHeader, 8, 0) // address size, segment selector size
+		// DWARF 5 lists DW_AT_comp_dir as directory 0 and describes the fields
+		// of each directory and file entry.
+		dirs := []string{compDir}
+		if includeDir != "" {
+			dirs = append(dirs, includeDir)
+			dirIdx = 1
+		}
+		tables = append(tables, 1, lnctPath, formString, byte(len(dirs)))
+		for _, d := range dirs {
+			tables = append(append(tables, d...), 0)
+		}
+		tables = append(tables, 2, lnctPath, formString, lnctDirIndex, formUdata, byte(len(fileNames)))
+		for _, f := range fileNames {
+			tables = append(append(tables, f...), 0, dirIdx)
+		}
+	} else {
+		cuHeader = binary.LittleEndian.AppendUint16(nil, version)
+		cuHeader = binary.LittleEndian.AppendUint32(cuHeader, 0)
+		cuHeader = append(cuHeader, 8)
+		lineHeader = binary.LittleEndian.AppendUint16(nil, version)
+		if includeDir != "" {
+			tables = append(append(tables, includeDir...), 0)
+			dirIdx = 1
+		}
+		tables = append(tables, 0)
+		for _, f := range fileNames {
+			tables = append(append(tables, f...), 0, dirIdx, 0, 0)
+		}
+		tables = append(tables, 0)
+	}
+	info := binary.LittleEndian.AppendUint32(nil, uint32(len(cuHeader)+len(die)))
+	info = append(append(info, cuHeader...), die...)
+	headerBody := append([]byte{1, 1, 1, 1, 1, 1}, tables...)
+	lineSec := binary.LittleEndian.AppendUint32(nil, uint32(len(lineHeader)+4+len(headerBody)))
+	lineSec = append(lineSec, lineHeader...)
+	lineSec = binary.LittleEndian.AppendUint32(lineSec, uint32(len(headerBody)))
+	lineSec = append(lineSec, headerBody...)
+	return buildELF(
+		elfSection{".debug_abbrev", elf.SHT_PROGBITS, abbrev},
+		elfSection{".debug_info", elf.SHT_PROGBITS, info},
+		elfSection{".debug_line", elf.SHT_PROGBITS, lineSec},
+	)
 }

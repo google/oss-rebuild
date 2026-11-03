@@ -982,12 +982,190 @@ func TestInferBuildRoot(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			zr := readWheel(t, zipEntry("pkg/module.cpython-312-x86_64-linux-gnu.so", string(tt.module)))
-			got, err := inferBuildRoot(zr, tree, tt.usesCibuildwheel)
+			got, _, err := inferBuildPaths(zr, tree, tt.usesCibuildwheel)
 			if err != nil {
-				t.Fatalf("inferBuildRoot(%t) returned error: %v", tt.usesCibuildwheel, err)
+				t.Fatalf("inferBuildPaths(%t) returned error: %v", tt.usesCibuildwheel, err)
 			}
 			if got != tt.want {
-				t.Errorf("inferBuildRoot(%t) = %q, want %q", tt.usesCibuildwheel, got, tt.want)
+				t.Errorf("inferBuildPaths(%t) build root = %q, want %q", tt.usesCibuildwheel, got, tt.want)
+			}
+		})
+	}
+}
+
+func TestInferBuildEnvPath(t *testing.T) {
+	repo := must(gitxtest.CreateRepo([]gitxtest.Commit{{ID: "initial-commit", Files: gitxtest.FileContent{
+		"pyproject.toml": "",
+	}}}, nil))
+	tree := must(must(repo.Repository.CommitObject(git2.Hash(repo.Commits["initial-commit"]))).Tree())
+	tests := []struct {
+		name    string
+		entries []archive.ZipEntry
+		want    string
+	}{
+		{
+			name: "DWARFLineTableBuildEnv",
+			entries: []archive.ZipEntry{
+				zipEntry("pkg/move.cpython-310-x86_64-linux-gnu.so", string(elfWithLineFiles(4,
+					"/project",
+					"/tmp/build-env-v9c0qwj_/lib/python3.10/site-packages/numpy/_core/include/numpy",
+					"__multiarray_api.h",
+					"ndarraytypes.h",
+				))),
+			},
+			want: "/tmp/build-env-v9c0qwj_",
+		},
+		{
+			name: "DWARFLineTablePipBuildEnvOverlay",
+			entries: []archive.ZipEntry{
+				zipEntry("pkg/ext.cpython-311-x86_64-linux-gnu.so", string(elfWithLineFiles(4,
+					"/project",
+					"/tmp/pip-build-env-zeqt36e6/overlay/lib/python3.11/site-packages/numpy/_core/include/numpy",
+					"__multiarray_api.h",
+				))),
+			},
+			want: "/tmp/pip-build-env-zeqt36e6/overlay",
+		},
+		{
+			name: "DWARFLineTablePipBuildEnvNormal",
+			entries: []archive.ZipEntry{
+				zipEntry("pkg/ext.cpython-311-x86_64-linux-gnu.so", string(elfWithLineFiles(4,
+					"/project",
+					"/tmp/pip-build-env-zeqt36e6/normal/lib/python3.11/site-packages/numpy/_core/include/numpy",
+					"__multiarray_api.h",
+				))),
+			},
+			want: "/tmp/pip-build-env-zeqt36e6/normal",
+		},
+		{
+			name: "BarePipBuildEnvIgnored",
+			entries: []archive.ZipEntry{
+				zipEntry("pkg/ext.cpython-311-x86_64-linux-gnu.so", string(elfWithLineFiles(4,
+					"/project",
+					"/tmp/pip-build-env-zeqt36e6/lib/python3.11/site-packages/numpy/_core/include/numpy",
+					"__multiarray_api.h",
+				))),
+			},
+			want: "",
+		},
+		{
+			name: "NonRootTmpParentIgnored",
+			entries: []archive.ZipEntry{
+				zipEntry("pkg/ext.cpython-311-x86_64-linux-gnu.so", string(elfWithUnits(
+					compileUnit{Name: "/var/tmp/build-env-abc123/lib/python3.11/site-packages/numpy/x.h", CompDir: "/project"},
+					compileUnit{Name: "../../tmp/build-env-abc123/lib/python3.11/site-packages/numpy/x.h", CompDir: "/home/runner/work/pkg"},
+				))),
+				zipEntry("pkg/other.cpython-311-x86_64-linux-gnu.so", string(elfWithRodata(
+					"/home/runner/tmp/pip-build-env-abc123/overlay/lib/x.h",
+				))),
+			},
+			want: "",
+		},
+		{
+			name: "DWARF5ParentRelativeIncludeDir",
+			entries: []archive.ZipEntry{
+				zipEntry("pkg/ext.cpython-311-x86_64-linux-gnu.so", string(elfWithLineFiles(5,
+					"/project/build/cp311",
+					"../../../tmp/pip-build-env-zeqt36e6/overlay/lib/python3.11/site-packages/numpy/_core/include/numpy",
+					"__multiarray_api.h",
+				))),
+			},
+			want: "/tmp/pip-build-env-zeqt36e6/overlay",
+		},
+		{
+			name: "DWARF5ParentRelativeIncludeDirOutsideTmp",
+			entries: []archive.ZipEntry{
+				zipEntry("pkg/ext.cpython-311-x86_64-linux-gnu.so", string(elfWithLineFiles(5,
+					"/home/runner/work/pkg",
+					"../../tmp/build-env-abc123/lib/python3.11/site-packages/numpy",
+					"x.h",
+				))),
+			},
+			want: "",
+		},
+		{
+			name: "DWARFCompileUnitName",
+			entries: []archive.ZipEntry{
+				zipEntry("pkg/ext.cpython-312-x86_64-linux-gnu.so", string(elfWithUnits(
+					compileUnit{Name: "/tmp/build-env-ozbs0crl/lib/python3.12/site-packages/mypyc/lib-rt/init.c", CompDir: "/project"},
+				))),
+			},
+			want: "/tmp/build-env-ozbs0crl",
+		},
+		{
+			name: "DWARFRelativeNameUnderTmpCompDir",
+			entries: []archive.ZipEntry{
+				zipEntry("pkg/ext.cpython-312-x86_64-linux-gnu.so", string(elfWithUnits(
+					compileUnit{Name: "build-env-rel123/lib/python3.12/site-packages/mypyc/lib-rt/init.c", CompDir: "/tmp"},
+				))),
+			},
+			want: "/tmp/build-env-rel123",
+		},
+		{
+			name: "MajorityAndPerCompileUnitDeduplication",
+			entries: []archive.ZipEntry{
+				zipEntry("pkg/a.cpython-312-x86_64-linux-gnu.so", string(elfWithLineFiles(4,
+					"/tmp/build-env-aaa111/work",
+					"/tmp/build-env-aaa111/lib/python3.12/site-packages/numpy/_core/include/numpy",
+					"__multiarray_api.h",
+					"ndarraytypes.h",
+				))),
+				zipEntry("pkg/b.cpython-312-x86_64-linux-gnu.so", string(elfWithUnits(
+					compileUnit{Name: "/tmp/build-env-zzz999/lib/python3.12/site-packages/mypyc/lib-rt/init.c", CompDir: "/project"},
+					compileUnit{Name: "/tmp/build-env-zzz999/lib/python3.12/site-packages/mypyc/lib-rt/misc_ops.c", CompDir: "/project"},
+				))),
+			},
+			want: "/tmp/build-env-zzz999",
+		},
+		{
+			name: "LexicalTieBreak",
+			entries: []archive.ZipEntry{
+				zipEntry("pkg/a.cpython-312-x86_64-linux-gnu.so", string(elfWithUnits(
+					compileUnit{Name: "/tmp/build-env-bbb222/lib/python3.12/site-packages/mypyc/lib-rt/init.c", CompDir: "/project"},
+					compileUnit{Name: "/tmp/build-env-aaa111/lib/python3.12/site-packages/mypyc/lib-rt/init.c", CompDir: "/project"},
+				))),
+			},
+			want: "/tmp/build-env-aaa111",
+		},
+		{
+			name: "RodataRelativePipBuildEnv",
+			entries: []archive.ZipEntry{
+				zipEntry("pkg/algos.cpython-311-x86_64-linux-gnu.so", string(elfWithRodata(
+					"../../tmp/pip-build-env-6nsnua45/overlay/lib/python3.11/site-packages/numpy/__init__.cython-30.pxd",
+				))),
+			},
+			want: "/tmp/pip-build-env-6nsnua45/overlay",
+		},
+		{
+			name: "DWARFTakesPrecedenceOverRodata",
+			entries: []archive.ZipEntry{
+				zipEntry("pkg/ext.cpython-312-x86_64-linux-gnu.so", string(elfWithUnits(
+					compileUnit{Name: "/tmp/build-env-dwarf123/lib/python3.12/site-packages/mypyc/lib-rt/init.c", CompDir: "/project"},
+				))),
+				zipEntry("pkg/other.cpython-312-x86_64-linux-gnu.so", string(elfWithRodata(
+					"/tmp/build-env-rodata99/lib/python3.12/site-packages/numpy/__init__.pxd",
+				))),
+			},
+			want: "/tmp/build-env-dwarf123",
+		},
+		{
+			name: "NoBuildEnvPath",
+			entries: []archive.ZipEntry{
+				zipEntry("pkg/ext.cpython-312-x86_64-linux-gnu.so", string(elfWithUnits(
+					compileUnit{Name: "src/module.c", CompDir: "/project"},
+				))),
+			},
+			want: "",
+		},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			_, got, err := inferBuildPaths(readWheel(t, tc.entries...), tree, false)
+			if err != nil {
+				t.Fatalf("inferBuildPaths() returned error: %v", err)
+			}
+			if got != tc.want {
+				t.Errorf("inferBuildPaths() build env path = %q, want %q", got, tc.want)
 			}
 		})
 	}

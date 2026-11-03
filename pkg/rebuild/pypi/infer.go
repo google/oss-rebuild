@@ -552,9 +552,9 @@ func inferBuild(ctx context.Context, t rebuild.Target, mux rebuild.RegistryMux, 
 		if err != nil {
 			return nil, errors.Wrap(err, "extracting cibuildwheel specs")
 		}
-		buildRoot, err := inferBuildRoot(zr, tree, usesCibw)
+		buildRoot, buildEnvPath, err := inferBuildPaths(zr, tree, usesCibw)
 		if err != nil {
-			return nil, errors.Wrap(err, "inferring build root")
+			return nil, errors.Wrap(err, "inferring build paths")
 		}
 		return &PlatformWheelBuild{
 			Location: rebuild.Location{
@@ -571,6 +571,7 @@ func inferBuild(ctx context.Context, t rebuild.Target, mux rebuild.RegistryMux, 
 			RegistryTime: a.UploadTime,
 			BaseImage:    inferBaseImage(platform.CibuildwheelPins, tags.Platform, a.UploadTime, cibwSpecs...),
 			BuildRoot:    buildRoot,
+			BuildEnvPath: buildEnvPath,
 		}, nil
 	} else {
 		return &PureWheelBuild{
@@ -624,37 +625,46 @@ func inferBaseImage(pins platform.CibuildwheelPinTable, platformTag string, uplo
 	return ref
 }
 
-// inferBuildRoot returns the absolute path that upstream built the repository
-// at, or "" to build in the checkout. In order of precedence:
+// inferBuildPaths returns the absolute path that upstream built the repository
+// at, or "" to build in the checkout, and the isolated build environment path
+// that upstream installed build dependencies into, or "" if the wheel records
+// none. The build root comes from, in order of precedence:
 //  1. The root recorded in DWARF debug info.
 //  2. The root recorded in .rodata source paths.
 //  3. cibuildwheel's project directory, if the project's CI runs cibuildwheel.
-func inferBuildRoot(zr *zip.Reader, tree *git2.Tree, usesCibuildwheel bool) (string, error) {
+//
+// The build environment path comes from DWARF debug info, or else .rodata.
+func inferBuildPaths(zr *zip.Reader, tree *git2.Tree, usesCibuildwheel bool) (buildRoot, buildEnvPath string, err error) {
 	files, err := repoFiles(tree)
 	if err != nil {
-		return "", errors.Wrap(err, "listing repository files")
+		return "", "", errors.Wrap(err, "listing repository files")
 	}
-	dwarfRoots, rodataRoots, skipped := candidateRoots(zr, files)
+	dwarfPaths, rodataPaths, skipped := candidatePaths(zr, files)
 	if len(skipped) > 0 {
-		log.Printf("Skipped %d sections that could not be read while inferring the build root, first: %v", len(skipped), skipped[0])
+		log.Printf("Skipped %d sections that could not be read while inferring build paths, first: %v", len(skipped), skipped[0])
 	}
-	root, source := mostCommon(dwarfRoots), "DWARF"
-	if root == "" {
-		root, source = mostCommon(rodataRoots), ".rodata"
+	buildRoot, source := mostCommon(dwarfPaths.roots), "DWARF"
+	if buildRoot == "" {
+		buildRoot, source = mostCommon(rodataPaths.roots), ".rodata"
 	}
 	switch {
-	case root == checkoutDir:
-		log.Printf("Upstream built in %s (from %s), which is the checkout, so no build root is needed", root, source)
-		return "", nil
-	case root != "":
-		log.Printf("Using build root %s from %s", root, source)
-		return root, nil
+	case buildRoot == checkoutDir:
+		log.Printf("Upstream built in %s (from %s), which is the checkout, so no build root is needed", buildRoot, source)
+		buildRoot = ""
+	case buildRoot != "":
+		log.Printf("Using build root %s from %s", buildRoot, source)
 	case usesCibuildwheel:
 		log.Printf("No build root in the wheel, using %s, where cibuildwheel copies the project", cibuildwheelProjectDir)
-		return cibuildwheelProjectDir, nil
-	default:
-		return "", nil
+		buildRoot = cibuildwheelProjectDir
 	}
+	buildEnvPath, source = mostCommon(dwarfPaths.envPaths), "DWARF"
+	if buildEnvPath == "" {
+		buildEnvPath, source = mostCommon(rodataPaths.envPaths), ".rodata"
+	}
+	if buildEnvPath != "" {
+		log.Printf("Using build env path %s from %s", buildEnvPath, source)
+	}
+	return buildRoot, buildEnvPath, nil
 }
 
 var (
