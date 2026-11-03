@@ -482,8 +482,16 @@ func dockerExecInContainerScript(command string) string {
 	return `c=$(docker ps -aq --filter name=^rb- | head -1); ` +
 		`[ -n "$c" ] || { echo 'no build container found; run a build first' >&2; exit 125; }; ` +
 		`docker start "$c" >/dev/null; ` +
+		`docker exec "$c" /bin/sh -c ` + posixSingleQuote(serveTimewarp) + `; ` +
 		`exec docker exec -w /src "$c" /bin/sh -c ` + posixSingleQuote(command)
 }
+
+// serveTimewarp starts the build's timewarp if it is not serving. The
+// container's registry config points at it, but it ran only during the deps
+// phase, and restarting the stopped container does not restart it.
+const serveTimewarp = `[ -x /timewarp ] && command -v nc >/dev/null || exit 0; nc -z localhost 8080 2>/dev/null && exit 0; ` +
+	`/timewarp -port 8080 >/dev/null 2>&1 & ` +
+	`i=0; while ! nc -z localhost 8080 2>/dev/null && [ $i -lt 20 ]; do sleep 0.5; i=$((i+1)); done; exit 0`
 
 // posixSingleQuote renders s as a single-quoted POSIX sh word, escaping any
 // embedded single quotes.
