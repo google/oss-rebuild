@@ -575,6 +575,7 @@ func inferBuild(ctx context.Context, t rebuild.Target, mux rebuild.RegistryMux, 
 			SystemDeps:   sysDeps,
 			RegistryTime: a.UploadTime,
 			BaseImage:    inferBaseImage(platform.CibuildwheelPins, tags.Platform, a.UploadTime, cibwSpecs...),
+			BuildRoot:    inferBuildRoot(zr, tree),
 		}, nil
 	} else {
 		return &PureWheelBuild{
@@ -626,6 +627,35 @@ func inferBaseImage(pins platform.CibuildwheelPinTable, platformTag string, uplo
 	}
 	log.Printf("Using base image %s pinned by cibuildwheel %s", ref, version)
 	return ref
+}
+
+// inferBuildRoot returns the absolute path that upstream built the repository
+// at, as recorded in the debug info of the wheel's extension modules. It
+// returns an empty string, which builds in the checkout, if the debug info
+// records no usable root or the checkout itself.
+func inferBuildRoot(zr *zip.Reader, tree *git2.Tree) string {
+	units, skipped := compileUnits(zr)
+	if len(skipped) > 0 {
+		log.Printf("Skipped %d modules without readable debug info while inferring the build root, first: %v", len(skipped), skipped[0])
+	}
+	if len(units) == 0 {
+		return ""
+	}
+	files, err := repoFiles(tree)
+	if err != nil {
+		log.Println(errors.Wrap(err, "Failed to list repository files while inferring the build root"))
+		return ""
+	}
+	switch root := mostCommonBuildRoot(units, files); root {
+	case "":
+		return ""
+	case checkoutDir:
+		log.Printf("Upstream built in %s, which is the checkout, so no build root is needed", root)
+		return ""
+	default:
+		log.Printf("Using build root %s from DWARF", root)
+		return root
+	}
 }
 
 var (
