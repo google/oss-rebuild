@@ -373,7 +373,7 @@ func runIterations(ctx context.Context, req RunSessionReq, iterNum int, a Agent,
 			}
 			var gu gaveUp
 			if errors.As(err, &gu) {
-				return &schema.AgentCompleteRequest{StopReason: schema.AgentCompleteReasonGaveUp, Summary: "Gave up: " + gu.Reason}
+				return &schema.AgentCompleteRequest{StopReason: schema.AgentCompleteReasonGaveUp, Summary: "Gave up: " + gu.Reason, Closest: gu.Closest}
 			}
 			if llm.IsTransient(err) {
 				transientErrs++

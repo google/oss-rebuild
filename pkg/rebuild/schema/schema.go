@@ -622,14 +622,21 @@ const (
 	AgentWonByAgent     = "agent"     // the LLM's own proposal or handoff
 )
 
+// AgentCandidate is a candidate artifact a session compared with upstream.
+type AgentCandidate struct {
+	Path    string `json:"path" firestore:"path,omitempty"`
+	Entries int    `json:"entries" firestore:"entries,omitempty"` // differing summary entries, 0 if only bytes differ
+}
+
 // AgentCompleteRequest finalizes session with results
 type AgentCompleteRequest struct {
-	SessionID          string      `form:",required"`
-	StopReason         string      `form:",required"`
-	SuccessIterationID string      `form:""`
-	WonBy              string      `form:""` // on success, an AgentWonBy value
-	Summary            string      `form:""`
-	Usage              *TokenUsage `form:""` // total LLM tokens consumed across the session
+	SessionID          string          `form:",required"`
+	StopReason         string          `form:",required"`
+	SuccessIterationID string          `form:""`
+	WonBy              string          `form:""` // on success, an AgentWonBy value
+	Summary            string          `form:""`
+	Closest            *AgentCandidate `form:""` // on give-up, the closest candidate the job compared
+	Usage              *TokenUsage     `form:""` // total LLM tokens consumed across the session
 }
 
 var _ api.Input = AgentCompleteRequest{}
@@ -663,6 +670,7 @@ type AgentSession struct {
 	SuccessIteration       string             `firestore:"success_iteration,omitempty"`
 	WonBy                  string             `firestore:"won_by,omitempty"` // on success, an AgentWonBy value
 	Summary                string             `firestore:"summary,omitempty"`
+	Closest                *AgentCandidate    `firestore:"closest,omitempty"` // on give-up, the closest candidate the job compared
 }
 
 // AgentIteration stores iteration metadata in Firestore
