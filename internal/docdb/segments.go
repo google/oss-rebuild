@@ -129,13 +129,14 @@ func ListSegments(src billy.Filesystem, prefix, start string) ([]string, error) 
 
 // ApplySegment applies one of src's segments to db with the same guarded
 // upserts the table writes use, so replaying a segment, applying one twice,
-// or applying out of order can never regress a row.
+// or applying out of order can never regress a row, and re-derives the
+// derived tables for what it touched.
 func ApplySegment(db *sqlite3.Conn, src billy.Basic, defs []TableDef, name string) error {
 	recs, err := fetchSegment(src, name)
 	if err != nil {
 		return err
 	}
-	return applyRecords(db, defs, recs)
+	return applySegments(db, defs, []segment{{name: name, recs: recs}})
 }
 
 // fetchSegment reads and parses one segment's records.
@@ -170,34 +171,69 @@ func fetchSegment(src billy.Basic, name string) ([]deltaRecord, error) {
 	return recs, errors.Wrap(sc.Err(), "scanning segment")
 }
 
-// applyRecords applies one segment's records to db in a single transaction
-// with the guarded upserts the table writes use.
-func applyRecords(db *sqlite3.Conn, defs []TableDef, recs []deltaRecord) (err error) {
-	stmts := map[string]*sqlite3.Stmt{}
+// applySegments applies the segments' records to db with the guarded
+// upserts the table writes use, recording each document's key as touched,
+// then re-derives the derived tables for what was touched. All of it is one
+// transaction, so a reader sees the state before every segment or after all
+// of them, and a failure leaves the copy as it was.
+// NOTE: A copy built from an earlier revision of defs lacks the columns and
+// tables a scoped refresh writes, so every apply fails and rolls back until
+// a copy built from this revision replaces it.
+func applySegments(db *sqlite3.Conn, defs []TableDef, segs []segment) (err error) {
+	// Each doc table's statements: the upsert, then the touch.
+	stmts := map[string][2]*sqlite3.Stmt{}
 	defer func() {
-		for _, stmt := range stmts {
-			stmt.Close()
+		for _, pair := range stmts {
+			for _, stmt := range pair {
+				stmt.Close()
+			}
 		}
 	}()
 	txn := db.Begin()
 	defer txn.End(&err)
-	for _, rec := range recs {
-		stmt, ok := stmts[rec.Table]
-		if !ok {
-			td, err := docTableDef(defs, rec.Table)
-			if err != nil {
-				return err
-			}
-			if stmt, _, err = db.Prepare(docUpsertSQL(td)); err != nil {
-				return errors.Wrap(err, "preparing upsert")
-			}
-			stmts[rec.Table] = stmt
+	for _, td := range defs {
+		if len(td.Cols) == 0 {
+			continue
 		}
-		if err := stmt.BindText(1, string(rec.Doc)); err != nil {
-			return errors.Wrap(err, "binding document")
+		if err := db.Exec(createTouchedSQL(td)); err != nil {
+			return errors.Wrapf(err, "creating touched keys of %s", td.Name)
 		}
-		if err := stmt.Exec(); err != nil {
-			return errors.Wrap(err, "applying document")
+	}
+	for _, s := range segs {
+		for _, rec := range s.recs {
+			pair, ok := stmts[rec.Table]
+			if !ok {
+				td, err := docTableDef(defs, rec.Table)
+				if err != nil {
+					return err
+				}
+				for i, sql := range []string{docUpsertSQL(td), touchSQL(td)} {
+					pair[i], _, err = db.Prepare(sql)
+					stmts[rec.Table] = pair
+					if err != nil {
+						return errors.Wrap(err, "preparing write")
+					}
+				}
+			}
+			for _, stmt := range pair {
+				if err := stmt.BindText(1, string(rec.Doc)); err != nil {
+					return errors.Wrap(err, "binding document")
+				}
+				if err := stmt.Exec(); err != nil {
+					return errors.Wrapf(err, "applying document from %s", s.name)
+				}
+			}
+		}
+	}
+	if err := deriveTouched(db, defs); err != nil {
+		return err
+	}
+	for _, td := range defs {
+		if len(td.Cols) == 0 {
+			continue
+		}
+		if err := db.Exec("DROP TABLE " + touchedTable(td.Name)); err != nil {
+			return errors.Wrapf(err, "dropping touched keys of %s", td.Name)
 		}
 	}
 	return nil
