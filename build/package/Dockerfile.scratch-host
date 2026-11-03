@@ -87,7 +87,7 @@ RUN <<EOF
  ln -s /scratch/home /home/builder
 
  # microvm-net configures eth0, so nothing waits on the network.
- systemctl enable containerd docker ssh microvm-net microvm-authkey
+ systemctl enable containerd docker ssh microvm-net microvm-authkey microvm-trim.timer
  systemctl mask systemd-networkd-wait-online systemd-networkd systemd-resolved \
      apt-daily.timer apt-daily-upgrade.timer e2scrub_all.timer
  # No host keys: microvm-authkey installs each boot's own from the cmdline.

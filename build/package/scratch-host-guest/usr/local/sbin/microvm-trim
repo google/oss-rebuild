@@ -1,0 +1,25 @@
+#!/bin/sh
+# Copyright 2026 Google LLC
+# SPDX-License-Identifier: Apache-2.0
+
+# Trims the file cache to 1 GiB so the balloon can return the rest to the
+# host. Smaller costs more in rereads than it saves. memory.reclaim fails
+# when it reclaims less than asked, which is fine.
+
+# meminfo_kb prints the value of a /proc/meminfo field, in kB.
+meminfo_kb() {
+	while read -r key value _; do
+		if [ "$key" = "$1:" ]; then
+			echo "$value"
+			return
+		fi
+	done </proc/meminfo
+}
+
+cache_kb=$(($(meminfo_kb 'Active(file)') + $(meminfo_kb 'Inactive(file)')))
+keep_kb=1048576
+excess_kb=$((cache_kb - keep_kb))
+if [ "$excess_kb" -gt 0 ]; then
+	echo "${excess_kb}K" >/sys/fs/cgroup/memory.reclaim 2>/dev/null
+fi
+exit 0

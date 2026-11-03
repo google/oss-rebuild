@@ -1,0 +1,10 @@
+[Unit]
+Description=Trim the file cache every 10 seconds
+
+[Timer]
+OnBootSec=10s
+OnUnitActiveSec=10s
+AccuracySec=1s
+
+[Install]
+WantedBy=timers.target

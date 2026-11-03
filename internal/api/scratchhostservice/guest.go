@@ -151,6 +151,9 @@ func qemuArgv(bin string, cfg GuestConfig, l Layout, n GuestNet, slot int, cred 
 		"-netdev", "tap,id=net0,ifname=" + guestTap(slot) + ",script=no,downscript=no,vhost=on",
 		"-device", "virtio-net-device,netdev=net0,mac=" + guestMAC(slot),
 		"-device", "virtio-rng-device",
+		// NOTE: QEMU releases host memory behind pages the guest frees, but the
+		// guest can still reuse them at minor additional cost.
+		"-device", "virtio-balloon-device,free-page-reporting=on",
 		"-serial", "file:" + l.console(slot),
 	}
 }
