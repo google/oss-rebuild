@@ -3,8 +3,6 @@
 
 // Command scratch-host is the scratch host broker. See package
 // scratchhostservice.
-//
-// TODO: Serve the exec API.
 package main
 
 import (
@@ -13,6 +11,7 @@ import (
 	"log"
 	"net/http"
 	"net/netip"
+	"os"
 	"os/signal"
 	"path/filepath"
 	"syscall"
@@ -31,11 +30,13 @@ var (
 
 	guestDir  = flag.String("guest-dir", "/var/lib/scratch-host/guest", "directory holding the guest's disk overlays and console log")
 	goldenDir = flag.String("golden-dir", "/var/lib/scratch-host/golden", "directory holding vmlinuz, initrd.img, rootfs.raw and scratch.raw")
+	execDir   = flag.String("exec-dir", "/var/lib/scratch-host/execs", "parent of per-session exec ledger directories: op capture files")
 
-	guestVCPU  = flag.Int("guest-vcpu", 4, "vCPUs for the guest")
-	guestMemMB = flag.Int("guest-mem-mb", 12288, "memory for the guest, in MB")
-	guestMTU   = flag.Int("guest-mtu", 1460, "guest MTU, at most the host NIC's")
-	guestDNS   = flag.String("guest-dns", "169.254.169.254", "resolver written into the guest")
+	guestVCPU    = flag.Int("guest-vcpu", 4, "vCPUs for the guest")
+	guestMemMB   = flag.Int("guest-mem-mb", 12288, "memory for the guest, in MB")
+	guestMTU     = flag.Int("guest-mtu", 1460, "guest MTU, at most the host NIC's")
+	guestDNS     = flag.String("guest-dns", "169.254.169.254", "resolver written into the guest")
+	guestWorkdir = flag.String("guest-workdir", "/home/builder", "default cwd for execs")
 
 	bridge      = flag.String("bridge", "mvmbr0", "host bridge the guest tap attaches to")
 	guestSubnet = flag.String("guest-subnet", "10.200.0.0/24", "host-only guest subnet, never reachable off this host")
@@ -50,6 +51,11 @@ const (
 	sshPort        = 22
 	sshDialTimeout = 10 * time.Second // also bounds the readiness probe
 )
+
+// maxOutputBytes caps an exec's output, killing the exec past it.
+// NOTE: Keep it at least pkg/build/scratch's defaultMaxArtifactBytes, since an
+// artifact comes back through exec output.
+const maxOutputBytes = 256 << 20
 
 func main() {
 	flag.Parse()
@@ -77,22 +83,29 @@ func main() {
 	if err != nil {
 		log.Fatalf("exec channel: %v", err)
 	}
+	if err := os.MkdirAll(*execDir, 0o755); err != nil {
+		log.Fatalf("creating %s: %v", *execDir, err)
+	}
 	host := scratchhostservice.NewHost(time.Now())
+	channels := scratchhostservice.NewChannelCache(dialer)
 	guestDeps := &scratchhostservice.GuestDeps{
 		Host: host,
 		Config: scratchhostservice.Config{
 			Layout: scratchhostservice.Layout{
 				GuestDir: *guestDir,
+				ExecsDir: *execDir,
 				Kernel:   filepath.Join(*goldenDir, "vmlinuz"),
 				Initrd:   filepath.Join(*goldenDir, "initrd.img"),
 				Rootfs:   filepath.Join(*goldenDir, "rootfs.raw"),
 				Scratch:  filepath.Join(*goldenDir, "scratch.raw"),
 			},
 			Guest: scratchhostservice.GuestConfig{
-				VCPU:  *guestVCPU,
-				MemMB: *guestMemMB,
-				DNS:   *guestDNS,
-				MTU:   *guestMTU,
+				VCPU:           *guestVCPU,
+				MemMB:          *guestMemMB,
+				DNS:            *guestDNS,
+				MTU:            *guestMTU,
+				Workdir:        *guestWorkdir,
+				MaxOutputBytes: maxOutputBytes,
 			},
 			Net:        guestNet,
 			Bridge:     *bridge,
@@ -100,7 +113,7 @@ func main() {
 			QEMUImgBin: *qemuImgBin,
 		},
 		Exec:         execx.NewRealCommandExecutor(),
-		ChannelCache: scratchhostservice.NewChannelCache(dialer),
+		ChannelCache: channels,
 	}
 	guestInit := func(context.Context) (*scratchhostservice.GuestDeps, error) { return guestDeps, nil }
 	mw := idauth.Middleware(idauth.NewGoogleValidator(*callerSA, *audience))
@@ -108,6 +121,10 @@ func main() {
 	mux.Handle(scratchhostservice.RouteAdmit, mw(api.Handler(guestInit, scratchhostservice.GuestAdmit)))
 	mux.Handle(scratchhostservice.RouteDelete, mw(api.Handler(guestInit, scratchhostservice.GuestDelete)))
 	mux.Handle(scratchhostservice.RouteList, mw(api.Handler(guestInit, scratchhostservice.Guests)))
+	mux.Handle(scratchhostservice.RouteExecStart, mw(api.Handler(guestInit, scratchhostservice.ExecStart)))
+	mux.Handle(scratchhostservice.RouteExecStatus, mw(api.Handler(guestInit, scratchhostservice.Status)))
+	mux.Handle(scratchhostservice.RouteExecOutput, mw(api.StreamHandler(guestInit, scratchhostservice.Output)))
+	mux.Handle(scratchhostservice.RouteExecKill, mw(api.Handler(guestInit, scratchhostservice.Kill)))
 	// The health checks are open. The guest probe runs a command in the guest,
 	// so it is bounded like a dial.
 	mux.Handle(scratchhostservice.RouteGuestHealth, api.Handler(guestInit, api.WithTimeout(sshDialTimeout, scratchhostservice.GuestHealth)))
