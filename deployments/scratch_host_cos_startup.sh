@@ -49,11 +49,11 @@ iptables -w -C INPUT -p tcp --dport 8080 -j ACCEPT 2>/dev/null || iptables -w -A
 iptables -w -C INPUT -i "$BRIDGE" -m conntrack --ctstate NEW -j DROP 2>/dev/null ||
     iptables -w -I INPUT 1 -i "$BRIDGE" -m conntrack --ctstate NEW -j DROP
 
-# 4-vCPU guests, two per four host vCPUs, as the scratch fleet's CPU traces
-# support. Memory less a reserve is split evenly, never overcommitted.
+# deployments/services.tf sizes the guests and counts them. Memory less a
+# reserve is split evenly, never overcommitted.
 HOST_RESERVE_MB=2048
-GUEST_VCPU=4
-SLOTS=$(( $(nproc) * 2 / GUEST_VCPU ))
+GUEST_VCPU=${guest_vcpu}
+SLOTS=${slots}
 GUEST_MEM_MB=$(( ($(awk '/^MemTotal:/ {print $2}' /proc/meminfo) / 1024 - HOST_RESERVE_MB) / SLOTS ))
 
 # The broker's unit reads the guest shape and MTU from here. The MTU must

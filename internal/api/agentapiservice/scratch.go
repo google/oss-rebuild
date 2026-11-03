@@ -7,21 +7,27 @@ import (
 	"cmp"
 	"context"
 	"fmt"
+	"iter"
 	"log"
+	"slices"
 	"time"
 
+	"github.com/google/oss-rebuild/internal/api/scratchhostservice"
 	"github.com/google/oss-rebuild/internal/db"
 	"github.com/google/oss-rebuild/pkg/act/api"
 	"github.com/google/oss-rebuild/pkg/rebuild/schema"
 	"github.com/google/uuid"
 	"github.com/pkg/errors"
 	"google.golang.org/grpc/codes"
+	"google.golang.org/grpc/status"
 )
 
 // ClassConfig is the per-machine-class scratch host shape used by
 // ScratchCreate.
 type ClassConfig struct {
 	InstanceTemplate string // full name of the host template
+	Headroom         int    // free slots ScratchTopUp keeps on the class's hosts
+	Slots            int    // guests a host of the class runs
 }
 
 // selectClass returns the host class serving a machine class. Jumbo is
@@ -114,7 +120,8 @@ func ScratchCreate(ctx context.Context, req schema.ScratchCreateRequest, deps *S
 	host, err := admitAnywhere(ctx, deps, &scratch, class)
 	if err != nil {
 		cleanup()
-		if errors.Is(err, errCapacity) {
+		// A stockout in every zone, or a fresh host other creates filled first.
+		if errors.Is(err, errCapacity) || status.Code(err) == codes.ResourceExhausted {
 			return nil, api.AsStatus(codes.ResourceExhausted, errors.Wrap(err, "admitting guest"))
 		}
 		return nil, api.AsStatus(codes.Internal, errors.Wrap(err, "admitting guest"))
@@ -248,11 +255,16 @@ func pollHealthy(ctx context.Context, timeout, interval time.Duration, probe fun
 // a new one. Any refusal falls through, since a fresh host can serve it.
 // Each host is named on the record before admission, so no guest exists
 // without a record naming its host.
+//
+// A create never waits on a host another create is minting. Bursts land on
+// the headroom ScratchTopUp keeps instead.
 func admitAnywhere(ctx context.Context, deps *ScratchCreateDeps, scratch *schema.Scratch, class ClassConfig) (Instance, error) {
 	labels := hostLabels(scratch.MachineClass, class.InstanceTemplate)
 	now := time.Now().UTC()
-	for _, host := range listHosts(ctx, deps.GCE, deps.Zones, labels) {
-		if !admissible(host, now, hostMaxAge) {
+	listed := slices.DeleteFunc(listHosts(ctx, deps.GCE, deps.Zones, labels), func(h Instance) bool { return !admissible(h, now, hostMaxAge) })
+	// NOTE: Filling in listing order lets later hosts empty out for the reaper.
+	for host, list := range guests(ctx, deps.Hosts, listed) {
+		if len(list.Guests) >= list.Slots {
 			continue
 		}
 		if err := place(ctx, deps.Scratches, scratch, host); err != nil {
@@ -264,7 +276,40 @@ func admitAnywhere(ctx context.Context, deps *ScratchCreateDeps, scratch *schema
 		}
 		log.Printf("scratch %s: admit on %s: %v", scratch.ID, host.Name, err)
 	}
-	// Cold path: create and boot a host.
+	host, err := mint(ctx, deps, class, labels)
+	if err != nil {
+		return Instance{}, err
+	}
+	if err := place(ctx, deps.Scratches, scratch, host); err != nil {
+		return Instance{}, err
+	}
+	if err := deps.Hosts.Admit(ctx, host, scratch.ID); err != nil {
+		return Instance{}, errors.Wrapf(err, "admit on fresh host %s", host.Name)
+	}
+	return host, nil
+}
+
+// mint creates a host VM and polls its health endpoint until it can take
+// guests. A host that never can is deleted rather than left for the reaper.
+func mint(ctx context.Context, deps *ScratchCreateDeps, class ClassConfig, labels map[string]string) (Instance, error) {
+	host, err := insertHost(ctx, deps, class, labels)
+	if err != nil {
+		return Instance{}, err
+	}
+	if err := pollHealthy(ctx, deps.hostHealthTimeout(), deps.healthInterval(), func(ctx context.Context) error {
+		return deps.Hosts.Healthz(ctx, host)
+	}); err != nil {
+		if derr := deps.GCE.DeleteInstance(context.Background(), host.Zone, host.Name); derr != nil {
+			log.Printf("deleting unhealthy host %s/%s: %v", host.Zone, host.Name, derr)
+		}
+		return Instance{}, errors.Wrapf(err, "host %s never became healthy", host.Name)
+	}
+	return host, nil
+}
+
+// insertHost creates a host VM and returns before the host can take guests.
+// It deletes the VM if the insert fails partway.
+func insertHost(ctx context.Context, deps *ScratchCreateDeps, class ClassConfig, labels map[string]string) (Instance, error) {
 	name := fmt.Sprintf("scratch-host-%s", uuid.New().String()[:8])
 	host, zone, err := insertWithFallthrough(ctx, deps.GCE, deps.Zones, deps.Cooldown, name, class.InstanceTemplate, labels)
 	if err != nil {
@@ -276,21 +321,37 @@ func admitAnywhere(ctx context.Context, deps *ScratchCreateDeps, scratch *schema
 		}
 		return Instance{}, errors.Wrap(err, "creating host")
 	}
-	if err := pollHealthy(ctx, deps.hostHealthTimeout(), deps.healthInterval(), func(ctx context.Context) error {
-		return deps.Hosts.Healthz(ctx, host)
-	}); err != nil {
-		if derr := deps.GCE.DeleteInstance(context.Background(), zone, name); derr != nil {
-			log.Printf("deleting unhealthy host %s/%s: %v", zone, name, derr)
-		}
-		return Instance{}, errors.Wrapf(err, "host %s never became healthy", name)
-	}
-	if err := place(ctx, deps.Scratches, scratch, host); err != nil {
-		return Instance{}, err
-	}
-	if err := deps.Hosts.Admit(ctx, host, scratch.ID); err != nil {
-		return Instance{}, errors.Wrapf(err, "admit on fresh host %s", name)
-	}
 	return host, nil
+}
+
+// guestsTimeout bounds each host's guest listing. A host still starting drops
+// connections until its startup script opens its port.
+const guestsTimeout = 2 * time.Second
+
+// guests lists every host's guests at once and yields each host with them,
+// in listing order. A host that cannot report them yields an empty list with
+// no slots. A host is yielded as soon as it and the hosts before it have
+// reported, and stopping early cancels the rest.
+func guests(ctx context.Context, client *HostClient, hosts []Instance) iter.Seq2[Instance, scratchhostservice.GuestList] {
+	return func(yield func(Instance, scratchhostservice.GuestList) bool) {
+		ctx, cancel := context.WithCancel(ctx)
+		defer cancel()
+		lists := make([]chan scratchhostservice.GuestList, len(hosts))
+		for i, host := range hosts {
+			lists[i] = make(chan scratchhostservice.GuestList, 1)
+			go func() {
+				ctx, cancel := context.WithTimeout(ctx, guestsTimeout)
+				defer cancel()
+				list, _ := client.Guests(ctx, host)
+				lists[i] <- list
+			}()
+		}
+		for i, host := range hosts {
+			if !yield(host, <-lists[i]) {
+				return
+			}
+		}
+	}
 }
 
 // place names host on the record and persists it, with its address, since

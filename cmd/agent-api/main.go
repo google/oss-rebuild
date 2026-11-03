@@ -49,6 +49,8 @@ var (
 	scratchZones         = flag.String("scratch-zones", "", "comma-separated, ordered list of GCE zones to try for scratch hosts (required when scratch enabled); first listed is preferred, later zones used only on stockout fallthrough")
 	scratchStandardTmpl  = flag.String("scratch-host-standard-template", "", "GCE instance template URL for hosts serving the standard machine class (required when scratch enabled)")
 	scratchJumboTmpl     = flag.String("scratch-host-jumbo-template", "", "GCE instance template URL for hosts serving the jumbo machine class (optional)")
+	scratchStandardIdle  = flag.Int("scratch-host-standard-idle-guests", 0, "guests /scratch/topup keeps room for on standard-class hosts beyond current demand. Zero turns the top-up off")
+	scratchStandardSlots = flag.Int("scratch-host-standard-slots", 0, "guests each standard-class host runs, as its startup script sizes it. The top-up counts them on hosts still booting")
 	scratchOutputBucket  = flag.String("scratch-output-bucket", "", "GCS bucket the broker writes exec output into (required when --scratch-enabled)")
 	scratchIdleThreshold = flag.Duration("scratch-idle-threshold", 30*time.Minute, "scratches whose LastUsed is older than this and that have no in-deadline pending exec are reaped. Also bounds how long a scratch may sit in starting or deleting with no writes before the reaper tears it down")
 	scratchOpDeadline    = flag.Duration("scratch-op-deadline", 2*time.Hour, "default and maximum exec duration, stamped on each exec; bounds how long a pending exec exempts its scratch from idle reaping")
@@ -209,6 +211,8 @@ func ScratchCreateInit(ctx context.Context) (*agentapiservice.ScratchCreateDeps,
 		GCE:       gce,
 		Standard: agentapiservice.ClassConfig{
 			InstanceTemplate: *scratchStandardTmpl,
+			Headroom:         *scratchStandardIdle,
+			Slots:            *scratchStandardSlots,
 		},
 		Jumbo:    scratchJumbo(),
 		Hosts:    scratchHosts(ctx),
@@ -305,6 +309,7 @@ func main() {
 		mux.HandleFunc("/scratch/exec/op/get", api.Handler(ScratchExecGetInit, agentapiservice.ScratchExecGet))
 		mux.HandleFunc("/scratch/exec/op/kill", api.Handler(ScratchExecKillInit, agentapiservice.ScratchExecKill))
 		mux.HandleFunc("/scratch/reap", api.Handler(ScratchReapInit, agentapiservice.ScratchReap))
+		mux.HandleFunc("/scratch/topup", api.Handler(ScratchCreateInit, agentapiservice.ScratchTopUp))
 	}
 
 	mux.Handle("/readyz", httpegress.ReadyHandler(http.DefaultClient))
