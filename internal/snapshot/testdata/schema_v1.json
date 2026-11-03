@@ -156,6 +156,12 @@
     "successes": "",
     "tokens": ""
   },
+  "package_rank": {
+    "ecosystem": "TEXT",
+    "package": "TEXT",
+    "rank": "",
+    "score": "REAL"
+  },
   "package_signals": {
     "dependents": "INTEGER",
     "ecosystem": "TEXT pk=1",
@@ -164,6 +170,16 @@
     "prominence": "REAL",
     "rating": "REAL",
     "raw": "TEXT",
+    "score": "REAL"
+  },
+  "package_standing": {
+    "attempted": "",
+    "current": "",
+    "ecosystem": "TEXT",
+    "in_flight": "",
+    "package": "TEXT",
+    "queued": "",
+    "rank": "",
     "score": "REAL"
   },
   "package_stats": {

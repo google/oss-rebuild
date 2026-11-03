@@ -39,6 +39,8 @@ const (
 	TableSignalCoverage   = "signal_coverage"
 	TablePopularityTiers  = "popularity_tiers"
 	TableReleaseCohorts   = "release_cohorts"
+	TablePackageRank      = "package_rank"
+	TablePackageStanding  = "package_standing"
 	TableCostObservations = "cost_observations"
 	TableEcosystemDaily   = "ecosystem_daily"
 	TableVersionStats     = "version_stats"
@@ -250,34 +252,42 @@ FROM (SELECT *, row_number() OVER (PARTITION BY ecosystem ORDER BY score DESC, a
 WHERE n <= ` + topGapsPerEcosystem + `
 ORDER BY ecosystem, score DESC, attempts DESC, package`
 
-// trackedStandingCTEs ends in tracked_standing, one row per tracked package.
-// rank counts only tracked packages, so it is the export rank only where the
-// whole export is tracked. live reads only the campaigns in a live state,
-// through their state index, since the others contribute nothing.
-const trackedStandingCTEs = `
-latest AS (SELECT * FROM version_stats WHERE vrank = 1),
+// packageRankQuery ranks each ecosystem's tracked packages by score. rank
+// counts only tracked packages, so it is the export rank only where the
+// whole export is tracked. package_signals changes only with the whole
+// build, so the ranks do too.
+const packageRankQuery = `
+SELECT ecosystem, package, score,
+	row_number() OVER (PARTITION BY ecosystem ORDER BY score DESC, package) AS rank
+FROM package_signals`
+
+// packageStandingQuery holds one row per tracked package, with its rank,
+// whether a build of it completed, whether its latest version (version_stats
+// vrank 1) is current, and whether a campaign of it is live. live reads only
+// the campaigns in a live state, through their state index, since the others
+// contribute nothing.
+const packageStandingQuery = `
+WITH latest AS (SELECT * FROM version_stats WHERE vrank = 1),
 live AS (
 	SELECT ecosystem, package,
 		max(state = '` + string(scheduler.StateInFlight) + `') AS in_flight,
 		max(state = '` + string(scheduler.StateQueued) + `') AS queued
 	FROM campaigns WHERE state IN ('` + string(scheduler.StateInFlight) + `', '` + string(scheduler.StateQueued) + `')
-	GROUP BY 1, 2),
-tracked_standing AS (
-	SELECT s.ecosystem, s.package, s.score,
-		row_number() OVER (PARTITION BY s.ecosystem ORDER BY s.score DESC, s.package) AS rank,
-		l.package IS NOT NULL AS attempted, coalesce(l.current, 0) AS current,
-		coalesce(c.in_flight, 0) AS in_flight, coalesce(c.queued, 0) AS queued
-	FROM package_signals s
-	LEFT JOIN latest l ON l.ecosystem = s.ecosystem AND l.package = s.package
-	LEFT JOIN live c ON c.ecosystem = s.ecosystem AND c.package = s.package)`
+	GROUP BY 1, 2)
+SELECT r.ecosystem, r.package, r.score, r.rank,
+	l.package IS NOT NULL AS attempted, coalesce(l.current, 0) AS current,
+	coalesce(c.in_flight, 0) AS in_flight, coalesce(c.queued, 0) AS queued
+FROM package_rank r
+LEFT JOIN latest l ON l.ecosystem = r.ecosystem AND l.package = r.package
+LEFT JOIN live c ON c.ecosystem = r.ecosystem AND c.package = r.package
+ORDER BY 1, 2`
 
 // signalCoverageQuery compares each ecosystem's tracked, attempted and current
 // packages against signal_universe, by count and summed score. The universe is
 // the whole export, so dropping packages from tracking cannot raise
 // covered_mass_share.
 const signalCoverageQuery = `
-WITH ` + trackedStandingCTEs + `,
-tracked AS (
+WITH tracked AS (
 	SELECT ecosystem, count(*) AS tracked_packages, sum(score) AS tracked_mass,
 		sum(attempted) AS attempted_packages,
 		sum(CASE WHEN attempted THEN score ELSE 0 END) AS attempted_mass,
@@ -286,7 +296,7 @@ tracked AS (
 		sum(attempted AND NOT current AND (in_flight OR queued)) AS retrying_packages,
 		sum(NOT attempted AND in_flight) AS in_flight_packages,
 		sum(NOT attempted AND NOT in_flight AND queued) AS queued_packages
-	FROM tracked_standing GROUP BY 1)
+	FROM package_standing GROUP BY 1)
 SELECT u.ecosystem,
 	u.packages AS universe_packages, u.score_mass AS universe_mass,
 	coalesce(t.tracked_packages, 0) AS tracked_packages,
@@ -308,15 +318,14 @@ ORDER BY 1`
 // tracked packages by score in the signal_coverage states. A tier past an
 // ecosystem's tracked packages holds all of them, and packages says how many.
 const popularityTiersQuery = `
-WITH ` + trackedStandingCTEs + `,
-tiers(tier) AS (VALUES (100), (1000), (10000))
+WITH tiers(tier) AS (VALUES (100), (1000), (10000))
 SELECT p.ecosystem, t.tier, count(*) AS packages,
 	sum(current) AS reproduced,
 	sum(attempted AND NOT current AND NOT (in_flight OR queued)) AS not_reproduced,
 	sum(attempted AND NOT current AND (in_flight OR queued)) AS retrying,
 	sum(NOT attempted AND in_flight) AS in_flight,
 	sum(NOT attempted AND NOT in_flight AND queued) AS queued
-FROM tracked_standing p JOIN tiers t ON p.rank <= t.tier
+FROM package_standing p JOIN tiers t ON p.rank <= t.tier
 GROUP BY 1, 2
 ORDER BY 1, 2`
 
@@ -468,7 +477,7 @@ ORDER BY 1, 2`
 // or by source row in proportion to its size. The rows its documents reach
 // are deleted and re-derived with the doc tables narrowed to what those rows
 // read. The other derived tables re-derive whole, except coverage_weekly,
-// which waits for the whole build.
+// which waits for the whole build, and package_rank, which only it changes.
 // ecosystem_daily is among the whole ones. Its rows are per day, and a day
 // holds a large share of the completed builds, so a scope would save little.
 // touched_<table> holds the keys of the documents a delta applied.
@@ -520,6 +529,18 @@ var packageScope = docdb.Scope{
 		{Table: TableAttempts, Query: "SELECT * FROM main.attempts WHERE " + inTouchedPackages},
 		{Table: TableAgentSessions, Query: "SELECT * FROM main.agent_sessions WHERE " + inTouchedPackages},
 		{Table: TableAgentIterations, Query: "SELECT * FROM main.agent_iterations WHERE session_id IN (SELECT session_id FROM main.agent_sessions WHERE " + inTouchedPackages + ")"},
+		{Table: TableCampaigns, Query: "SELECT * FROM main.campaigns WHERE " + inTouchedPackages},
+	},
+}
+
+// standingScope keys package_standing by package. Its rank comes from
+// package_rank, which the whole build alone refreshes.
+var standingScope = docdb.Scope{
+	Keys: []docdb.Key{{Name: "packages", Query: touchedPackagesKey}},
+	Rows: inTouchedPackages,
+	Views: []docdb.View{
+		{Table: TablePackageRank, Query: "SELECT * FROM main.package_rank WHERE " + inTouchedPackages},
+		{Table: TableVersionStats, Query: "SELECT * FROM main.version_stats WHERE " + inTouchedPackages},
 		{Table: TableCampaigns, Query: "SELECT * FROM main.campaigns WHERE " + inTouchedPackages},
 	},
 }
@@ -781,6 +802,8 @@ func Tables() []docdb.TableDef {
 		// the whole build affords, and a week's figures can wait for it.
 		{Name: TableCoverageWeekly, Query: coverageWeeklyQuery, Scope: docdb.Unrefreshed, Indexes: [][]string{{"ecosystem", "week"}}},
 		{Name: TableTopGaps, Query: topGapsQuery, Indexes: [][]string{{"ecosystem"}}},
+		{Name: TablePackageRank, Query: packageRankQuery, Scope: docdb.Unrefreshed, Indexes: [][]string{{"ecosystem", "package"}}},
+		{Name: TablePackageStanding, Query: packageStandingQuery, Scope: &standingScope, Indexes: [][]string{{"ecosystem", "package"}}},
 		{Name: TableSignalCoverage, Query: signalCoverageQuery},
 		{Name: TablePopularityTiers, Query: popularityTiersQuery, Indexes: [][]string{{"ecosystem"}}},
 		{Name: TableReleaseCohorts, Query: releaseCohortsQuery, Indexes: [][]string{{"ecosystem"}}},
