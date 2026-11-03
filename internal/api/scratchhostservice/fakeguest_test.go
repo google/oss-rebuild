@@ -87,11 +87,11 @@ func (n *guestNet) running() []*fakeGuest {
 	return guests
 }
 
-// up boots a guest at addr from its kernel command line.
-func (n *guestNet) up(addr, cmdline string) {
+// up boots a guest at addr with cred.
+func (n *guestNet) up(addr string, cred GuestCredential) {
 	n.mu.Lock()
 	defer n.mu.Unlock()
-	n.booted[addr] = cmdline
+	n.booted[addr] = kernelCmdline(GuestConfig{}, GuestNet{}, cred)
 }
 
 func (n *guestNet) setRun(run guestCmd)  { n.mu.Lock(); n.run = run; n.mu.Unlock() }
@@ -180,7 +180,7 @@ func bootGuest(n *guestNet, cmdline string, halted <-chan struct{}) (*fakeGuest,
 	for _, kv := range strings.Fields(cmdline) {
 		k, v, _ := strings.Cut(kv, "=")
 		if k == "mvm_ssh_authorized_key" || k == "mvm_ssh_host_key" {
-			b, err := base64.RawStdEncoding.DecodeString(v)
+			b, err := base64.StdEncoding.DecodeString(v)
 			if err != nil {
 				return nil, errors.Wrapf(err, "%s", k)
 			}

@@ -38,8 +38,10 @@ func NewChannelCache(d *SSHDialer) *ChannelCache {
 	return &ChannelCache{dialer: d, open: map[string]*sshChannel{}}
 }
 
-// GuestCredential is what a guest boots with so a dial can reach it.
-func (c *ChannelCache) GuestCredential() string { return c.dialer.GuestCredential() }
+// GuestCredential returns the credential for a guest booting at addr.
+func (c *ChannelCache) GuestCredential(addr string) (GuestCredential, error) {
+	return c.dialer.GuestCredential(addr)
+}
 
 // get returns addr's channel, dialing if there is none.
 func (c *ChannelCache) get(ctx context.Context, addr string) (*sshChannel, error) {
