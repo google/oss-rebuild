@@ -464,4 +464,29 @@ func RunSession(ctx context.Context, req RunSessionReq, deps RunSessionDeps) {
 	} else {
 		log.Println("Session cleanup completed")
 	}
+	classifySession(ctx, req.SessionID, deps)
+}
+
+// classifySession classifies the session's shell calls once it has reported,
+// so a slow or failed classification costs the session nothing. A session
+// the reaper finalizes gets none.
+func classifySession(ctx context.Context, sessionID string, deps RunSessionDeps) {
+	if deps.Client == nil || deps.GCSClient == nil || deps.SessionsBucket == "" {
+		return
+	}
+	ctx, cancel := context.WithTimeout(context.WithoutCancel(ctx), purposeTimeout)
+	defer cancel()
+	p, err := ClassifyPurposes(ctx, PurposeDeps{Client: deps.Client, GCS: deps.GCSClient, Bucket: deps.SessionsBucket, Retrier: deps.Retrier}, sessionID)
+	if err == nil {
+		err = StorePurposes(ctx, deps.GCSClient, deps.SessionsBucket, sessionID, p)
+	}
+	if err != nil {
+		log.Printf("Session %s: classifying shell calls: %v", sessionID, err)
+		return
+	}
+	var in, out int
+	if u := p.Usage; u != nil {
+		in, out = u.Input, u.Output
+	}
+	log.Printf("Session %s: classified %d shell calls (%d in, %d out tokens)", sessionID, len(p.Calls), in, out)
 }

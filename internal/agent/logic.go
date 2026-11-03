@@ -387,7 +387,9 @@ func (a *defaultAgent) recordToolCall(ctx context.Context, rec schema.AgentToolC
 	}
 	rec.SessionID, rec.Iteration, rec.Seq = a.toolOpts.Session, a.toolOpts.Iteration, a.toolSeq
 	a.toolSeq++
-	uploadJSONRecord(ctx, a.deps.GCSClient, u.Host, toolCallPath(rec.SessionID, rec.Iteration, rec.Seq, rec.Tool), rec)
+	if err := uploadJSONRecord(ctx, a.deps.GCSClient, u.Host, toolCallPath(rec.SessionID, rec.Iteration, rec.Seq, rec.Tool), rec); err != nil {
+		log.Printf("session transcript: %v", err)
+	}
 }
 
 // truncateEnds keeps the first head and last tail bytes of s with a marker
@@ -1199,20 +1201,20 @@ func (a *defaultAgent) uploadRecord(ctx context.Context, opts *ProposeOpts, obj 
 	if opts == nil || opts.ChatUploadURL == nil || opts.ChatUploadURL.Scheme != "gs" || a.deps.GCSClient == nil {
 		return
 	}
-	uploadJSONRecord(ctx, a.deps.GCSClient, opts.ChatUploadURL.Host, path.Join(opts.ChatUploadURL.Path, obj), v)
+	if err := uploadJSONRecord(ctx, a.deps.GCSClient, opts.ChatUploadURL.Host, path.Join(opts.ChatUploadURL.Path, obj), v); err != nil {
+		log.Printf("session transcript: %v", err)
+	}
 }
 
-// uploadJSONRecord writes v as JSON to obj, logging failures.
-func uploadJSONRecord(ctx context.Context, client *gcs.Client, bucket, obj string, v any) {
+// uploadJSONRecord writes v as JSON to obj.
+func uploadJSONRecord(ctx context.Context, client *gcs.Client, bucket, obj string, v any) error {
 	w := client.Bucket(bucket).Object(obj).NewWriter(ctx)
 	enc := json.NewEncoder(w)
 	enc.SetIndent("", "  ")
 	if err := enc.Encode(v); err != nil {
-		log.Printf("session transcript: writing %s: %v", path.Base(obj), err)
+		return errors.Wrapf(err, "writing %s", path.Base(obj))
 	}
-	if err := w.Close(); err != nil {
-		log.Printf("session transcript: closing %s: %v", path.Base(obj), err)
-	}
+	return errors.Wrapf(w.Close(), "closing %s", path.Base(obj))
 }
 
 func (a *defaultAgent) RecordIteration(i *schema.AgentIteration) {
