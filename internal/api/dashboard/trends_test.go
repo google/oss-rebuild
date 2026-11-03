@@ -4,12 +4,15 @@
 package dashboard
 
 import (
+	"bytes"
 	"context"
 	"io"
+	"strings"
 	"testing"
 	"time"
 
 	"github.com/google/go-cmp/cmp"
+	"github.com/google/go-cmp/cmp/cmpopts"
 	"github.com/google/oss-rebuild/pkg/scheduler"
 )
 
@@ -30,10 +33,29 @@ func coverageFixture(t *testing.T) memAnalytics {
 		// a's later version does not move its first reproduction.
 		`CREATE TABLE version_stats (ecosystem TEXT, package TEXT, version TEXT, first_succeeded_at TEXT)`,
 		`INSERT INTO version_stats VALUES ('npm', 'a', '1', '2026-08-30T10:15:00.000Z'), ('npm', 'a', '2', '2026-08-30T12:00:00.000Z'), ('npm', 'b', '1', NULL), ('npm', 'c', '1', '2026-08-30T11:30:00.000Z')`,
-		`CREATE TABLE ecosystem_daily (ecosystem TEXT, day TEXT, attempts INT, successes INT, tokens INT, builder_seconds REAL, scratch_vm_seconds REAL)`,
-		`INSERT INTO ecosystem_daily VALUES ('npm', '2026-08-30', 3, 1, 100, 3600, 1800), ('maven', '2026-08-30', 1, 1, 0, 3600, 0), ('npm', '2026-08-31', 2, 2, 0, 0, 0), ('npm', '', 5, 0, 0, 0, 0)`,
+		`CREATE TABLE ecosystem_daily (ecosystem TEXT, day TEXT, attempts INT, successes INT, tokens INT, builder_seconds REAL, scratch_vm_seconds REAL,
+			inference_seconds REAL, input_tokens INT, cached_input_tokens INT, output_tokens INT, first_version_successes INT)`,
+		`INSERT INTO ecosystem_daily VALUES ('npm', '2026-08-30', 3, 1, 100, 3600, 1800, 0, 0, 0, 0, 2), ('maven', '2026-08-30', 1, 1, 0, 3600, 0, 0, 0, 0, 0, 1),
+			('npm', '2026-08-31', 2, 2, 0, 0, 0, 0, 1000000, 0, 0, 1), ('npm', '', 5, 0, 0, 0, 0, 0, 0, 0, 0, 0)`,
+		`CREATE TABLE popularity_tiers (ecosystem TEXT, tier INT, packages INT, reproduced INT, not_reproduced INT, retrying INT, in_flight INT, queued INT)`,
+		`INSERT INTO popularity_tiers VALUES ('npm', 100, 100, 90, 4, 6, 0, 0), ('npm', 1000, 300, 250, 20, 30, 0, 0), ('pypi', 100, 40, 20, 0, 12, 1, 7)`,
+		// 2012 folds into the first charted year.
+		`CREATE TABLE release_cohorts (ecosystem TEXT, release_year TEXT, reproduced INT, not_reproduced INT, retrying INT, in_flight INT, queued INT)`,
+		`INSERT INTO release_cohorts VALUES ('npm', '2012', 1, 0, 0, 0, 0), ('npm', '2014', 2, 1, 0, 0, 0), ('npm', '2016', 5, 1, 1, 0, 2), ('pypi', '2016', 3, 0, 0, 1, 0)`,
 	)
 }
+
+// The cohorts coverageFixture yields.
+var (
+	npmTiers      = EcoTiers{Ecosystem: "npm", Tiers: []TierBand{{Ecosystem: "npm", Tier: 100, Packages: 100, Reproduced: 90, NotReproduced: 4, Retrying: 6}, {Ecosystem: "npm", Tier: 1000, Packages: 300, Reproduced: 250, NotReproduced: 20, Retrying: 30}}}
+	pypiTiers     = EcoTiers{Ecosystem: "pypi", Tiers: []TierBand{{Ecosystem: "pypi", Tier: 100, Packages: 40, Reproduced: 20, Retrying: 12, InFlight: 1, Queued: 7}}}
+	releaseYears  = []string{"\u22642014", "2015", "2016"}
+	npmReleases   = EcoReleases{Ecosystem: "npm", Counts: [][5]int64{{3, 1, 0, 0, 0}, {}, {5, 1, 1, 0, 2}}}
+	pypiReleases  = EcoReleases{Ecosystem: "pypi", Counts: [][5]int64{{}, {}, {3, 0, 0, 1, 0}}}
+	mavenSpend    = EcoSpend{Ecosystem: "maven", Builder: 3600 * builderCoreHPerSecond, NewVersions: 1, Share: 31}
+	npmSpend      = EcoSpend{Ecosystem: "npm", Builder: 3600 * builderCoreHPerSecond, Guests: 1800 * guestCoreHPerSecond, LLM: 1e6 * inputCoreHPerToken, NewVersions: 3, Share: 69}
+	coverageSpend = func(ecos ...EcoSpend) *Spend { return &Spend{From: "2026-08-25", To: "2026-08-31", Ecos: ecos} }
+)
 
 // coverageOverview is the band coverageFixture yields.
 var coverageOverview = &Overview{
@@ -71,7 +93,8 @@ func TestCoveragePage(t *testing.T) {
 	}{
 		{
 			name: "Comparison",
-			want: CoverageData{Loaded: true, AsOf: "2026-09-01 00:00:00 UTC", Ecos: []CoverageEco{maven, npm, pypi}, Overview: coverageOverview},
+			want: CoverageData{Loaded: true, AsOf: "2026-09-01 00:00:00 UTC", Ecos: []CoverageEco{maven, npm, pypi}, Overview: coverageOverview,
+				Tiers: []EcoTiers{npmTiers, pypiTiers}, Releases: &Releases{Years: releaseYears, Ecos: []EcoReleases{npmReleases, pypiReleases}}, Spend: coverageSpend(mavenSpend, npmSpend)},
 		},
 		{
 			name: "EcosystemTab",
@@ -79,13 +102,16 @@ func TestCoveragePage(t *testing.T) {
 			want: func() CoverageData {
 				detail := npm
 				detail.Weeks = npmWeeks
-				return CoverageData{Loaded: true, AsOf: "2026-09-01 00:00:00 UTC", Eco: "npm", Ecos: []CoverageEco{maven, detail, pypi}, Detail: &detail, Overview: coverageOverview}
+				// npm's tab keeps its cohorts and its share of all spend.
+				return CoverageData{Loaded: true, AsOf: "2026-09-01 00:00:00 UTC", Eco: "npm", Ecos: []CoverageEco{maven, detail, pypi}, Detail: &detail, Overview: coverageOverview,
+					Tiers: []EcoTiers{npmTiers}, Releases: &Releases{Years: releaseYears, Ecos: []EcoReleases{npmReleases}}, Spend: coverageSpend(npmSpend)}
 			}(),
 		},
 		{
 			name: "UnknownTabFallsBack",
 			req:  CoverageRequest{Eco: "cratesio"},
-			want: CoverageData{Loaded: true, AsOf: "2026-09-01 00:00:00 UTC", Ecos: []CoverageEco{maven, npm, pypi}, Overview: coverageOverview},
+			want: CoverageData{Loaded: true, AsOf: "2026-09-01 00:00:00 UTC", Ecos: []CoverageEco{maven, npm, pypi}, Overview: coverageOverview,
+				Tiers: []EcoTiers{npmTiers, pypiTiers}, Releases: &Releases{Years: releaseYears, Ecos: []EcoReleases{npmReleases, pypiReleases}}, Spend: coverageSpend(mavenSpend, npmSpend)},
 		},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
@@ -93,13 +119,30 @@ func TestCoveragePage(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
-			if diff := cmp.Diff(&tc.want, got); diff != "" {
+			if diff := cmp.Diff(&tc.want, got, cmpopts.EquateApprox(0, 1e-9)); diff != "" {
 				t.Errorf("CoveragePage diff (-want +got):\n%s", diff)
 			}
 			if err := CoverageTmpl.Execute(io.Discard, got); err != nil {
 				t.Errorf("rendering: %v", err)
 			}
 		})
+	}
+}
+
+func TestCoverageRendersCohorts(t *testing.T) {
+	got, err := CoveragePage(context.Background(), CoverageRequest{}, &Deps{Analytics: coverageFixture(t)})
+	if err != nil {
+		t.Fatal(err)
+	}
+	var buf bytes.Buffer
+	if err := CoverageTmpl.Execute(&buf, got); err != nil {
+		t.Fatal(err)
+	}
+	// A tier past the ecosystem's size reads All N, and a weak tier is marked.
+	for _, want := range []string{`>Top 100<`, `>All 300<`, `tier-row weak`, `data-chart="releaselines"`, `data-form="releaseshare"`, `id="releases"`, `cost-llm`, `>69%<`, `10.8 core-h`} {
+		if !strings.Contains(buf.String(), want) {
+			t.Errorf("rendered coverage lacks %s", want)
+		}
 	}
 }
 

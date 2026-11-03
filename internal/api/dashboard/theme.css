@@ -27,4 +27,9 @@
     --viz-stage-infer: #0d9488;
     --viz-stage-agent: #6cc2b6;
     --viz-grid: #efedeb;
+    /* Resource kinds: compute on the teal ramp, LLM tokens apart from it. */
+    --viz-cost-builder: #0b5e57;
+    --viz-cost-infer: #0d9488;
+    --viz-cost-guest: #6cc2b6;
+    --viz-cost-llm: #6d28d9;
 }

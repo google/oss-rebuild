@@ -254,7 +254,80 @@
     return c;
   }
 
-  const forms = {columns, growth, spark, hist};
+  // releases draws each ecosystem's versions by release year as a row. Counts
+  // are [reproduced, not reproduced, retrying, in flight, queued] per year.
+  // Version counts are square-root scaled on one scale across rows, since
+  // recent years hold most versions. Marks under 30 attempted are faded.
+  function releases(el, data, share) {
+    const n = data.Years.length;
+    const rowH = 64;
+    const m = {t: 6, r: 52, b: 22, l: 84};
+    const c = frame(el, data.Ecos.length * rowH + m.t + m.b, m);
+    const {g, iw, ih} = c;
+    const slot = iw / n;
+    const attempted = cnt => cnt[0] + cnt[1] + cnt[2];
+    const total = cnt => cnt.reduce((a, b) => a + b, 0);
+    const vmax = Math.max(1, ...data.Ecos.flatMap(e => e.Counts.map(share ? attempted : total)));
+    const width = v => Math.max(2, Math.sqrt(v / vmax) * (slot - 4));
+    const thin = cnt => attempted(cnt) < 30 ? 0.35 : 1;
+    c.cur = svg('rect', {class: 'hl', y: 0, height: ih, width: slot}, g);
+    data.Ecos.forEach((e, row) => {
+      const top = row * rowH + 6, h = rowH - 14;
+      // Each row's columns rise from its own baseline.
+      const marks = svg('g', {class: 'rise'}, g);
+      const yRate = r => top + h - clamp((r - 0.5) / 0.5, 0, 1) * h;
+      text(g, {class: 'cap', x: -12, y: top + h / 2 + 4, 'text-anchor': 'end'}, e.Ecosystem);
+      const sum = e.Counts.reduce((a, cnt) => [a[0] + cnt[0], a[1] + attempted(cnt)], [0, 0]);
+      if (sum[1]) text(g, {class: 'tick', x: iw + 10, y: top + h / 2 + 4}, `${Math.round(100 * sum[0] / sum[1])}%`);
+      hline(c, 'axis', top + h);
+      if (share) {
+        // Each column stacks the year's attempted versions to 100%.
+        e.Counts.forEach((cnt, k) => {
+          const a = attempted(cnt);
+          if (!a) return;
+          const w = width(a), x = k * slot + (slot - w) / 2;
+          let y = top + h;
+          [['ok', cnt[0]], ['warn', cnt[1]], ['retry', cnt[2]]].forEach(([cls, v]) => {
+            if (!v) return;
+            const bh = (v / a) * h;
+            y -= bh;
+            svg('path', {class: cls, d: col(x, y, w, bh, false), opacity: thin(cnt)}, marks);
+          });
+        });
+        return;
+      }
+      // The rate line over each year's version count.
+      hline(c, 'grid', yRate(1));
+      e.Counts.forEach((cnt, k) => {
+        const v = total(cnt);
+        if (!v) return;
+        const w = width(v), bh = Math.sqrt(v / vmax) * h;
+        svg('path', {class: 'none', d: col(k * slot + (slot - w) / 2, top + h - bh, w, bh, true)}, marks);
+      });
+      const pts = e.Counts.map((cnt, k) => attempted(cnt) ? [k * slot + slot / 2, yRate(cnt[0] / attempted(cnt)), thin(cnt)] : null);
+      const rate = svg('g', {class: 'ok reveal'}, g);
+      svg('path', {class: 'line', d: pts.map((p, k) => p ? `${k && pts[k - 1] ? 'L' : 'M'}${p[0]},${p[1]}` : '').join('')}, rate);
+      for (const p of pts) if (p) svg('circle', {class: 'dot', cx: p[0], cy: p[1], r: 3.5, opacity: p[2]}, rate);
+    });
+    // Every other year is labeled, and always the last.
+    data.Years.forEach((y, k) => {
+      if (k % 2 === 0 || k === n - 1) xTick(c, k * slot + slot / 2, y);
+    });
+    c.at = (px, py) => {
+      const k = bin(px, slot, n);
+      const e = data.Ecos[bin(py, rowH, data.Ecos.length)];
+      const cnt = e.Counts[k], a = attempted(cnt);
+      c.cur.setAttribute('x', k * slot);
+      return [`${e.Ecosystem}, released ${data.Years[k]}`, [
+        ['ok', a ? `${Math.round(100 * cnt[0] / a)}%` : '–', `of ${num.format(a)} attempted`],
+        ['warn', num.format(cnt[1] + cnt[2]), 'not reproduced'],
+        ['none', num.format(cnt[3] + cnt[4]), 'not attempted yet'],
+      ]];
+    };
+    return c;
+  }
+
+  const forms = {columns, growth, spark, hist, releaselines: (el, data) => releases(el, data, false), releaseshare: (el, data) => releases(el, data, true)};
   const parsed = new Map();
   function source(id) {
     if (!parsed.has(id)) parsed.set(id, JSON.parse(document.getElementById(id).textContent));
@@ -285,6 +358,16 @@
   }
   const charts = [...document.querySelectorAll('[data-chart]')];
   charts.forEach(el => draw(el, true));
+  // A switch redraws the chart it names in the form its button picks.
+  document.querySelectorAll('[data-switch]').forEach(sw => sw.addEventListener('click', ev => {
+    const b = ev.target.closest('button[data-form]');
+    if (!b) return;
+    const el = document.getElementById(sw.dataset.switch);
+    el.dataset.chart = b.dataset.form;
+    sw.querySelectorAll('button').forEach(x => x.setAttribute('aria-pressed', String(x === b)));
+    drawn.delete(el);
+    draw(el, true);
+  }));
   // Redraw at a new width, without the entrance.
   new ResizeObserver(() => charts.forEach(el => draw(el, false))).observe(document.body);
 })();

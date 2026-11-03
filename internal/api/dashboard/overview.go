@@ -35,6 +35,9 @@ func (e EcoBand) Pct() int64 {
 // NotReproduced counts attempted packages neither reproduced nor retrying.
 func (e EcoBand) NotReproduced() int64 { return max(0, e.Attempted-e.Reproduced-e.Retrying) }
 
+// Title names the band for its bar's readout.
+func (e EcoBand) Title() string { return e.Ecosystem }
+
 // DayStat is one day of completed builds and their cost.
 type DayStat struct {
 	Day          string
