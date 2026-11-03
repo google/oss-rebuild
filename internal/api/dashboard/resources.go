@@ -55,6 +55,7 @@ type ExpensivePackage struct {
 }
 
 type ResourcesData struct {
+	Frame
 	Loaded     bool
 	AsOf       string
 	WindowDays int

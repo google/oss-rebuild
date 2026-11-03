@@ -9,46 +9,51 @@
 
 body {
     font-family: 'Public Sans', system-ui, -apple-system, sans-serif;
-    margin: 0 auto;
-    padding: 24px;
-    max-width: 1100px;
+    margin: 0;
     background-color: var(--bg);
     color: var(--body);
     line-height: 1.5;
 }
 
-h1, h2, h3 {
-    font-family: 'Merriweather', Georgia, serif;
-    color: var(--heading);
-}
-
-h1 { font-size: 1.6rem; margin: 0 0 24px; }
-h2 { font-size: 1.15rem; margin: 28px 0 12px; }
+h1, h2, h3 { color: var(--heading); }
+h1 { font-size: 1.6rem; font-weight: 800; margin: 0 0 24px; }
+h2 { font-size: 1.15rem; font-weight: 700; margin: 28px 0 12px; }
 
 a { color: var(--accent); text-decoration: none; }
 a:hover { text-decoration: underline; }
 
-nav { margin-bottom: 12px; }
-nav a { margin-right: 15px; font-weight: 600; }
-
-/* Site header: brand left, nav right, wrapping to two rows when narrow. */
-header.site {
-    display: flex;
-    flex-wrap: wrap;
-    align-items: center;
-    justify-content: space-between;
-    gap: 10px 28px;
-    padding-bottom: 14px;
-    border-bottom: 1px solid var(--border);
-}
-header.site h1 { font-size: 1.1rem; margin: 0; }
-header.site h1 a { display: inline-flex; align-items: center; gap: 10px; color: var(--heading); }
-header.site h1 a:hover { text-decoration: none; }
+/* Shell: the sections in a sidebar beside the page, each with its figure
+   and a sparkline. On a phone the sidebar folds into a bar over the page
+   with the sections in a scrolling row. */
+.shell { display: grid; grid-template-columns: 236px minmax(0, 1fr); min-height: 100vh; }
+.side { position: sticky; top: 0; align-self: start; height: 100vh; display: flex; flex-direction: column; gap: 18px; padding: 20px 14px; background: var(--side); border-right: 1px solid var(--side-border); }
+.brand { display: flex; align-items: center; gap: 10px; padding: 0 10px; color: var(--heading); font-size: 15px; font-weight: 800; }
+.brand:hover { text-decoration: none; }
 .mark { display: block; border-radius: 6px; }
-header.site nav { display: flex; flex-wrap: wrap; gap: 4px 22px; margin: 0; }
-header.site nav a { margin: 0; padding: 3px 0; color: var(--secondary); border-bottom: 2px solid transparent; }
-header.site nav a:hover { color: var(--heading); text-decoration: none; }
-header.site nav a[aria-current="page"] { color: var(--heading); border-bottom-color: var(--accent); }
+.secs { display: flex; flex-direction: column; gap: 2px; }
+.secs a { display: grid; grid-template-columns: 1fr auto; align-items: end; gap: 2px 10px; padding: 10px 12px; border-radius: 8px; color: var(--secondary); }
+.secs a:hover { background: color-mix(in srgb, #fff 55%, transparent); text-decoration: none; }
+.secs a[aria-current="page"] { background: #fff; color: var(--heading); box-shadow: 0 1px 2px rgb(28 25 23 / 8%); }
+.sec-label { font-size: 13px; font-weight: 600; }
+.spark { grid-row: span 2; align-self: center; }
+.spark path { fill: none; stroke: var(--viz-ok); stroke-width: 1.5; stroke-linejoin: round; stroke-linecap: round; }
+.spark.bars path { fill: var(--viz-ok); stroke: none; }
+.sec-fig { grid-column: 1; color: var(--heading); font-size: 15px; font-weight: 700; font-variant-numeric: tabular-nums; white-space: nowrap; }
+.sec-unit { color: var(--muted); font-size: 11.5px; font-weight: 500; }
+.side-foot { margin: auto 0 0; padding: 0 10px; color: var(--muted); font-size: 12px; }
+.page { min-width: 0; max-width: 1180px; padding: 24px 34px 48px; }
+
+@media (max-width: 760px) {
+    .shell { grid-template-columns: minmax(0, 1fr); }
+    .side { position: static; height: auto; flex-direction: row; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 10px; padding: 12px 16px 0; border-right: none; border-bottom: 1px solid var(--side-border); }
+    .side-foot { margin: 0; padding: 0; }
+    .secs { order: 1; flex: 0 0 100%; flex-direction: row; gap: 4px; padding-bottom: 10px; overflow-x: auto; scrollbar-width: none; }
+    .secs a { flex: none; display: flex; flex-direction: column; justify-content: center; gap: 0; padding: 4px 12px; }
+    .spark { display: none; }
+    .sec-label { font-size: 12px; }
+    .sec-fig { font-size: 14px; }
+    .page { padding: 16px 16px 40px; }
+}
 
 /* Page-load progress bar, set by the layout script. The delay keeps fast
    loads from flashing it. */
@@ -356,7 +361,6 @@ details.traj-body > summary { cursor: pointer; color: var(--secondary); font-siz
 summary:hover { color: var(--heading); }
 
 @media (max-width: 640px) {
-    body { padding: 16px; }
     /* Wide tables scroll within themselves instead of the page. */
     table { display: block; overflow-x: auto; }
     th, td { padding: 8px 10px; }
@@ -370,8 +374,9 @@ summary:hover { color: var(--heading); }
 }
 
 @media print {
-    body { max-width: none; padding: 0; background: #fff; }
-    header.site nav, .strip-nav, .info, html.navigating::before { display: none; }
+    body { background: #fff; }
+    .shell { display: block; }
+    .side, .strip-nav, .info, html.navigating::before { display: none; }
     a { color: inherit; }
     tr, .card, .session, .traj-event { break-inside: avoid; }
     pre, .traj-text { max-height: none; overflow: visible; white-space: pre-wrap; }
@@ -397,10 +402,8 @@ summary:hover { color: var(--heading); }
 .cost-llm { --c: var(--viz-cost-llm); }
 
 .eyebrow { display: flex; align-items: center; font-size: 0.72rem; font-weight: 600; letter-spacing: 0.06em; text-transform: uppercase; color: var(--muted); }
-/* Figures stay in the body sans: a serif reads as decoration at display
-   sizes. Proportional digits, since these never stack in a column. */
+/* Proportional digits, since these never stack in a column. */
 .hero-figure, .figure-value, .tile-value, .card-value {
-    font-family: 'Public Sans', system-ui, -apple-system, sans-serif;
     font-weight: 650;
     color: var(--heading);
     letter-spacing: -0.02em;

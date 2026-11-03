@@ -38,6 +38,7 @@ type IndexRequest struct{}
 func (IndexRequest) Validate() error { return nil }
 
 type IndexData struct {
+	Frame
 	BenchmarkTitle   string
 	BenchmarkStats   BenchmarkStats
 	BenchmarkTargets []BenchmarkTarget

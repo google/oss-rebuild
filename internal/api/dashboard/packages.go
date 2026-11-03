@@ -63,6 +63,7 @@ type streakRange struct {
 var streakRanges = []streakRange{{"1", 1}, {"2-3", 3}, {"4-7", 7}, {"8-15", 15}, {"16+", -1}}
 
 type PackagesData struct {
+	Frame
 	Loaded     bool
 	AsOf       string
 	Eco        string // selected tab, empty lists every ecosystem

@@ -15,19 +15,24 @@
     <script src="/charts.js" defer></script>
 </head>
 <body>
-    <header class="site">
-    <h1><a href="/"><img class="mark" src="/favicon.svg" alt="" width="26" height="26">OSS Rebuild Dashboard</a></h1>
-    <nav>
-        <a href="/">Home</a>
-        <a href="/coverage">Coverage</a>
-        <a href="/resources">Resources</a>
-        <a href="/packages">Packages</a>
+<div class="shell">
+    <aside class="side">
+    <a class="brand" href="/"><img class="mark" src="/favicon.svg" alt="" width="26" height="26">OSS Rebuild</a>
+    <nav class="secs" aria-label="Sections">
+        {{- range $s := .Frame.Nav}}
+        <a href="{{$s.Href}}"><span class="sec-label">{{$s.Label}}</span>
+            {{- with $s.Spark}}<svg class="spark{{if $s.Bars}} bars{{end}}" width="56" height="18" viewBox="0 0 56 18" aria-hidden="true"><path d="{{.}}"/></svg>{{end}}
+            {{- with $s.Figure}}<span class="sec-fig">{{.}} <span class="sec-unit">{{$s.Unit}}</span></span>{{end}}</a>
+        {{- end}}
     </nav>
-    </header>
+    {{with .Frame.AsOf}}<p class="side-foot">Snapshot {{.}}</p>{{end}}
+    </aside>
     <script>
-        for (const a of document.querySelectorAll('header.site nav a')) {
-            const p = a.getAttribute('href');
-            if (location.pathname === p || (p !== '/' && location.pathname.startsWith(p + '/'))) a.setAttribute('aria-current', 'page');
+        // A package's own pages sit under Packages.
+        const also = {'/packages': ['/package/', '/attempt/', '/session/']};
+        for (const a of document.querySelectorAll('.secs a')) {
+            const p = a.getAttribute('href'), at = location.pathname;
+            if (at === p || (p !== '/' && at.startsWith(p + '/')) || (also[p] || []).some(q => at.startsWith(q))) a.setAttribute('aria-current', 'page');
         }
         // Pages render server-side and can take seconds, so a same-origin
         // link click shows a progress bar until the next page replaces this
@@ -40,6 +45,10 @@
         });
         addEventListener('pageshow', () => document.documentElement.classList.remove('navigating'));
     </script>
-{{block "content" .}}{{end}}</body>
+    <main class="page">
+{{block "content" .}}{{end}}
+    </main>
+</div>
+</body>
 </html>
 {{- define "when"}}<time datetime="{{.UTC.Format "2006-01-02T15:04:05Z"}}" title="{{.Format "2006-01-02 15:04:05 MST"}}">{{ago .}}</time>{{end}}

@@ -58,6 +58,7 @@ type CoverageEco struct {
 func (e CoverageEco) Campaigns() int64 { return e.Queued + e.InFlight + e.NeedsTriage + e.Done }
 
 type CoverageData struct {
+	Frame
 	Loaded   bool
 	AsOf     string
 	Eco      string        // selected tab, empty is the comparison view

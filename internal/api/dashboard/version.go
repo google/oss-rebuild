@@ -25,6 +25,7 @@ type VersionRequest struct {
 func (VersionRequest) Validate() error { return nil }
 
 type VersionData struct {
+	Frame
 	Ecosystem      string
 	PackageName    string
 	Version        string

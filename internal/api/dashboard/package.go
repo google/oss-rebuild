@@ -57,6 +57,7 @@ type PackageEvent struct {
 }
 
 type PackageData struct {
+	Frame
 	Ecosystem      string
 	PackageName    string
 	EncodedPackage string

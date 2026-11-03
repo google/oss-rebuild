@@ -5,7 +5,9 @@
 
 /* Palette only, so standalone pages can theme without dashboard.css. */
 :root {
-    --bg: #fcfbf9;
+    --bg: #f6f5f2;
+    --side: #efede8;
+    --side-border: #e2dfd9;
     --heading: #1c1917;
     --body: #292524;
     --secondary: #57534e;

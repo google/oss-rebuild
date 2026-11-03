@@ -27,6 +27,7 @@ type AttemptRequest struct {
 func (AttemptRequest) Validate() error { return nil }
 
 type AttemptData struct {
+	Frame
 	Ecosystem       string
 	PackageName     string
 	EncodedPackage  string
