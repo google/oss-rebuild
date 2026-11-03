@@ -71,19 +71,19 @@
         {{- with .Campaigns}}
         <section class="card">
             <div class="panel-head">
-                <span class="eyebrow">Campaigns</span>
-                <span class="chart-note">one per package version</span>
+                <span class="eyebrow">Rebuild progress{{template "def" "One campaign per package version the scheduler took on. Attested campaigns are split by whether inference or the agent attested them."}}</span>
+                <span class="chart-note">versions taken on, by where each stands</span>
             </div>
             <div class="outcomes">
                 {{- range .}}
                 <div class="outcome-row">
                     <div class="outcome-name">{{.Ecosystem}}</div>
-                    <div style="width: {{printf "%.1f" ($home.CampaignShare .Campaigns)}}%">{{template "campaigns" .}}</div>
+                    <div style="width: {{printf "%.1f" ($home.CampaignShare .Campaigns)}}%">{{template "progress" .}}</div>
                     <div class="outcome-total">{{num .Campaigns}}</div>
                 </div>
                 {{- end}}
             </div>
-            {{template "campaigns-legend"}}
+            {{template "progress-legend"}}
         </section>
         {{- end}}
     </div>
