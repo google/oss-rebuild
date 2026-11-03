@@ -534,6 +534,18 @@ func NewMemoryGCE() *MemoryGCE {
 	}
 }
 
+// SeedRunning creates a running instance without going through Insert.
+func (m *MemoryGCE) SeedRunning(zone, name string, labels map[string]string, internalIP string, created time.Time) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	key := zone + "/" + name
+	m.instances[key] = Instance{
+		Name: name, Zone: zone, InternalIP: internalIP,
+		Labels: copyLabels(labels), LabelFingerprint: "fp0", Created: created,
+	}
+	m.labels[key] = copyLabels(labels)
+}
+
 func copyLabels(in map[string]string) map[string]string {
 	if in == nil {
 		return nil
@@ -626,6 +638,20 @@ func (m *MemoryGCE) InsertInstanceFromTemplate(_ context.Context, zone, name, te
 	m.instances[key] = inst
 	m.labels[key] = copyLabels(labels)
 	// Newly-inserted instances are running.
+	return inst, nil
+}
+
+func (m *MemoryGCE) GetInstance(_ context.Context, zone, name string) (Instance, error) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	m.record("GetInstance(%s,%s)", zone, name)
+	if err := m.checkFail("GetInstance"); err != nil {
+		return Instance{}, err
+	}
+	inst, ok := m.instances[zone+"/"+name]
+	if !ok {
+		return Instance{}, errors.New("instance not found")
+	}
 	return inst, nil
 }
 
