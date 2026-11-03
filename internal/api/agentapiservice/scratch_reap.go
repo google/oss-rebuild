@@ -4,6 +4,7 @@
 package agentapiservice
 
 import (
+	"cmp"
 	"context"
 	"errors"
 	"fmt"
@@ -26,6 +27,8 @@ type ScratchReapResponse struct {
 	ScratchesReaped   int `json:"scratches_reaped"`
 	OpsFinalized      int `json:"ops_finalized"`
 	SessionsFinalized int `json:"sessions_finalized"`
+	GuestsSwept       int `json:"guests_swept,omitempty"` // orphans the host sweep destroyed, zero without scratch hosts
+	HostsReaped       int `json:"hosts_reaped,omitempty"`
 }
 
 // opDeadlineGrace pads each op's worker-enforced timeout to allow for
@@ -48,27 +51,30 @@ type ScratchReapDeps struct {
 	// before the scratch is torn down or the op declared expired. nil
 	// finalizes such ops blind.
 	Syncer Syncer
-	Zones  []string // zones a VM may sit in when its record has none (see deleteScratch)
+	Zones  []string // VM and host zones. Empty skips host rules
 	// IdleThreshold is how long a scratch may go without a write before
 	// the reaper takes it (see db.ScratchIdleSince).
-	IdleThreshold time.Duration // default: 30m
+	IdleThreshold time.Duration // default: 30m. Also caps empty hosts
 	// TeardownCap bounds the VM deletes one pass attempts, across idle/dead
 	// session sweeps, while the other candidates wait for the next pass.
-	TeardownCap int // default: 25
+	TeardownCap       int           // default: 25
+	Hosts             *HostClient   // nil skips host rules
+	HostHealthTimeout time.Duration // per-pass probe budget. Zero: 3s
+	HostHealthDelay   time.Duration // between probes. Zero means 1s
 }
 
 func (d *ScratchReapDeps) idleThreshold() time.Duration {
-	if d.IdleThreshold > 0 {
-		return d.IdleThreshold
-	}
-	return 30 * time.Minute
+	return cmp.Or(d.IdleThreshold, 30*time.Minute)
 }
 
-func (d *ScratchReapDeps) teardownCap() int {
-	if d.TeardownCap > 0 {
-		return d.TeardownCap
-	}
-	return 25
+func (d *ScratchReapDeps) teardownCap() int { return cmp.Or(d.TeardownCap, 25) }
+
+func (d *ScratchReapDeps) hostHealthTimeout() time.Duration {
+	return cmp.Or(d.HostHealthTimeout, 3*time.Second)
+}
+
+func (d *ScratchReapDeps) hostHealthDelay() time.Duration {
+	return cmp.Or(d.HostHealthDelay, time.Second)
 }
 
 // teardownBudget counts a pass's remaining teardowns and the candidates it
@@ -95,19 +101,23 @@ func deadlineFor(exec schema.ScratchExec) time.Time {
 }
 
 // ScratchReap moves records that stopped making progress to a terminal
-// state. Each sweep is best-effort per item: a failure is logged and the
-// pass goes on.
+// state and applies the host rules. Each sweep is best-effort per item: a
+// failure is logged and the pass goes on.
 //
-//	sweep          candidate                                    outcome
-//	idle scratch   ready, LastUsed past IdleThreshold           VM and record deleted
-//	stuck scratch  starting or deleting, no write for as long   VM and record deleted
-//	pending exec   past its deadline, or its scratch gone       TimedOut or Lost
-//	dead session   RUNNING, no write for timeout plus grace     VM deleted, COMPLETED/ERROR
+//	sweep             candidate                                    outcome
+//	idle scratch      ready, LastUsed past IdleThreshold           VM and record deleted
+//	stuck scratch     starting or deleting, no write for as long   VM and record deleted
+//	pending exec      past its deadline, or its scratch gone       TimedOut or Lost
+//	dead session      RUNNING, no write for timeout plus grace     VM deleted, COMPLETED/ERROR
+//	orphan guest      no live record naming its host               guest destroyed
+//	empty host        no guest since before IdleThreshold          host deleted
+//	unreachable host  probes fail for HostHealthTimeout            retired, deleted once retired that long
 //
 // A pending exec inside its deadline keeps its scratch up, so a longer
 // execution needs a longer exec timeout rather than a longer idle
 // threshold. Idle and stuck scratches come from one listing, and their
-// teardowns share TeardownCap with dead sessions.
+// teardowns share TeardownCap with dead sessions. Host rules run last, so
+// a host emptied by this pass is collected in it.
 func ScratchReap(ctx context.Context, _ ScratchReapRequest, deps *ScratchReapDeps) (*ScratchReapResponse, error) {
 	now := time.Now().UTC()
 	idleCutoff := now.Add(-deps.idleThreshold())
@@ -193,10 +203,13 @@ func ScratchReap(ctx context.Context, _ ScratchReapRequest, deps *ScratchReapDep
 	if budget.deferred > 0 {
 		log.Printf("reap: teardown cap %d spent, %d candidates wait for the next pass", deps.teardownCap(), budget.deferred)
 	}
+	guestsSwept, hostsReaped := sweepHosts(ctx, deps, now)
 	return &ScratchReapResponse{
 		ScratchesReaped:   scratchesReaped,
 		OpsFinalized:      opsFinalized,
 		SessionsFinalized: sessionsFinalized,
+		GuestsSwept:       guestsSwept,
+		HostsReaped:       hostsReaped,
 	}, nil
 }
 
