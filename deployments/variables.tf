@@ -127,7 +127,7 @@ variable "agent_api_max_instances" {
 variable "scratch_machine_type" {
   type        = string
   description = "Machine type for scratch hosts. Each host runs a KVM microVM guest of 4 vCPUs per agent session, two guests per four host vCPUs with memory split evenly, so the type must support nested virtualization (Intel N2, C3 and C4 shapes do; E2 and AMD shapes do not)."
-  default     = "n2-standard-4"
+  default     = "n2-standard-16"
 }
 variable "scratch_jumbo_machine_type" {
   type        = string
@@ -136,8 +136,8 @@ variable "scratch_jumbo_machine_type" {
 }
 variable "scratch_disk_gb" {
   type        = number
-  description = "Boot/pd-ssd disk size for scratch hosts. Holds the host image, the golden guest images and the guest's disks."
-  default     = 100
+  description = "Boot/pd-ssd disk size for scratch hosts. Holds the host image, the golden guest images, and every slot's disks. Its size sets the disk's IOPS and throughput, which the slots share."
+  default     = 500
 }
 variable "enable_internal_ingress" {
   type        = bool
