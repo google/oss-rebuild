@@ -37,6 +37,8 @@ const (
 	TablePackageSignals   = "package_signals"
 	TableSignalUniverse   = "signal_universe"
 	TableSignalCoverage   = "signal_coverage"
+	TablePopularityTiers  = "popularity_tiers"
+	TableReleaseCohorts   = "release_cohorts"
 	TableCostObservations = "cost_observations"
 	TableEcosystemDaily   = "ecosystem_daily"
 	TableVersionStats     = "version_stats"
@@ -63,11 +65,11 @@ const MechanismAgent = "agent"
 // TODO: Record a RebuildAttempt on the agent path.
 const CompletedBuilds = `
 SELECT ecosystem, package, version, artifact, run_id, status, success, created,
-	mechanism, executor_version, cost_builder_seconds
+	mechanism, executor_version, cost_builder_seconds, cost_inference_seconds
 FROM attempts WHERE status != 'RUNNING'
 UNION ALL
 SELECT s.ecosystem, s.package, s.version, s.artifact, s.run_id, i.status, 1, i.created,
-	'` + MechanismAgent + `', NULL, NULL
+	'` + MechanismAgent + `', NULL, NULL, NULL
 FROM agent_iterations i JOIN agent_sessions s ON s.session_id = i.session_id
 WHERE i.status = 'SUCCESS'`
 
@@ -109,23 +111,31 @@ WHERE sc.vm_seconds > 0`
 // any day any measure contributes. Documents without a created stamp
 // aggregate under an empty day rather than vanishing on NULL join keys.
 // first_time_successes counts packages whose earliest success fell on that
-// day. Scratch VM-seconds attribute to a target's ecosystem through the
-// linked session. Unlinked scratches are omitted (no ecosystem).
+// day, and first_version_successes counts versions. Scratch VM-seconds
+// attribute to a target's ecosystem through the linked session. Unlinked
+// scratches are omitted (no ecosystem).
 const ecosystemDailyQuery = `
 WITH completed AS (` + CompletedBuilds + `),
 days AS (
 	SELECT ecosystem, coalesce(substr(created, 1, 10), '') AS day, count(*) AS attempts,
 		sum(success) AS successes, sum(status = 'ERROR') AS errors,
 		count(DISTINCT nullif(package, '')) AS distinct_pkgs,
-		sum(coalesce(cost_builder_seconds, 0)) AS builder_seconds
+		sum(coalesce(cost_builder_seconds, 0)) AS builder_seconds,
+		sum(coalesce(cost_inference_seconds, 0)) AS inference_seconds
 	FROM completed GROUP BY 1, 2),
 firsts AS (
 	SELECT ecosystem, coalesce(substr(min(created), 1, 10), '') AS day
 	FROM completed WHERE success GROUP BY ecosystem, package),
 first_days AS (SELECT ecosystem, day, count(*) AS n FROM firsts GROUP BY 1, 2),
+version_firsts AS (
+	SELECT ecosystem, coalesce(substr(min(created), 1, 10), '') AS day
+	FROM completed WHERE success GROUP BY ecosystem, package, version),
+version_first_days AS (SELECT ecosystem, day, count(*) AS n FROM version_firsts GROUP BY 1, 2),
 tokens AS (
 	SELECT ecosystem, coalesce(substr(created, 1, 10), '') AS day,
-		sum(coalesce(input_tokens, 0) + coalesce(output_tokens, 0)) AS n
+		sum(coalesce(input_tokens, 0) + coalesce(output_tokens, 0)) AS n,
+		sum(coalesce(input_tokens, 0)) AS input, sum(coalesce(cached_input_tokens, 0)) AS cached,
+		sum(coalesce(output_tokens, 0)) AS output
 	FROM agent_sessions WHERE json_extract(raw, '$.Usage') IS NOT NULL GROUP BY 1, 2),
 vm AS (
 	SELECT s.ecosystem, coalesce(substr(sc.created, 1, 10), '') AS day, sum(sc.vm_seconds) AS n
@@ -138,10 +148,14 @@ SELECT k.ecosystem, k.day,
 	coalesce(d.attempts, 0) AS attempts, coalesce(d.successes, 0) AS successes,
 	coalesce(d.errors, 0) AS errors, coalesce(d.distinct_pkgs, 0) AS distinct_pkgs_attempted,
 	coalesce(f.n, 0) AS first_time_successes, coalesce(t.n, 0) AS tokens,
-	coalesce(d.builder_seconds, 0.0) AS builder_seconds, coalesce(v.n, 0.0) AS scratch_vm_seconds
+	coalesce(d.builder_seconds, 0.0) AS builder_seconds, coalesce(v.n, 0.0) AS scratch_vm_seconds,
+	coalesce(d.inference_seconds, 0.0) AS inference_seconds,
+	coalesce(t.input, 0) AS input_tokens, coalesce(t.cached, 0) AS cached_input_tokens,
+	coalesce(t.output, 0) AS output_tokens, coalesce(vf.n, 0) AS first_version_successes
 FROM keys k
 LEFT JOIN days d ON d.ecosystem = k.ecosystem AND d.day = k.day
 LEFT JOIN first_days f ON f.ecosystem = k.ecosystem AND f.day = k.day
+LEFT JOIN version_first_days vf ON vf.ecosystem = k.ecosystem AND vf.day = k.day
 LEFT JOIN tokens t ON t.ecosystem = k.ecosystem AND t.day = k.day
 LEFT JOIN vm v ON v.ecosystem = k.ecosystem AND v.day = k.day
 ORDER BY 1, 2`
@@ -234,12 +248,11 @@ FROM (SELECT *, row_number() OVER (PARTITION BY ecosystem ORDER BY score DESC, a
 WHERE n <= ` + topGapsPerEcosystem + `
 ORDER BY ecosystem, score DESC, attempts DESC, package`
 
-// signalCoverageQuery compares each ecosystem's tracked, attempted and current
-// packages against signal_universe, by count and summed score. The universe is
-// the whole export, so dropping packages from tracking cannot raise
-// covered_mass_share.
-const signalCoverageQuery = `
-WITH ranked AS (
+// trackedStandingCTEs ends in tracked_standing, one row per tracked package.
+// rank counts only tracked packages, so it is the export rank only where the
+// whole export is tracked.
+const trackedStandingCTEs = `
+ranked AS (
 	SELECT *, row_number() OVER (PARTITION BY ecosystem, package ORDER BY version COLLATE version_approx_compare DESC) AS vrank
 	FROM version_stats),
 latest AS (SELECT * FROM ranked WHERE vrank = 1),
@@ -248,19 +261,31 @@ live AS (
 		max(state = '` + string(scheduler.StateInFlight) + `') AS in_flight,
 		max(state = '` + string(scheduler.StateQueued) + `') AS queued
 	FROM campaigns GROUP BY 1, 2),
-tracked AS (
-	SELECT s.ecosystem, count(*) AS tracked_packages, sum(s.score) AS tracked_mass,
-		count(l.package) AS attempted_packages,
-		sum(CASE WHEN l.package IS NOT NULL THEN s.score ELSE 0 END) AS attempted_mass,
-		sum(coalesce(l.current, 0)) AS current_packages,
-		sum(CASE WHEN l.current THEN s.score ELSE 0 END) AS current_mass,
-		sum(l.package IS NOT NULL AND NOT l.current AND (coalesce(c.in_flight, 0) OR coalesce(c.queued, 0))) AS retrying_packages,
-		sum(l.package IS NULL AND coalesce(c.in_flight, 0)) AS in_flight_packages,
-		sum(l.package IS NULL AND NOT coalesce(c.in_flight, 0) AND coalesce(c.queued, 0)) AS queued_packages
+tracked_standing AS (
+	SELECT s.ecosystem, s.package, s.score,
+		row_number() OVER (PARTITION BY s.ecosystem ORDER BY s.score DESC, s.package) AS rank,
+		l.package IS NOT NULL AS attempted, coalesce(l.current, 0) AS current,
+		coalesce(c.in_flight, 0) AS in_flight, coalesce(c.queued, 0) AS queued
 	FROM package_signals s
 	LEFT JOIN latest l ON l.ecosystem = s.ecosystem AND l.package = s.package
-	LEFT JOIN live c ON c.ecosystem = s.ecosystem AND c.package = s.package
-	GROUP BY 1)
+	LEFT JOIN live c ON c.ecosystem = s.ecosystem AND c.package = s.package)`
+
+// signalCoverageQuery compares each ecosystem's tracked, attempted and current
+// packages against signal_universe, by count and summed score. The universe is
+// the whole export, so dropping packages from tracking cannot raise
+// covered_mass_share.
+const signalCoverageQuery = `
+WITH ` + trackedStandingCTEs + `,
+tracked AS (
+	SELECT ecosystem, count(*) AS tracked_packages, sum(score) AS tracked_mass,
+		sum(attempted) AS attempted_packages,
+		sum(CASE WHEN attempted THEN score ELSE 0 END) AS attempted_mass,
+		sum(current) AS current_packages,
+		sum(CASE WHEN current THEN score ELSE 0 END) AS current_mass,
+		sum(attempted AND NOT current AND (in_flight OR queued)) AS retrying_packages,
+		sum(NOT attempted AND in_flight) AS in_flight_packages,
+		sum(NOT attempted AND NOT in_flight AND queued) AS queued_packages
+	FROM tracked_standing GROUP BY 1)
 SELECT u.ecosystem,
 	u.packages AS universe_packages, u.score_mass AS universe_mass,
 	coalesce(t.tracked_packages, 0) AS tracked_packages,
@@ -277,6 +302,42 @@ SELECT u.ecosystem,
 FROM signal_universe u
 LEFT JOIN tracked t ON t.ecosystem = u.ecosystem
 ORDER BY 1`
+
+// popularityTiersQuery counts each ecosystem's top 100, 1,000 and 10,000
+// tracked packages by score in the signal_coverage states. A tier past an
+// ecosystem's tracked packages holds all of them, and packages says how many.
+const popularityTiersQuery = `
+WITH ` + trackedStandingCTEs + `,
+tiers(tier) AS (VALUES (100), (1000), (10000))
+SELECT p.ecosystem, t.tier, count(*) AS packages,
+	sum(current) AS reproduced,
+	sum(attempted AND NOT current AND NOT (in_flight OR queued)) AS not_reproduced,
+	sum(attempted AND NOT current AND (in_flight OR queued)) AS retrying,
+	sum(NOT attempted AND in_flight) AS in_flight,
+	sum(NOT attempted AND NOT in_flight AND queued) AS queued
+FROM tracked_standing p JOIN tiers t ON p.rank <= t.tier
+GROUP BY 1, 2
+ORDER BY 1, 2`
+
+// releaseCohortsQuery counts tracked packages' enqueued versions by publish
+// year, in the signal_coverage states applied per version.
+const releaseCohortsQuery = `
+WITH enqueued AS (
+	SELECT ecosystem, package, version, min(published) AS published,
+		max(state = '` + string(scheduler.StateInFlight) + `') AS in_flight,
+		max(state = '` + string(scheduler.StateQueued) + `') AS queued
+	FROM campaigns WHERE published IS NOT NULL GROUP BY 1, 2, 3)
+SELECT c.ecosystem, substr(c.published, 1, 4) AS release_year,
+	sum(coalesce(v.current, 0)) AS reproduced,
+	sum(v.version IS NOT NULL AND NOT v.current AND NOT (c.in_flight OR c.queued)) AS not_reproduced,
+	sum(v.version IS NOT NULL AND NOT v.current AND (c.in_flight OR c.queued)) AS retrying,
+	sum(v.version IS NULL AND c.in_flight) AS in_flight,
+	sum(v.version IS NULL AND NOT c.in_flight AND c.queued) AS queued
+FROM enqueued c
+JOIN package_signals s ON s.ecosystem = c.ecosystem AND s.package = c.package
+LEFT JOIN version_stats v ON v.ecosystem = c.ecosystem AND v.package = c.package AND v.version = c.version
+GROUP BY 1, 2
+ORDER BY 1, 2`
 
 // coverageWeeklyQuery aggregates version_stats into one row per
 // (ecosystem, week): cumulative package counts as of the end of each week,
@@ -664,6 +725,8 @@ func Tables() []docdb.TableDef {
 		{Name: TableCoverageWeekly, Query: coverageWeeklyQuery, Indexes: [][]string{{"ecosystem", "week"}}},
 		{Name: TableTopGaps, Query: topGapsQuery, Indexes: [][]string{{"ecosystem"}}},
 		{Name: TableSignalCoverage, Query: signalCoverageQuery},
+		{Name: TablePopularityTiers, Query: popularityTiersQuery, Indexes: [][]string{{"ecosystem"}}},
+		{Name: TableReleaseCohorts, Query: releaseCohortsQuery, Indexes: [][]string{{"ecosystem"}}},
 		{Name: TablePackageStats, Query: packageStatsQuery, Indexes: [][]string{{"ecosystem", "package"}}},
 	}
 }

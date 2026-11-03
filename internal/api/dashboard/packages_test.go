@@ -38,6 +38,8 @@ func packagesFixture(t *testing.T) memAnalytics {
 		// c's agent success lands mid-strip. Failed iterations are not builds.
 		`INSERT INTO agent_sessions VALUES ('s1', 'pypi', 'c', '0.1', 'c.whl', 'r9')`,
 		`INSERT INTO agent_iterations VALUES ('s1', 'SUCCESS', '2026-08-28T10:00:00Z'), ('s1', 'FAILURE', '2026-08-28T09:00:00Z')`,
+		// CompletedBuilds reads inference time too.
+		`ALTER TABLE attempts ADD COLUMN cost_inference_seconds REAL`,
 	)
 }
 
