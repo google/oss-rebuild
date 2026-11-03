@@ -9,6 +9,7 @@ type Chart struct {
 	Step       int64      // seconds apart, wider gaps break lines
 	Fmt        string     // "num" or "pct"
 	Threshold  *Threshold `json:",omitempty"`
+	EndLabels  bool       `json:",omitempty"` // names each series past its last point
 	Series     []ChartSeries
 }
 
