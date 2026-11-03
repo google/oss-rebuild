@@ -321,6 +321,47 @@ func TestExcludePath_Stabilizer(t *testing.T) {
 	}
 }
 
+func TestExcludePath_Stabilizer_Filter(t *testing.T) {
+	tarEntryA := &archive.TarEntry{Header: &tar.Header{Name: "test/a.txt"}}
+	tarEntryB := &archive.TarEntry{Header: &tar.Header{Name: "other/b.txt"}}
+	zipEntryA := &archive.MutableZipFile{FileHeader: zip.FileHeader{Name: "test/a.txt"}}
+	zipEntryB := &archive.MutableZipFile{FileHeader: zip.FileHeader{Name: "other/b.txt"}}
+	tests := []struct {
+		name    string
+		paths   []string
+		wantTar []*archive.TarEntry
+		wantZip []*archive.MutableZipFile
+	}{
+		{
+			name:    "matching glob excludes entry",
+			paths:   []string{"test/*.txt"},
+			wantTar: []*archive.TarEntry{tarEntryB},
+			wantZip: []*archive.MutableZipFile{zipEntryB},
+		},
+		{
+			name:    "malformed glob keeps all entries",
+			paths:   []string{"["},
+			wantTar: []*archive.TarEntry{tarEntryA, tarEntryB},
+			wantZip: []*archive.MutableZipFile{zipEntryA, zipEntryB},
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			s := (&ExcludePath{Paths: tt.paths}).Stabilizer("test")
+			ta := &archive.TarArchive{Files: []*archive.TarEntry{tarEntryA, tarEntryB}}
+			s.FnFor(NewContext(archive.TarFormat)).(TarArchiveFn)(ta)
+			if !reflect.DeepEqual(ta.Files, tt.wantTar) {
+				t.Errorf("tar Files = %v, want %v", ta.Files, tt.wantTar)
+			}
+			mzr := &archive.MutableZipReader{File: []*archive.MutableZipFile{zipEntryA, zipEntryB}}
+			s.FnFor(NewContext(archive.ZipFormat)).(ZipArchiveFn)(mzr)
+			if !reflect.DeepEqual(mzr.File, tt.wantZip) {
+				t.Errorf("zip File = %v, want %v", mzr.File, tt.wantZip)
+			}
+		})
+	}
+}
+
 func TestCreateCustomStabilizers(t *testing.T) {
 	tests := []struct {
 		name        string
