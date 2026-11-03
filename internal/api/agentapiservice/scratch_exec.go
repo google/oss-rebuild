@@ -37,7 +37,7 @@ type ScratchExecCreateDeps struct {
 	WorkerDialer WorkerDialer
 	OutputBucket string
 	IDGen        func() string // For op IDs. If nil, defaults to uuid.New()
-	OpTimeout    time.Duration // Default and max exec timeout. Zero leaves execs unbounded
+	OpTimeout    time.Duration // Default and max exec timeout. Zero refuses all
 	Syncer       Syncer        // For the optimistic wait. Disabled on nil
 }
 
@@ -114,10 +114,9 @@ func ScratchExecCreate(ctx context.Context, req schema.ScratchExecRequest, deps 
 	if scratch.ObliviousID == "" {
 		return nil, api.AsStatus(codes.Internal, errors.Errorf("scratch %q missing ObliviousID", req.ScratchID))
 	}
-	// When OpTimeout is configured, every exec gets a worker-enforced bound:
-	// the request value, defaulted when omitted and capped at the maximum.
-	// The reaper derives the op's hard deadline from the stamped value and
-	// leaves unbounded ops' scratches up.
+	// Every exec gets a worker-enforced bound, defaulting to and capped at
+	// OpTimeout. The reaper derives deadlines from it, so an unbounded exec is
+	// refused.
 	maxTimeout := int(deps.OpTimeout.Seconds())
 	if maxTimeout > 0 && req.TimeoutSeconds > maxTimeout {
 		return nil, api.AsStatus(codes.InvalidArgument, errors.Errorf("timeout_seconds %d exceeds maximum %d", req.TimeoutSeconds, maxTimeout))
@@ -125,6 +124,9 @@ func ScratchExecCreate(ctx context.Context, req schema.ScratchExecRequest, deps 
 	timeoutSeconds := req.TimeoutSeconds
 	if timeoutSeconds == 0 {
 		timeoutSeconds = maxTimeout
+	}
+	if timeoutSeconds <= 0 {
+		return nil, api.AsStatus(codes.InvalidArgument, errors.New("timeout_seconds is required: the broker has no default exec deadline configured"))
 	}
 
 	// Prepare the worker client before Insert so a dialer failure (auth setup,
