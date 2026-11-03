@@ -30,6 +30,7 @@ type Candidate struct {
 	Review   *ReviewView
 	ReviewAt time.Time
 	After    []Call // the tool calls and records up to the next candidate
+	Href     string // its build on the transcript page
 	Job      bool   // the job built it rather than the agent
 	took     time.Duration
 	exit     string // the agent build's result, as toolResult renders it
@@ -167,6 +168,7 @@ func (c *Comparison) Chip() string {
 // Call is one tool call or record between candidates.
 type Call struct {
 	ID     string // the row's anchor
+	Href   string // the call on the transcript page, with its output
 	Drawer int    // the candidate whose drawer lists it, 0 before the first
 	At     time.Time
 	Tool   string
@@ -424,6 +426,7 @@ func deriveCandidates(data *SessionData, start, end time.Time) {
 		reply:     map[*TranscriptEvent]*TranscriptEvent{},
 		proposals: map[int]*TranscriptEvent{},
 		records:   map[int]*schema.AgentIteration{},
+		href:      "/session/" + data.Session.ID + "/transcript#",
 	}
 	for gi := range data.Trajectory {
 		g := &data.Trajectory[gi]
@@ -440,7 +443,8 @@ func deriveCandidates(data *SessionData, start, end time.Time) {
 	// Responses follow their calls in order, so each pairs with the earliest
 	// unanswered call of its tool.
 	waiting := map[string][]*TranscriptEvent{}
-	for _, e := range d.events {
+	for i, e := range d.events {
+		e.Anchor = "e" + strconv.Itoa(i)
 		switch e.Kind {
 		case "call":
 			waiting[e.Tool] = append(waiting[e.Tool], e)
@@ -499,6 +503,7 @@ type deriver struct {
 	reply     map[*TranscriptEvent]*TranscriptEvent // each answered call's response
 	proposals map[int]*TranscriptEvent              // by iteration
 	records   map[int]*schema.AgentIteration        // by iteration
+	href      string                                // the transcript page the anchors are on
 	cands     []*Candidate
 	lead      []Call
 	spans     []stretch
@@ -514,7 +519,7 @@ type deriver struct {
 
 // add puts a row in the current candidate's drawer, or before the first.
 func (d *deriver) add(e *TranscriptEvent, c Call) {
-	c.ID, c.At = fmt.Sprintf("call-%d", d.rows), e.At
+	c.ID, c.Href, c.At = fmt.Sprintf("call-%d", d.rows), d.href+e.Anchor, e.At
 	d.rows++
 	if d.cur == nil {
 		d.lead = append(d.lead, c)
@@ -597,7 +602,7 @@ func (d *deriver) agentCandidate(at time.Time) *Candidate {
 			if timeout > 0 {
 				kind = "timeout"
 			}
-			c.took, c.exit = c.took+resp.At.Sub(w.At), result
+			c.took, c.exit, c.Href = c.took+resp.At.Sub(w.At), result, d.href+w.Anchor
 			d.spans = append(d.spans, stretch{kind, fmt.Sprintf("candidate %d", c.N), w.At, resp.At})
 		}
 		switch {
@@ -711,7 +716,7 @@ func (d *deriver) jobBuild(e *TranscriptEvent, later []*TranscriptEvent, end tim
 		}
 	}
 	c := d.open(e.At, change, b.ID)
-	c.Job, c.Stages, c.took = true, jobStages(b), to.Sub(from)
+	c.Job, c.Stages, c.took, c.Href = true, jobStages(b), to.Sub(from), d.href+e.Anchor
 	if st := c.Stages[stageCompare]; st.State == "off" || st.State == "match" {
 		c.Compare = &Comparison{By: "job compare", At: to, Match: st.State == "match", forms: "builds/" + b.ID + "/"}
 		// The job hands its diff summary to the next iteration: in the

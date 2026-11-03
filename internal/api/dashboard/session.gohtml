@@ -73,6 +73,7 @@
                     <div><span class="fact-k">Started</span><span class="fact-v mono">{{$c.At.Format "15:04:05"}}</span></div>
                     {{with $c.Took}}<div><span class="fact-k">Took</span><span class="fact-v">{{.}}</span></div>{{end}}
                     {{if $c.Job}}<div><span class="fact-k">Job build</span><span class="fact-v mono">{{$c.Command}}</span></div>{{end}}
+                    {{with $c.Href}}<div><span class="fact-k">Transcript</span><a class="fact-v" href="{{.}}">output ›</a></div>{{end}}
                     {{with $c.Compare}}<div><span class="fact-k">Compare</span><button type="button" class="linkish" data-pop="pop-{{$c.N}}-compare">{{.Chip}} ›</button></div>{{end}}
                     {{with $c.Review}}<div><span class="fact-k">Review</span><button type="button" class="linkish" data-pop="pop-{{$c.N}}-review">{{.Chip}} ›</button></div>{{end}}
                 </div>
@@ -150,89 +151,10 @@
         });
     </script>
 
-    <details class="transcript">
-        <summary><h2>Transcript</h2></summary>
-    {{if .Trajectory}}
-    {{range .Trajectory}}
-    <div class="traj-iter">
-        <div class="traj-iter-head">
-            <strong>Iteration {{.Number}}</strong>
-            {{with .Record}}
-            <span class="session-meta">
-                {{.Status}}
-                {{if .Result}} · {{if .Result.BuildSuccess}}build ok{{else}}{{.Result.ErrorMessage}}{{end}}{{end}}
-                {{if .ObliviousID}} · build {{.ObliviousID}}{{end}}
-            </span>
-            {{end}}
-            {{if .RecordUsage}}<span class="session-meta"> · {{.RecordUsage}}</span>{{end}}
-        </div>
-        {{if .RecordStrategy}}
-        <details class="traj-body"><summary>show recorded strategy</summary><pre>{{.RecordStrategy}}</pre></details>
-        {{end}}
-        {{range .Events}}
-        <div class="traj-event kind-{{.Kind}}">
-            <div><span class="traj-kind">{{.Title}}</span>{{if not .At.IsZero}}<span class="traj-time">{{.At.Format "15:04:05"}}</span>{{end}}{{if .Href}} <a href="{{.Href}}"><small>{{.HrefText}}</small></a>{{end}}</div>
-            {{if .Build}}
-            <table>
-                <thead><tr><th>Step</th><th>State</th><th>Exit</th><th>Duration</th><th>Script</th><th>Output</th></tr></thead>
-                <tbody>
-                    {{range .Build.Steps}}
-                    <tr>
-                        <td>{{.Label}}</td>
-                        <td>{{.State}}</td>
-                        <td>{{.ExitCode}}</td>
-                        <td>{{.Duration}}</td>
-                        <td><details class="traj-body"><summary><code>{{printf "%.60s" .Script}}</code></summary><pre>{{.Script}}</pre></details></td>
-                        <td>{{if .OutPath}}<a href="{{.OutPath}}">raw</a>{{else}}n/a{{end}}</td>
-                    </tr>
-                    {{end}}
-                </tbody>
-            </table>
-            {{end}}
-            {{if .Command}}<pre>{{.Command}}</pre>{{end}}
-            {{if .Body}}
-                {{if .Open}}
-                <div class="traj-text">{{.Body}}</div>
-                {{else}}
-                <details class="traj-body"><summary>{{if .Note}}{{.Note}}{{else}}show{{end}}</summary><pre>{{.Body}}</pre></details>
-                {{end}}
-            {{end}}
-        </div>
-        {{end}}
-    </div>
-    {{end}}
-    {{else}}
-    <p class="hint">No trajectory recorded.</p>
-    {{end}}
-    </details>
-
-    <details class="transcript">
-        <summary><h2>Scratch execs</h2></summary>
-    {{if .Execs}}
-    <table>
-        <thead><tr><th>Iter</th><th>Queued</th><th>Label</th><th>State</th><th>Exit</th><th>Duration</th><th>Command</th><th>Output</th></tr></thead>
-        <tbody>
-            {{range .Execs}}
-            <tr>
-                <td>{{if .Iter}}{{.Iter}}{{end}}</td>
-                <td>{{.Queued}}</td>
-                <td>{{.Label}}</td>
-                <td><span class="{{.StateClass}}">{{.State}}</span></td>
-                <td>{{.ExitCode}}</td>
-                <td>{{.Duration}}</td>
-                <td><details class="traj-body"><summary><code>{{printf "%.80s" .CmdLine}}</code></summary><pre>{{.CmdLine}}</pre>{{if .ErrorMsg}}<p class="hint">{{.ErrorMsg}}</p>{{end}}</details></td>
-                <td>{{if .OutPath}}<a href="{{.OutPath}}">raw</a>{{else}}n/a{{end}}</td>
-            </tr>
-            {{end}}
-        </tbody>
-    </table>
-    {{else}}
-    <p class="hint">No scratch execs recorded.</p>
-    {{end}}
-    </details>
+    <p class="page-links"><a href="/session/{{$s.ID}}/transcript">Full transcript</a> · <a href="/session/{{$s.ID}}/transcript#execs">Scratch execs</a></p>
 {{end}}
 
-{{define "callrow"}}<div class="callrow{{if .Bad}} bad{{end}}" id="{{.ID}}"><span class="mono">{{.At.Format "15:04:05"}}</span><span class="tool">{{.Tool}}</span>{{if .Review}}<button type="button" class="linkish" data-pop="pop-{{.Drawer}}-review">{{.Cmd}} ›</button>{{else}}<code class="ell">{{.Cmd}}</code>{{end}}<span class="res" title="{{.Detail}}">{{.Result}}</span></div>{{end}}
+{{define "callrow"}}<div class="callrow{{if .Bad}} bad{{end}}" id="{{.ID}}"><a class="mono" href="{{.Href}}" title="In the transcript, with its output">{{.At.Format "15:04:05"}}</a><span class="tool">{{.Tool}}</span>{{if .Review}}<button type="button" class="linkish" data-pop="pop-{{.Drawer}}-review">{{.Cmd}} ›</button>{{else}}<code class="ell">{{.Cmd}}</code>{{end}}<span class="res" title="{{.Detail}}">{{.Result}}</span></div>{{end}}
 
 {{define "comparePop"}}{{with .Compare}}<div class="popout" role="dialog" aria-label="Compare, candidate {{$.N}}">
     <div class="pop-head"><b>Compare · candidate {{$.N}}</b><span class="mono">{{.By}}, {{.At.Format "15:04:05"}}</span><button type="button" class="pop-close" aria-label="Close">✕</button></div>

@@ -217,6 +217,9 @@ func main() {
 	http.HandleFunc("/session/{id}", api.Translate(func(r *http.Request) (dashboard.SessionRequest, error) {
 		return dashboard.SessionRequest{ID: r.PathValue("id")}, nil
 	}, api.HTMLHandler(DashboardInit, api.WithTimeout(30*time.Second, dashboard.Framed(dashboard.Session)), dashboard.SessionTmpl)))
+	http.HandleFunc("/session/{id}/transcript", api.Translate(func(r *http.Request) (dashboard.SessionRequest, error) {
+		return dashboard.SessionRequest{ID: r.PathValue("id")}, nil
+	}, api.HTMLHandler(DashboardInit, api.WithTimeout(30*time.Second, dashboard.Framed(dashboard.Session)), dashboard.TranscriptTmpl)))
 	http.HandleFunc("/session/{id}/exec/{execid}/out", func(w http.ResponseWriter, r *http.Request) {
 		deps, err := DashboardInit(r.Context())
 		if err != nil {

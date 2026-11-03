@@ -59,6 +59,7 @@ type TranscriptEvent struct {
 	Args     map[string]any    // call only
 	Response map[string]any    // response only
 	Review   *ReviewView       // review only
+	Anchor   string            // the event's id on the transcript page, set for timed events
 	object   string            // call only: the transcript object, relative to messages/
 	call     int               // call only: index among the object's function calls
 }
