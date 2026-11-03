@@ -207,9 +207,27 @@ func (d *CoverageData) tab(eco string) *CoverageData {
 	return &t
 }
 
+// campaignsMemo shares the campaign counts between the home and coverage
+// pages.
+var campaignsMemo snapshotMemo[map[string]*CoverageEco]
+
 // loadCampaigns counts each ecosystem's campaigns by state, and the done ones
 // by the stage that attested them, keyed by ecosystem.
+// Each caller gets its own copy of the map and its entries to fill in.
 func loadCampaigns(a Analytics) (map[string]*CoverageEco, error) {
+	shared, err := campaignsMemo.get(a, queryCampaigns)
+	if err != nil {
+		return nil, err
+	}
+	out := make(map[string]*CoverageEco, len(shared))
+	for name, e := range shared {
+		c := *e
+		out[name] = &c
+	}
+	return out, nil
+}
+
+func queryCampaigns(a Analytics) (map[string]*CoverageEco, error) {
 	byEco := map[string]*CoverageEco{}
 	// The last column counts the campaigns the agent stage attested with a
 	// strategy the agent proposed or handed off, as the session's WonBy

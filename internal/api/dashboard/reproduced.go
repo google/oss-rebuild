@@ -82,10 +82,16 @@ func (r Reproduced) Top() TierBand {
 	return t
 }
 
+// reproducedMemo shares the reproduced counts between the home page and the
+// frame.
+var reproducedMemo snapshotMemo[Reproduced]
+
 // loadReproduced counts the reproduced versions and packages in
 // version_stats. It folds the same completed builds as package_stats, so its
 // packages are package_stats' rows.
-func loadReproduced(a Analytics) (Reproduced, error) {
+func loadReproduced(a Analytics) (Reproduced, error) { return reproducedMemo.get(a, queryReproduced) }
+
+func queryReproduced(a Analytics) (Reproduced, error) {
 	var r Reproduced
 	err := forEachRow(a, `
 		SELECT ecosystem, count(*), count(first_succeeded_at), count(DISTINCT package),

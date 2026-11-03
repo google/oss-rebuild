@@ -167,3 +167,40 @@ func TestSnapshotPagesWarmTabs(t *testing.T) {
 		}
 	}
 }
+
+func TestSnapshotMemo(t *testing.T) {
+	var m snapshotMemo[int]
+	var runs int
+	var fail bool
+	load := func(Analytics) (int, error) {
+		runs++
+		if fail {
+			return 0, errors.New("query failed")
+		}
+		return runs, nil
+	}
+	a, b := &versionedAnalytics{}, &versionedAnalytics{}
+	for _, step := range []struct {
+		name string
+		a    *versionedAnalytics
+		want int
+	}{
+		{"first load", a, 1},
+		{"same version", a, 1},
+		{"another snapshot", b, 2},
+		{"back to the first", a, 3},
+	} {
+		if got, err := m.get(step.a, load); err != nil || got != step.want {
+			t.Errorf("%s: get = %d, %v, want %d", step.name, got, err, step.want)
+		}
+	}
+	a.advance()
+	fail = true
+	if _, err := m.get(a, load); err == nil {
+		t.Error("get on a new version kept the old result through a failing load")
+	}
+	fail = false
+	if got, _ := m.get(a, load); got != 5 {
+		t.Errorf("get after the failure = %d, want a fresh load, 5", got)
+	}
+}

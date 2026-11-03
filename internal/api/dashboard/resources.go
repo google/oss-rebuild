@@ -134,8 +134,22 @@ func ResourcesPage(ctx context.Context, req ResourcesRequest, deps *Deps) (*Reso
 		}
 		data.Activity.Start = data.Window.Start
 	}
+	if data.TopPackages, err = topCostMemo.get(a, queryTopCost); err != nil {
+		return nil, err
+	}
+	return data, nil
+}
+
+// topCostMemo shares the window's costliest packages between the resources
+// tabs, which all list them.
+var topCostMemo snapshotMemo[[]ExpensivePackage]
+
+// queryTopCost lists the packages with the most builder time in the window,
+// the costliest first.
+func queryTopCost(a Analytics) ([]ExpensivePackage, error) {
+	var out []ExpensivePackage
 	var maxCost float64 = 1
-	err = forEachRow(a, `
+	err := forEachRow(a, `
 		SELECT ecosystem, package, count(*), sum(coalesce(nullif(builder_seconds,0), build_seconds))
 		FROM cost_observations
 		WHERE source='attempt' AND timestamp >= '`+sqlitex.TimeColumn(time.Now().AddDate(0, 0, -analyticsWindowDays))+`'
@@ -150,14 +164,14 @@ func ResourcesPage(ctx context.Context, req ResourcesRequest, deps *Deps) (*Reso
 				BuilderMinutes: stmt.ColumnFloat(3) / 60,
 			}
 			maxCost = max(maxCost, p.BuilderMinutes)
-			data.TopPackages = append(data.TopPackages, p)
+			out = append(out, p)
 			return nil
 		})
 	if err != nil {
 		return nil, errors.Wrap(err, "querying top packages")
 	}
-	for i := range data.TopPackages {
-		data.TopPackages[i].BarPct = int64(100 * data.TopPackages[i].BuilderMinutes / maxCost)
+	for i := range out {
+		out[i].BarPct = int64(100 * out[i].BuilderMinutes / maxCost)
 	}
-	return data, nil
+	return out, nil
 }

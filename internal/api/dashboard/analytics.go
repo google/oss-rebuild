@@ -4,6 +4,7 @@
 package dashboard
 
 import (
+	"sync"
 	"time"
 
 	"github.com/google/oss-rebuild/internal/snapshot"
@@ -40,6 +41,33 @@ func forEachRow(a Analytics, sql string, fn func(*sqlite3.Stmt) error) error {
 		}
 		return errors.Wrap(stmt.Err(), "executing query")
 	})
+}
+
+// snapshotMemo keeps a loader's result for one snapshot version, so the
+// pages that share a query run it once per version. Callers treat the result
+// as read-only. The Analytics must be comparable, as every implementation is.
+type snapshotMemo[T any] struct {
+	mu    sync.Mutex
+	a     Analytics
+	fresh time.Time
+	val   T
+}
+
+// get returns load's result for a's current version, running load when the
+// kept one is from another version or snapshot. Callers wait on one run.
+func (m *snapshotMemo[T]) get(a Analytics, load func(Analytics) (T, error)) (T, error) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	fresh := a.Freshness()
+	if m.a == a && m.fresh.Equal(fresh) {
+		return m.val, nil
+	}
+	v, err := load(a)
+	if err != nil {
+		return v, err
+	}
+	m.a, m.fresh, m.val = a, fresh, v
+	return v, nil
 }
 
 // asOfLayout formats the times page footers report.
