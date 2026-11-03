@@ -698,7 +698,7 @@ resource "google_cloud_run_v2_job" "rebuild-job" {
   depends_on = [google_project_service.run]
 }
 
-# The daily snapshot rollup scans every Firestore collection into SQLite.
+# The hourly snapshot rollup scans every Firestore collection into SQLite.
 resource "google_cloud_run_v2_job" "snapshot-rollup" {
   name                = "snapshot-rollup"
   location            = "us-central1"

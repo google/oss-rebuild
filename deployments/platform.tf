@@ -165,7 +165,7 @@ resource "google_storage_bucket" "analytics" {
       type = "Delete"
     }
   }
-  # Delta segments are superseded once a newer daily rollup incorporates them.
+  # Delta segments are superseded once a newer rollup incorporates them.
   lifecycle_rule {
     condition {
       age            = 14
@@ -624,11 +624,12 @@ resource "google_cloud_scheduler_job" "snapshot-delta" {
   depends_on = [google_project_service.cloudscheduler]
 }
 
-# Rebuilds the snapshot database from a full Firestore scan, correcting any
-# drift the delta stream cannot see (out-of-band edits, migrations).
+# Rebuilds the snapshot database from a full Firestore scan, fixing drift the
+# delta stream misses. Deltas advance only the doc tables, so the derived
+# tables behind coverage and trend figures are as old as the last rollup.
 resource "google_cloud_scheduler_job" "snapshot-rollup" {
   name     = "${var.host}-snapshot-rollup"
-  schedule = "0 9 * * *" # daily at 09:00 UTC
+  schedule = "0 * * * *" # hourly
   region   = "us-central1"
   http_target {
     uri         = "https://run.googleapis.com/v2/${google_cloud_run_v2_job.snapshot-rollup.id}:run"
