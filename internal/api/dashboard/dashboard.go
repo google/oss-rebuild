@@ -4,7 +4,9 @@
 package dashboard
 
 import (
+	"crypto/sha256"
 	_ "embed"
+	"encoding/hex"
 	"fmt"
 	"html/template"
 	"io"
@@ -66,13 +68,46 @@ const (
 	ChartsJSPath = "/charts.js"
 )
 
-// RegisterAssets serves the dashboard's stylesheets and icon, and under the
-// webfonts build tag the embedded font files.
+// asset is a file the pages link, with a digest of its content that the
+// links carry.
+type asset struct{ content, version string }
+
+func newAsset(content string) asset {
+	sum := sha256.Sum256([]byte(content))
+	return asset{content, hex.EncodeToString(sum[:6])}
+}
+
+// assets are the stylesheets, script, and icon the pages link, by route.
+var assets = map[string]asset{
+	ThemeCSSPath: newAsset(themeCSS),
+	CSSPath:      newAsset(css),
+	FaviconPath:  newAsset(favicon),
+	ChartsJSPath: newAsset(chartsJS),
+}
+
+// assetURL links the asset at route by its version.
+func assetURL(route string) string {
+	if a, ok := assets[route]; ok {
+		return route + "?v=" + a.version
+	}
+	return route
+}
+
+// assetFuncs let templates link assets.
+var assetFuncs = template.FuncMap{"asset": assetURL}
+
+// RegisterAssets serves the dashboard's stylesheets, script, and icon, and
+// under the webfonts build tag the embedded font files. A request for an
+// asset at its current version may be cached indefinitely, since new content
+// gets a new link.
 func RegisterAssets(mux *http.ServeMux) {
-	for route, content := range map[string]string{ThemeCSSPath: themeCSS, CSSPath: css, FaviconPath: favicon, ChartsJSPath: chartsJS} {
+	for route, a := range assets {
 		mux.HandleFunc(route, func(w http.ResponseWriter, r *http.Request) {
 			w.Header().Set("Content-Type", mime.TypeByExtension(path.Ext(route)))
-			_, _ = io.WriteString(w, content)
+			if r.URL.Query().Get("v") == a.version {
+				w.Header().Set("Cache-Control", "public, max-age=31536000, immutable")
+			}
+			_, _ = io.WriteString(w, a.content)
 		})
 	}
 	registerFonts(mux)
@@ -94,7 +129,7 @@ var (
 )
 
 func init() {
-	base := template.Must(template.New("page").Funcs(pageFuncs).Parse(layoutHTML))
+	base := template.Must(template.New("page").Funcs(pageFuncs).Funcs(assetFuncs).Parse(layoutHTML))
 	// The webfonts build tag defines the template with preload links and a
 	// font stylesheet; without it the definition is empty and pages render
 	// with system fonts.
@@ -110,7 +145,7 @@ func init() {
 	AttemptTmpl = page(attemptHTML)
 	SessionTmpl = page(sessionHTML)
 	TranscriptTmpl = page(transcriptHTML)
-	LogsTmpl = template.Must(template.New("logs").Parse(logsHTML))
+	LogsTmpl = template.Must(template.New("logs").Funcs(assetFuncs).Parse(logsHTML))
 	PackagesTmpl = page(packagesHTML)
 	ResourcesTmpl = page(resourcesHTML)
 	CoverageTmpl = page(coverageHTML)
