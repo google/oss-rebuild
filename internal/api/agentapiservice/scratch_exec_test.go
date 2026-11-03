@@ -109,6 +109,7 @@ func TestScratchExecCreate_HappyPath(t *testing.T) {
 		Env:            map[string]string{"FOO": "bar"},
 		StdinB64:       "aGk=",
 		TimeoutSeconds: 30,
+		Label:          schema.ScratchLabelCtl,
 	}
 	op, err := ScratchExecCreate(context.Background(), req, createDeps)
 	if err != nil {
@@ -127,6 +128,9 @@ func TestScratchExecCreate_HappyPath(t *testing.T) {
 	}
 	if stored.State != schema.ScratchExecPending {
 		t.Errorf("persisted State = %q; want pending", stored.State)
+	}
+	if stored.Label != schema.ScratchLabelCtl {
+		t.Errorf("persisted Label = %q; want %q", stored.Label, schema.ScratchLabelCtl)
 	}
 
 	if fw.received == nil {

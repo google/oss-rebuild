@@ -149,7 +149,7 @@ func (e *DockerRunExecutor) runBuild(ctx context.Context, handle *scratchHandle,
 		env = map[string]string{"AUTH_HEADER": header}
 		argOpts.AuthMode = local.AuthEnvPassthrough
 	}
-	if err := e.utilityExec(ctx, append([]string{"docker"}, local.ComposeDockerStartArgs(plan, argOpts)...), env, "starting build container"); err != nil {
+	if err := e.utilityExec(ctx, append([]string{"docker"}, local.ComposeDockerStartArgs(plan, argOpts)...), env, schema.ScratchLabelStart, "starting build container"); err != nil {
 		return nil, err
 	}
 	// The phases share one wall-clock budget, decremented by phaseExec.
@@ -173,7 +173,7 @@ func (e *DockerRunExecutor) runBuild(ctx context.Context, handle *scratchHandle,
 		steps = append(steps, step{ph.Name, append([]string{"docker"}, local.ComposeDockerExecArgs(container, ph)...)})
 	}
 	for _, st := range steps {
-		op, err := e.phaseExec(ctx, handle, schema.ScratchExecRequest{Cmd: st.cmd}, &remaining)
+		op, err := e.phaseExec(ctx, handle, schema.ScratchExecRequest{Cmd: st.cmd, Label: schema.PhaseLabel(st.phase)}, &remaining)
 		if err == nil {
 			phaseOps = append(phaseOps, op)
 		}
@@ -226,7 +226,7 @@ func (e *DockerRunExecutor) runBuild(ctx context.Context, handle *scratchHandle,
 func (e *DockerRunExecutor) stopContainer(ctx context.Context, container string) {
 	sctx, cancel := context.WithTimeout(context.WithoutCancel(ctx), utilityTimeout)
 	defer cancel()
-	if err := e.utilityExec(sctx, []string{"docker", "stop", "-t", "0", container}, nil, "stopping build container"); err != nil {
+	if err := e.utilityExec(sctx, []string{"docker", "stop", "-t", "0", container}, nil, schema.ScratchLabelStop, "stopping build container"); err != nil {
 		log.Printf("build container %s: %v", container, err)
 	}
 }

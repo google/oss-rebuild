@@ -89,6 +89,7 @@ func execHandler(ctx context.Context, cfg execConfig, deps *execDeps) (*act.NoOu
 		Cwd:            cfg.Cwd,
 		TimeoutSeconds: cfg.TimeoutSeconds,
 		WaitSeconds:    cfg.WaitSeconds,
+		Label:          schema.ScratchLabelCtl,
 	})
 	if err != nil {
 		return nil, errors.Wrap(err, "creating exec")
