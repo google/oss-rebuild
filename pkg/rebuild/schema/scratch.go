@@ -117,7 +117,7 @@ const (
 	ScratchExecPending   ScratchExecState = "pending"
 	ScratchExecCompleted ScratchExecState = "completed" // worker observed the command's exit (any code)
 	ScratchExecTimedOut  ScratchExecState = "timed_out" // worker- or broker-enforced deadline, or the output cap
-	ScratchExecLost      ScratchExecState = "lost"      // dispatch failed, scratch gone, or sync failure
+	ScratchExecLost      ScratchExecState = "lost"      // dispatch failed, scratch gone, sync failure, or killed
 )
 
 // Status is a structured diagnostic for a terminal failure. It is
@@ -213,6 +213,19 @@ func (r ScratchExecRequest) Validate() error {
 	}
 	if r.WaitSeconds < 0 {
 		return errors.New("wait_seconds must be >= 0")
+	}
+	return nil
+}
+
+// ScratchExecKillRequest is the agent's input to /scratch/exec/op/kill.
+type ScratchExecKillRequest struct {
+	ID string `form:"id,required"`
+}
+
+// Validate implements act.Input.
+func (r ScratchExecKillRequest) Validate() error {
+	if r.ID == "" {
+		return errors.New("id is required")
 	}
 	return nil
 }
