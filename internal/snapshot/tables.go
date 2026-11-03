@@ -11,6 +11,7 @@ package snapshot
 
 import (
 	"github.com/google/oss-rebuild/internal/docdb"
+	"github.com/google/oss-rebuild/pkg/scheduler"
 )
 
 // SchemaVersion identifies the snapshot database layout. Bump it on any
@@ -233,29 +234,44 @@ FROM (SELECT *, row_number() OVER (PARTITION BY ecosystem ORDER BY score DESC, a
 WHERE n <= ` + topGapsPerEcosystem + `
 ORDER BY ecosystem, score DESC, attempts DESC, package`
 
-// signalCoverageQuery compares each ecosystem's tracked and currently
-// rebuilding packages against signal_universe, by package count and by summed
-// score. signal_universe counts the whole export, so dropping packages from
-// tracking cannot raise covered_mass_share. A tracked package with no attempts
-// yet counts toward tracked_mass but not current_mass.
+// signalCoverageQuery compares each ecosystem's tracked, attempted and current
+// packages against signal_universe, by count and summed score. The universe is
+// the whole export, so dropping packages from tracking cannot raise
+// covered_mass_share.
 const signalCoverageQuery = `
 WITH ranked AS (
 	SELECT *, row_number() OVER (PARTITION BY ecosystem, package ORDER BY version COLLATE version_approx_compare DESC) AS vrank
 	FROM version_stats),
 latest AS (SELECT * FROM ranked WHERE vrank = 1),
+live AS (
+	SELECT ecosystem, package,
+		max(state = '` + string(scheduler.StateInFlight) + `') AS in_flight,
+		max(state = '` + string(scheduler.StateQueued) + `') AS queued
+	FROM campaigns GROUP BY 1, 2),
 tracked AS (
 	SELECT s.ecosystem, count(*) AS tracked_packages, sum(s.score) AS tracked_mass,
+		count(l.package) AS attempted_packages,
+		sum(CASE WHEN l.package IS NOT NULL THEN s.score ELSE 0 END) AS attempted_mass,
 		sum(coalesce(l.current, 0)) AS current_packages,
-		sum(CASE WHEN l.current THEN s.score ELSE 0 END) AS current_mass
+		sum(CASE WHEN l.current THEN s.score ELSE 0 END) AS current_mass,
+		sum(l.package IS NOT NULL AND NOT l.current AND (coalesce(c.in_flight, 0) OR coalesce(c.queued, 0))) AS retrying_packages,
+		sum(l.package IS NULL AND coalesce(c.in_flight, 0)) AS in_flight_packages,
+		sum(l.package IS NULL AND NOT coalesce(c.in_flight, 0) AND coalesce(c.queued, 0)) AS queued_packages
 	FROM package_signals s
 	LEFT JOIN latest l ON l.ecosystem = s.ecosystem AND l.package = s.package
+	LEFT JOIN live c ON c.ecosystem = s.ecosystem AND c.package = s.package
 	GROUP BY 1)
 SELECT u.ecosystem,
 	u.packages AS universe_packages, u.score_mass AS universe_mass,
 	coalesce(t.tracked_packages, 0) AS tracked_packages,
 	coalesce(t.tracked_mass, 0.0) AS tracked_mass,
+	coalesce(t.attempted_packages, 0) AS attempted_packages,
+	coalesce(t.attempted_mass, 0.0) AS attempted_mass,
 	coalesce(t.current_packages, 0) AS current_packages,
 	coalesce(t.current_mass, 0.0) AS current_mass,
+	coalesce(t.retrying_packages, 0) AS retrying_packages,
+	coalesce(t.in_flight_packages, 0) AS in_flight_packages,
+	coalesce(t.queued_packages, 0) AS queued_packages,
 	CASE WHEN u.score_mass > 0 THEN coalesce(t.current_mass, 0.0) / u.score_mass ELSE 0.0 END AS covered_mass_share,
 	u.sidecar_built_at
 FROM signal_universe u

@@ -220,10 +220,15 @@
     "zone": "TEXT"
   },
   "signal_coverage": {
+    "attempted_mass": "",
+    "attempted_packages": "",
     "covered_mass_share": "",
     "current_mass": "",
     "current_packages": "",
     "ecosystem": "TEXT",
+    "in_flight_packages": "",
+    "queued_packages": "",
+    "retrying_packages": "",
     "sidecar_built_at": "TEXT",
     "tracked_mass": "",
     "tracked_packages": "",
