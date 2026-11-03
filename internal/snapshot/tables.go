@@ -111,9 +111,12 @@ WHERE sc.vm_seconds > 0`
 // any day any measure contributes. Documents without a created stamp
 // aggregate under an empty day rather than vanishing on NULL join keys.
 // first_time_successes counts packages whose earliest success fell on that
-// day, and first_version_successes counts versions. Scratch VM-seconds
-// attribute to a target's ecosystem through the linked session. Unlinked
-// scratches are omitted (no ecosystem).
+// day, and first_version_successes counts versions. Both read
+// version_stats, whose first_succeeded_at is that earliest success, so the
+// day of a package's or version's first success comes from the rows a
+// delta refreshes rather than from a scan of every completed build.
+// Scratch VM-seconds attribute to a target's ecosystem through the linked
+// session. Unlinked scratches are omitted (no ecosystem).
 const ecosystemDailyQuery = `
 WITH completed AS (` + CompletedBuilds + `),
 days AS (
@@ -124,13 +127,12 @@ days AS (
 		sum(coalesce(cost_inference_seconds, 0)) AS inference_seconds
 	FROM completed GROUP BY 1, 2),
 firsts AS (
-	SELECT ecosystem, coalesce(substr(min(created), 1, 10), '') AS day
-	FROM completed WHERE success GROUP BY ecosystem, package),
+	SELECT ecosystem, coalesce(substr(min(first_succeeded_at), 1, 10), '') AS day
+	FROM version_stats WHERE artifacts_succeeded > 0 GROUP BY ecosystem, package),
 first_days AS (SELECT ecosystem, day, count(*) AS n FROM firsts GROUP BY 1, 2),
-version_firsts AS (
-	SELECT ecosystem, coalesce(substr(min(created), 1, 10), '') AS day
-	FROM completed WHERE success GROUP BY ecosystem, package, version),
-version_first_days AS (SELECT ecosystem, day, count(*) AS n FROM version_firsts GROUP BY 1, 2),
+version_first_days AS (
+	SELECT ecosystem, coalesce(substr(first_succeeded_at, 1, 10), '') AS day, count(*) AS n
+	FROM version_stats WHERE artifacts_succeeded > 0 GROUP BY 1, 2),
 tokens AS (
 	SELECT ecosystem, coalesce(substr(created, 1, 10), '') AS day,
 		sum(coalesce(input_tokens, 0) + coalesce(output_tokens, 0)) AS n,
@@ -176,7 +178,10 @@ const topGapsPerEcosystem = "100"
 // one artifact has both succeeded and failed in the build phase (an agent
 // win after a failure is escalation, not nondeterminism). published_at is
 // the earliest publish time recorded on the version's campaigns, NULL when
-// it was never enqueued.
+// it was never enqueued. vrank orders the package's versions by the
+// version_approx_compare collation, 1 being the latest, so a backfilled
+// old version is never taken as newest. The tables that need a package's
+// latest version read it rather than sorting with the collation again.
 const versionStatsQuery = `
 WITH completed AS (` + CompletedBuilds + `),
 camp AS (
@@ -208,7 +213,8 @@ SELECT g.ecosystem, g.package, g.version,
 	a.artifacts_attempted > 0 AND a.artifacts_succeeded = a.artifacts_attempted AS current,
 	fs.mechanism AS first_success_mechanism, fs.executor_version AS first_success_executor,
 	la.executor_version AS last_executor,
-	a.any_flaky AS flaky
+	a.any_flaky AS flaky,
+	row_number() OVER (PARTITION BY g.ecosystem, g.package ORDER BY g.version COLLATE version_approx_compare DESC, g.version DESC) AS vrank
 FROM per_version g
 JOIN artifacts a ON a.ecosystem = g.ecosystem AND a.package = g.package AND a.version = g.version
 LEFT JOIN first_success fs ON fs.ecosystem = g.ecosystem AND fs.package = g.package AND fs.version = g.version AND fs.rn = 1
@@ -216,22 +222,18 @@ LEFT JOIN last_attempt la ON la.ecosystem = g.ecosystem AND la.package = g.packa
 LEFT JOIN camp c ON c.ecosystem = g.ecosystem AND c.package = g.package AND c.version = g.version
 ORDER BY 1, 2, 3`
 
-// topGapsQuery lists packages whose latest version is not current, capped
-// at topGapsPerEcosystem rows per ecosystem. Latest is chosen by the
-// version_approx_compare collation, not attempt order, so a backfilled old
-// version is never taken as newest. score and dependents come from
-// package_signals. Unsignaled packages read zero and order by attempt
-// count. score_percentile stays zero: it and a banded coverage report both
-// need the package's registry rank, which the export does not carry.
+// topGapsQuery lists packages whose latest version (version_stats vrank 1)
+// is not current, capped at topGapsPerEcosystem rows per ecosystem. score
+// and dependents come from package_signals. Unsignaled packages read zero
+// and order by attempt count. score_percentile stays zero: it and a banded
+// coverage report both need the package's registry rank, which the export
+// does not carry.
 // TODO: Emit rank and population columns from the export and derive both
 // from them.
 const topGapsQuery = `
-WITH ranked AS (
-	SELECT *, row_number() OVER (PARTITION BY ecosystem, package ORDER BY version COLLATE version_approx_compare DESC) AS vrank
-	FROM version_stats),
-built_besides AS (
+WITH built_besides AS (
 	SELECT ecosystem, package, max(artifacts_succeeded > 0) AS any
-	FROM ranked WHERE vrank > 1 GROUP BY 1, 2),
+	FROM version_stats WHERE vrank > 1 GROUP BY 1, 2),
 gaps AS (
 	SELECT l.ecosystem, l.package, l.version AS latest_version,
 		CASE WHEN coalesce(b.any, 0) OR l.artifacts_succeeded > 0 THEN '` + GapReasonStale + `'
@@ -239,7 +241,7 @@ gaps AS (
 			ELSE '` + GapReasonError + `' END AS reason,
 		l.last_status, l.last_attempted_at, l.attempts,
 		coalesce(s.score, 0.0) AS score, 0.0 AS score_percentile, coalesce(s.dependents, 0) AS dependents
-	FROM ranked l LEFT JOIN built_besides b ON b.ecosystem = l.ecosystem AND b.package = l.package
+	FROM version_stats l LEFT JOIN built_besides b ON b.ecosystem = l.ecosystem AND b.package = l.package
 	LEFT JOIN package_signals s ON s.ecosystem = l.ecosystem AND s.package = l.package
 	WHERE l.vrank = 1 AND NOT l.current)
 SELECT ecosystem, package, latest_version, reason, last_status, last_attempted_at,
@@ -250,17 +252,16 @@ ORDER BY ecosystem, score DESC, attempts DESC, package`
 
 // trackedStandingCTEs ends in tracked_standing, one row per tracked package.
 // rank counts only tracked packages, so it is the export rank only where the
-// whole export is tracked.
+// whole export is tracked. live reads only the campaigns in a live state,
+// through their state index, since the others contribute nothing.
 const trackedStandingCTEs = `
-ranked AS (
-	SELECT *, row_number() OVER (PARTITION BY ecosystem, package ORDER BY version COLLATE version_approx_compare DESC) AS vrank
-	FROM version_stats),
-latest AS (SELECT * FROM ranked WHERE vrank = 1),
+latest AS (SELECT * FROM version_stats WHERE vrank = 1),
 live AS (
 	SELECT ecosystem, package,
 		max(state = '` + string(scheduler.StateInFlight) + `') AS in_flight,
 		max(state = '` + string(scheduler.StateQueued) + `') AS queued
-	FROM campaigns GROUP BY 1, 2),
+	FROM campaigns WHERE state IN ('` + string(scheduler.StateInFlight) + `', '` + string(scheduler.StateQueued) + `')
+	GROUP BY 1, 2),
 tracked_standing AS (
 	SELECT s.ecosystem, s.package, s.score,
 		row_number() OVER (PARTITION BY s.ecosystem ORDER BY s.score DESC, s.package) AS rank,
@@ -342,7 +343,7 @@ ORDER BY 1, 2`
 // coverageWeeklyQuery aggregates version_stats into one row per
 // (ecosystem, week): cumulative package counts as of the end of each week,
 // considering only versions first attempted by then and taking each
-// package's latest such version by the version_approx_compare collation.
+// package's latest such version, by its vrank among the versions visible.
 // Weeks start Monday and run from each ecosystem's first attempt to its
 // last. weighted_coverage weights each package by its package_signals
 // score, so unsignaled packages contribute nothing. The freshness columns
@@ -358,16 +359,16 @@ weeks(ecosystem, week, hi) AS (
 	UNION ALL
 	SELECT ecosystem, date(week, '+7 days'), hi FROM weeks WHERE date(week, '+7 days') <= date(hi)),
 vis AS (
-	SELECT w.week, v.*,
-		row_number() OVER (PARTITION BY w.week, v.ecosystem, v.package ORDER BY v.version COLLATE version_approx_compare DESC) AS vrank
+	SELECT w.week, v.ecosystem, v.package, v.first_attempted_at, v.first_succeeded_at, v.artifacts_succeeded, v.current,
+		row_number() OVER (PARTITION BY w.week, v.ecosystem, v.package ORDER BY v.vrank) AS wrank
 	FROM weeks w JOIN version_stats v ON v.ecosystem = w.ecosystem
 	WHERE v.first_attempted_at < date(w.week, '+7 days')),
 pkgs AS (
 	SELECT ecosystem, week, package,
 		max(artifacts_succeeded > 0 AND first_succeeded_at < date(week, '+7 days')) AS ever_built
 	FROM vis GROUP BY 1, 2, 3),
-latest AS (SELECT * FROM vis WHERE vrank = 1),
-prev AS (SELECT * FROM vis WHERE vrank = 2),
+latest AS (SELECT * FROM vis WHERE wrank = 1),
+prev AS (SELECT * FROM vis WHERE wrank = 2),
 funnel AS (
 	SELECT p.ecosystem, p.week,
 		count(*) AS packages_attempted,
@@ -714,8 +715,8 @@ func Tables() []docdb.TableDef {
 			},
 		},
 		{Name: TableCostObservations, Query: costObservationsQuery, Indexes: [][]string{{"ecosystem", "package"}, {"source"}, {"timestamp"}}},
-		{Name: TableEcosystemDaily, Query: ecosystemDailyQuery, Indexes: [][]string{{"ecosystem", "day"}}},
 		{Name: TableVersionStats, Query: versionStatsQuery, Indexes: [][]string{{"ecosystem", "package", "version"}, {"last_attempted_at"}}},
+		{Name: TableEcosystemDaily, Query: ecosystemDailyQuery, Indexes: [][]string{{"ecosystem", "day"}}},
 		{Name: TableCoverageWeekly, Query: coverageWeeklyQuery, Indexes: [][]string{{"ecosystem", "week"}}},
 		{Name: TableTopGaps, Query: topGapsQuery, Indexes: [][]string{{"ecosystem"}}},
 		{Name: TableSignalCoverage, Query: signalCoverageQuery},

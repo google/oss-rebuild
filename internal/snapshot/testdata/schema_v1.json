@@ -294,6 +294,7 @@
     "last_status": "TEXT",
     "package": "TEXT",
     "published_at": "",
-    "version": "TEXT"
+    "version": "TEXT",
+    "vrank": ""
   }
 }
