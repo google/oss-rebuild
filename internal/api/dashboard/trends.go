@@ -100,7 +100,10 @@ func CoveragePage(ctx context.Context, req CoverageRequest, deps *Deps) (*Covera
 	if data.Spend, err = loadSpend(deps.Analytics); err != nil {
 		return nil, err
 	}
-	byEco := map[string]*CoverageEco{}
+	byEco, err := loadCampaigns(deps.Analytics)
+	if err != nil {
+		return nil, err
+	}
 	eco := func(name string) *CoverageEco {
 		if byEco[name] == nil {
 			byEco[name] = &CoverageEco{Ecosystem: name}
@@ -135,51 +138,6 @@ func CoveragePage(ctx context.Context, req CoverageRequest, deps *Deps) (*Covera
 	if err != nil {
 		return nil, errors.Wrap(err, "querying signal coverage")
 	}
-	doneByStage := map[string]map[scheduler.Stage]int64{}
-	llmDoneByStage := map[string]map[scheduler.Stage]int64{}
-	// agent_win_kind splits a stage's done count into inference-rescue and
-	// llm-diagnose. session_id is unique, so the LEFT JOIN keeps count(*).
-	err = forEachRow(deps.Analytics, `
-		SELECT c.ecosystem, c.state, c.stage, count(*),
-			sum(CASE WHEN s.agent_win_kind = 'llm-diagnose' THEN 1 ELSE 0 END)
-		FROM campaigns c
-		LEFT JOIN agent_sessions s ON s.session_id = c.last_session
-		GROUP BY 1, 2, 3`,
-		func(stmt *sqlite3.Stmt) error {
-			e := eco(stmt.ColumnText(0))
-			e.HasQueue = true
-			n := stmt.ColumnInt64(3)
-			switch scheduler.State(stmt.ColumnText(1)) {
-			case scheduler.StateQueued:
-				e.Queued += n
-			case scheduler.StateInFlight:
-				e.InFlight += n
-			case scheduler.StateNeedsTriage:
-				e.NeedsTriage += n
-			case scheduler.StateDone:
-				// A done campaign's stage is the one that attested it.
-				e.Done += n
-				st := scheduler.Stage(stmt.ColumnText(2))
-				if doneByStage[e.Ecosystem] == nil {
-					doneByStage[e.Ecosystem] = map[scheduler.Stage]int64{}
-					llmDoneByStage[e.Ecosystem] = map[scheduler.Stage]int64{}
-				}
-				doneByStage[e.Ecosystem][st] += n
-				llmDoneByStage[e.Ecosystem][st] += stmt.ColumnInt64(4)
-			}
-			return nil
-		})
-	if err != nil {
-		return nil, errors.Wrap(err, "querying campaigns")
-	}
-	for name, e := range byEco {
-		if !e.HasQueue {
-			continue
-		}
-		for _, s := range ladder() {
-			e.DoneByStage = append(e.DoneByStage, StageDone{Stage: s, Done: doneByStage[name][s], LLMDone: llmDoneByStage[name][s]})
-		}
-	}
 	// An unknown tab (stale link) falls back to the comparison view. The
 	// membership check also makes the interpolation below safe.
 	if e := byEco[req.Eco]; e != nil {
@@ -199,4 +157,51 @@ func CoveragePage(ctx context.Context, req CoverageRequest, deps *Deps) (*Covera
 		data.Ecos = append(data.Ecos, *byEco[name])
 	}
 	return data, nil
+}
+
+// loadCampaigns counts each ecosystem's campaigns by state, and the done ones
+// by the stage that attested them, keyed by ecosystem.
+func loadCampaigns(a Analytics) (map[string]*CoverageEco, error) {
+	byEco := map[string]*CoverageEco{}
+	// agent_win_kind splits a stage's done count into inference-rescue and
+	// llm-diagnose. session_id is unique, so the LEFT JOIN keeps count(*).
+	err := forEachRow(a, `
+		SELECT c.ecosystem, c.state, c.stage, count(*),
+			sum(CASE WHEN s.agent_win_kind = 'llm-diagnose' THEN 1 ELSE 0 END)
+		FROM campaigns c
+		LEFT JOIN agent_sessions s ON s.session_id = c.last_session
+		GROUP BY 1, 2, 3`,
+		func(stmt *sqlite3.Stmt) error {
+			name := stmt.ColumnText(0)
+			e := byEco[name]
+			if e == nil {
+				e = &CoverageEco{Ecosystem: name, HasQueue: true}
+				for _, s := range ladder() {
+					e.DoneByStage = append(e.DoneByStage, StageDone{Stage: s})
+				}
+				byEco[name] = e
+			}
+			n := stmt.ColumnInt64(3)
+			switch scheduler.State(stmt.ColumnText(1)) {
+			case scheduler.StateQueued:
+				e.Queued += n
+			case scheduler.StateInFlight:
+				e.InFlight += n
+			case scheduler.StateNeedsTriage:
+				e.NeedsTriage += n
+			case scheduler.StateDone:
+				// A done campaign's stage is the one that attested it.
+				e.Done += n
+				st := scheduler.Stage(stmt.ColumnText(2))
+				if i := slices.IndexFunc(e.DoneByStage, func(d StageDone) bool { return d.Stage == st }); i >= 0 {
+					e.DoneByStage[i].Done += n
+					e.DoneByStage[i].LLMDone += stmt.ColumnInt64(4)
+				}
+			}
+			return nil
+		})
+	if err != nil {
+		return nil, errors.Wrap(err, "querying campaigns")
+	}
+	return byEco, nil
 }
