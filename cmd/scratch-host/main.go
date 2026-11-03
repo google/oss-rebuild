@@ -4,7 +4,6 @@
 // Command scratch-host is the scratch host broker. See package
 // scratchhostservice.
 //
-// TODO: Reach into the guest over ssh on the host-only bridge.
 // TODO: Serve the exec API.
 package main
 
@@ -45,6 +44,13 @@ var (
 	qemuImgBin = flag.String("qemu-img-bin", "qemu-img", "qemu-img binary")
 )
 
+// The guest image's sshd authorizes the broker's key for root.
+const (
+	sshUser        = "root"
+	sshPort        = 22
+	sshDialTimeout = 10 * time.Second // also bounds the readiness probe
+)
+
 func main() {
 	flag.Parse()
 	if *callerSA == "" {
@@ -63,6 +69,14 @@ func main() {
 	}
 	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGTERM, syscall.SIGINT)
 	defer stop()
+	dialer, err := scratchhostservice.NewSSHDialer(scratchhostservice.SSHConfig{
+		User:        sshUser,
+		Port:        sshPort,
+		DialTimeout: sshDialTimeout,
+	})
+	if err != nil {
+		log.Fatalf("exec channel: %v", err)
+	}
 	host := scratchhostservice.NewHost(time.Now())
 	guestDeps := &scratchhostservice.GuestDeps{
 		Host: host,
@@ -85,7 +99,8 @@ func main() {
 			QEMUBin:    *qemuBin,
 			QEMUImgBin: *qemuImgBin,
 		},
-		Exec: execx.NewRealCommandExecutor(),
+		Exec:         execx.NewRealCommandExecutor(),
+		ChannelCache: scratchhostservice.NewChannelCache(dialer),
 	}
 	guestInit := func(context.Context) (*scratchhostservice.GuestDeps, error) { return guestDeps, nil }
 	mw := idauth.Middleware(idauth.NewGoogleValidator(*callerSA, *audience))
@@ -93,8 +108,9 @@ func main() {
 	mux.Handle(scratchhostservice.RouteAdmit, mw(api.Handler(guestInit, scratchhostservice.GuestAdmit)))
 	mux.Handle(scratchhostservice.RouteDelete, mw(api.Handler(guestInit, scratchhostservice.GuestDelete)))
 	mux.Handle(scratchhostservice.RouteList, mw(api.Handler(guestInit, scratchhostservice.Guests)))
-	// The health checks are open.
-	mux.Handle(scratchhostservice.RouteGuestHealth, api.Handler(guestInit, scratchhostservice.GuestHealth))
+	// The health checks are open. The guest probe runs a command in the guest,
+	// so it is bounded like a dial.
+	mux.Handle(scratchhostservice.RouteGuestHealth, api.Handler(guestInit, api.WithTimeout(sshDialTimeout, scratchhostservice.GuestHealth)))
 	mux.HandleFunc(scratchhostservice.RouteHealthz, func(rw http.ResponseWriter, _ *http.Request) { rw.WriteHeader(http.StatusOK) })
 	srv := &http.Server{Addr: *listen, Handler: mux}
 	drained := make(chan struct{}) // ListenAndServe returns as Shutdown starts, not when it ends
