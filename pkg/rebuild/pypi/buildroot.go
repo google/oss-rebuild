@@ -37,13 +37,18 @@
 //     and generated files count only if DW_AT_comp_dir lies inside the
 //     candidate root, which rejects mypyc and Cython build_dir outputs written
 //     to build directories that mirror the package layout.
-//  3. Selection: Candidates inside "site-packages", "dist-packages", or
-//     ".cargo" hold unpacked dependencies and drop out, as do those that
-//     validateBuildRoot rejects, such as paths that need shell quoting. The
-//     most common candidate wins, breaking ties by the lexically smallest
-//     root. checkoutDir ("/src") stays a candidate so an upstream build in the
-//     checkout can be told apart from a wheel with no evidence, and then maps
-//     to "" since the build already runs there.
+//  3. Selection: Candidates drop out if validateBuildRoot rejects them (such as
+//     paths that need shell quoting or lie inside "/src"), if they lie inside
+//     "site-packages", "dist-packages", or ".cargo" (unpacked dependencies), if
+//     they name a pre-existing directory in the build image such as "/tmp",
+//     "/var/tmp", or "/usr/src" (where "mkdir" without "-p" fails, though fresh
+//     subdirectories like "/tmp/build" and "/usr/src/app" work), or if they
+//     collide with OS, toolchain, or rebuild-harness paths such as
+//     "/usr/local", "/opt/rh", "/build", or "/deps". The most common candidate
+//     wins, breaking ties by the lexically smallest root. checkoutDir ("/src")
+//     stays a candidate so an upstream build in the checkout can be told apart
+//     from a wheel with no evidence, and then maps to "" since the build
+//     already runs there.
 //
 // References:
 //   - DWARF Debugging Information Format Version 4, §3.1.1:
@@ -176,7 +181,7 @@ func mostCommonBuildRoot(units []compileUnit, files map[string]bool) string {
 	counts := make(map[string]int)
 	for _, u := range units {
 		root := u.buildRoot(files)
-		if root == "" || isDependencyTree(root) || (root != checkoutDir && validateBuildRoot(root) != nil) {
+		if !isUsableBuildRoot(root) {
 			continue
 		}
 		counts[root]++
@@ -188,6 +193,65 @@ func mostCommonBuildRoot(units []compileUnit, files map[string]bool) string {
 		}
 	}
 	return best
+}
+
+// isUsableBuildRoot reports whether root is a valid candidate for build root
+// selection. checkoutDir stays a candidate so an upstream build in "/src" can
+// be told apart from a wheel with no evidence.
+func isUsableBuildRoot(root string) bool {
+	if root == "" || isDependencyTree(root) || slices.Contains(imageDirs, root) {
+		return false
+	}
+	if root != checkoutDir && validateBuildRoot(root) != nil {
+		return false
+	}
+	for _, dir := range systemDirs {
+		if root == dir || strings.HasPrefix(root, dir+"/") {
+			return false
+		}
+	}
+	return true
+}
+
+// imageDirs are directories that already exist in manylinux and musllinux
+// images, so "mkdir" without "-p" fails if one is chosen as the build root,
+// even though fresh subdirectories below them (such as "/tmp/build" or
+// "/usr/src/app") work.
+var imageDirs = []string{"/home", "/media", "/mnt", "/opt", "/root", "/srv", "/tmp", "/usr", "/usr/src", "/var", "/var/tmp"}
+
+// systemDirs are paths and subtrees of the build container reserved by the OS,
+// toolchains, interpreters, or the rebuild harness (such as the "/build"
+// entrypoint script, "/timewarp", "/deps", and "/out").
+var systemDirs = []string{
+	"/bin",
+	"/build",
+	"/deps",
+	"/dev",
+	"/etc",
+	"/lib",
+	"/lib64",
+	"/opt/_internal",
+	"/opt/python",
+	"/opt/rh",
+	"/out",
+	"/proc",
+	"/run",
+	"/sbin",
+	"/sys",
+	"/timewarp",
+	"/usr/bin",
+	"/usr/include",
+	"/usr/lib",
+	"/usr/lib64",
+	"/usr/libexec",
+	"/usr/local",
+	"/usr/sbin",
+	"/usr/share",
+	"/var/cache",
+	"/var/lib",
+	"/var/log",
+	"/var/run",
+	"/var/spool",
 }
 
 // dependencyTreeDirs names the directories where pip and cargo unpack

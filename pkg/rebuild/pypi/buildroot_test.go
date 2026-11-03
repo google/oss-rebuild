@@ -286,6 +286,64 @@ func TestMostCommonBuildRoot(t *testing.T) {
 			want:  "",
 		},
 		{
+			name:  "SystemSubtree",
+			files: []string{"src/module.c"},
+			units: []compileUnit{{Name: "src/module.c", CompDir: "/usr/local"}},
+			want:  "",
+		},
+		{
+			name:  "ImageDirRoot",
+			files: []string{"python/src/module.c"},
+			units: []compileUnit{{Name: "src/module.c", CompDir: "/tmp/python"}},
+			want:  "",
+		},
+		{
+			name:  "ToolchainSubtree",
+			files: []string{"include/c++/14/bits/stl_vector.h"},
+			units: []compileUnit{{Name: "/opt/rh/gcc-toolset-14/root/usr/include/c++/14/bits/stl_vector.h", CompDir: "/project"}},
+			want:  "",
+		},
+		{
+			name:  "DockerWorkdir",
+			files: []string{"src/module.c"},
+			units: []compileUnit{{Name: "src/module.c", CompDir: "/usr/src/app"}},
+			want:  "/usr/src/app",
+		},
+		{
+			// "/build" is the container entrypoint script and sorts before "/project".
+			name:  "HarnessPathLosesTie",
+			files: []string{"src/module.c"},
+			units: []compileUnit{
+				{Name: "src/module.c", CompDir: "/build"},
+				{Name: "src/module.c", CompDir: "/project"},
+			},
+			want: "/project",
+		},
+		{
+			name:  "HarnessSubpath",
+			files: []string{"src/module.c"},
+			units: []compileUnit{{Name: "src/module.c", CompDir: "/build/pkg"}},
+			want:  "",
+		},
+		{
+			name:  "VarTmpRoot",
+			files: []string{"python/src/module.c"},
+			units: []compileUnit{{Name: "src/module.c", CompDir: "/var/tmp/python"}},
+			want:  "",
+		},
+		{
+			name:  "VarStateSubtree",
+			files: []string{"src/module.c"},
+			units: []compileUnit{{Name: "src/module.c", CompDir: "/var/lib/build"}},
+			want:  "",
+		},
+		{
+			name:  "VarWorkspace",
+			files: []string{"src/module.c"},
+			units: []compileUnit{{Name: "src/module.c", CompDir: "/var/buildkite/builds/pkg"}},
+			want:  "/var/buildkite/builds/pkg",
+		},
+		{
 			name:  "CheckoutRoot",
 			files: []string{"src/module.c"},
 			units: []compileUnit{{Name: "src/module.c", CompDir: "/src"}},
