@@ -85,9 +85,10 @@ func CanonicalizeRepoURI(uri string) (string, error) {
 	return u.String(), nil
 }
 
-// FindCommonRepo attempts to find something that looks like a repo in the text. It will return empty string when no repo is found.
+// FindCommonRepos returns the distinct repos in text, by host then position.
 // GitHub Sponsors pages are skipped since their URLs look like repos.
-func FindCommonRepo(text string) string {
+func FindCommonRepos(text string) []string {
+	var repos []string
 	for _, pattern := range commonRepos {
 		for _, m := range pattern.FindAllStringSubmatch(text, -1) {
 			repo := m[0]
@@ -97,8 +98,18 @@ func FindCommonRepo(text string) string {
 			if pattern == gitlabRE {
 				repo = trimGitLabRoute(repo)
 			}
-			return repo
+			if !slices.Contains(repos, repo) {
+				repos = append(repos, repo)
+			}
 		}
+	}
+	return repos
+}
+
+// FindCommonRepo attempts to find something that looks like a repo in the text. It will return empty string when no repo is found.
+func FindCommonRepo(text string) string {
+	if repos := FindCommonRepos(text); len(repos) != 0 {
+		return repos[0]
 	}
 	return ""
 }
