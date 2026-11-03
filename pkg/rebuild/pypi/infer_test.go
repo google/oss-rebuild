@@ -900,7 +900,11 @@ func TestInferStrategyPlatformWheelSystemDeps(t *testing.T) {
 }
 
 func TestInferBuildRoot(t *testing.T) {
-	repo := must(gitxtest.CreateRepo([]gitxtest.Commit{{ID: "initial-commit", Files: gitxtest.FileContent{"src/module.c": "int answer = 42;\n"}}}, nil))
+	repo := must(gitxtest.CreateRepo([]gitxtest.Commit{{ID: "initial-commit", Files: gitxtest.FileContent{
+		"src/module.c":        "int answer = 42;\n",
+		"include/lib/log.h":   "",
+		"include/lib/array.h": "",
+	}}}, nil))
 	tree := must(must(repo.Repository.CommitObject(git2.Hash(repo.Commits["initial-commit"]))).Tree())
 	tests := []struct {
 		name   string
@@ -910,6 +914,11 @@ func TestInferBuildRoot(t *testing.T) {
 		{
 			name:   "DebugInfo",
 			module: elfWithUnits(compileUnit{Name: "src/module.c", CompDir: "/tmp/build/pkg"}),
+			want:   "/tmp/build/pkg",
+		},
+		{
+			name:   "StrippedWithRodata",
+			module: elfWithRodata("/tmp/build/pkg/src/module.c"),
 			want:   "/tmp/build/pkg",
 		},
 		{
@@ -941,7 +950,11 @@ func TestInferBuildRoot(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			zr := readWheel(t, zipEntry("pkg/module.cpython-312-x86_64-linux-gnu.so", string(tt.module)))
-			if got := inferBuildRoot(zr, tree); got != tt.want {
+			got, err := inferBuildRoot(zr, tree)
+			if err != nil {
+				t.Fatalf("inferBuildRoot() returned error: %v", err)
+			}
+			if got != tt.want {
 				t.Errorf("inferBuildRoot() = %q, want %q", got, tt.want)
 			}
 		})

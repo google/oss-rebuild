@@ -552,6 +552,10 @@ func inferBuild(ctx context.Context, t rebuild.Target, mux rebuild.RegistryMux, 
 		if err != nil {
 			return nil, errors.Wrap(err, "extracting cibuildwheel specs")
 		}
+		buildRoot, err := inferBuildRoot(zr, tree)
+		if err != nil {
+			return nil, errors.Wrap(err, "inferring build root")
+		}
 		return &PlatformWheelBuild{
 			Location: rebuild.Location{
 				Repo:       rcfg.URI,
@@ -566,7 +570,7 @@ func inferBuild(ctx context.Context, t rebuild.Target, mux rebuild.RegistryMux, 
 			SystemDeps:   sysDeps,
 			RegistryTime: a.UploadTime,
 			BaseImage:    inferBaseImage(platform.CibuildwheelPins, tags.Platform, a.UploadTime, cibwSpecs...),
-			BuildRoot:    inferBuildRoot(zr, tree),
+			BuildRoot:    buildRoot,
 		}, nil
 	} else {
 		return &PureWheelBuild{
@@ -621,31 +625,32 @@ func inferBaseImage(pins platform.CibuildwheelPinTable, platformTag string, uplo
 }
 
 // inferBuildRoot returns the absolute path that upstream built the repository
-// at, as recorded in the debug info of the wheel's extension modules. It
-// returns an empty string, which builds in the checkout, if the debug info
-// records no usable root or the checkout itself.
-func inferBuildRoot(zr *zip.Reader, tree *git2.Tree) string {
-	units, skipped := compileUnits(zr)
-	if len(skipped) > 0 {
-		log.Printf("Skipped %d modules without readable debug info while inferring the build root, first: %v", len(skipped), skipped[0])
-	}
-	if len(units) == 0 {
-		return ""
-	}
+// at, as recorded in the wheel's extension modules, from DWARF debug info if
+// present or .rodata source paths if stripped. It returns an empty string,
+// which builds in the checkout, if the wheel records no usable root or the
+// checkout itself.
+func inferBuildRoot(zr *zip.Reader, tree *git2.Tree) (string, error) {
 	files, err := repoFiles(tree)
 	if err != nil {
-		log.Println(errors.Wrap(err, "Failed to list repository files while inferring the build root"))
-		return ""
+		return "", errors.Wrap(err, "listing repository files")
 	}
-	switch root := mostCommonBuildRoot(units, files); root {
+	dwarfRoots, rodataRoots, skipped := candidateRoots(zr, files)
+	if len(skipped) > 0 {
+		log.Printf("Skipped %d sections that could not be read while inferring the build root, first: %v", len(skipped), skipped[0])
+	}
+	root, source := mostCommonRoot(dwarfRoots), "DWARF"
+	if root == "" {
+		root, source = mostCommonRoot(rodataRoots), ".rodata"
+	}
+	switch root {
 	case "":
-		return ""
+		return "", nil
 	case checkoutDir:
-		log.Printf("Upstream built in %s, which is the checkout, so no build root is needed", root)
-		return ""
+		log.Printf("Upstream built in %s (from %s), which is the checkout, so no build root is needed", root, source)
+		return "", nil
 	default:
-		log.Printf("Using build root %s from DWARF", root)
-		return root
+		log.Printf("Using build root %s from %s", root, source)
+		return root, nil
 	}
 }
 
