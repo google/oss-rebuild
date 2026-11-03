@@ -35,7 +35,8 @@
     "stop_reason": "TEXT",
     "success_iteration": "TEXT",
     "updated": "TEXT",
-    "version": "TEXT"
+    "version": "TEXT",
+    "won_by": "TEXT"
   },
   "attempts": {
     "artifact": "TEXT pk=4",
