@@ -4,6 +4,8 @@
 package dashboard
 
 import (
+	"bytes"
+	"strings"
 	"testing"
 	"time"
 
@@ -215,5 +217,25 @@ func TestSessionVerdict(t *testing.T) {
 	}
 	if got := NewSessionView(schema.AgentSession{StopReason: schema.AgentCompleteReasonThrottled}).Verdict(); got != "resource limit" {
 		t.Errorf("Verdict(THROTTLED) = %q", got)
+	}
+}
+
+// TestSessionWithoutCandidates renders a session that built nothing: the
+// verdict row still says how it ended, and the page head carries no summary.
+func TestSessionWithoutCandidates(t *testing.T) {
+	sum := "Allocating scratch: rpc error: code = ResourceExhausted desc = admitting"
+	s := NewSessionView(schema.AgentSession{ID: "sess-2", StopReason: schema.AgentCompleteReasonError, Summary: sum})
+	var buf bytes.Buffer
+	if err := SessionTmpl.Execute(&buf, &SessionData{Session: s, Verdict: Verdict{Kind: s.Verdict(), Line: sum, Summary: sum}}); err != nil {
+		t.Fatal(err)
+	}
+	out := buf.String()
+	for _, want := range []string{"No candidate was built.", `<b class="tone-bad">Resource limit</b>`} {
+		if !strings.Contains(out, want) {
+			t.Errorf("page lacks %s", want)
+		}
+	}
+	if strings.Contains(out, "session-summary") {
+		t.Error("page head still carries the summary")
 	}
 }
