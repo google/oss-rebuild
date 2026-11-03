@@ -74,6 +74,15 @@ type ResourcesData struct {
 	Activity Activity // selected tab, for the daily chart
 }
 
+// Tabs lists the resources page's ecosystem tabs.
+func (d *ResourcesData) Tabs() []ResourcesRequest {
+	var out []ResourcesRequest
+	for _, e := range d.Ecosystems {
+		out = append(out, ResourcesRequest{Eco: e})
+	}
+	return out
+}
+
 func ResourcesPage(ctx context.Context, req ResourcesRequest, deps *Deps) (*ResourcesData, error) {
 	data := &ResourcesData{WindowDays: analyticsWindowDays}
 	if deps.Analytics == nil {

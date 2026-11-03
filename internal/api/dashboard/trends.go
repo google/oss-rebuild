@@ -94,27 +94,52 @@ func ladder() []scheduler.Stage {
 }
 
 func CoveragePage(ctx context.Context, req CoverageRequest, deps *Deps) (*CoverageData, error) {
+	all, err := loadCoverage(deps.Analytics)
+	if err != nil {
+		return nil, err
+	}
+	return all.tab(req.Eco), nil
+}
+
+// CoverageView serves CoveragePage from pages. It computes the comparison
+// view once per snapshot and cuts each tab from it.
+func CoverageView(pages *SnapshotPages) api.HandlerFn[CoverageRequest, CoverageData, *Deps] {
+	all := PerSnapshot(pages, func(_ context.Context, _ CoverageRequest, deps *Deps) (*CoverageData, error) {
+		return loadCoverage(deps.Analytics)
+	}, nil)
+	return func(ctx context.Context, req CoverageRequest, deps *Deps) (*CoverageData, error) {
+		d, err := all(ctx, CoverageRequest{}, deps)
+		if err != nil {
+			return nil, err
+		}
+		return d.tab(req.Eco), nil
+	}
+}
+
+// loadCoverage reads the comparison view, every ecosystem's coverage, which
+// each ecosystem's tab narrows.
+func loadCoverage(a Analytics) (*CoverageData, error) {
 	data := &CoverageData{}
-	if deps.Analytics == nil {
+	if a == nil {
 		return data, nil
 	}
 	data.Loaded = true
-	data.AsOf = asOf(deps.Analytics)
-	overview, err := loadOverview(deps.Analytics)
+	data.AsOf = asOf(a)
+	overview, err := loadOverview(a)
 	if err != nil {
 		return nil, errors.Wrap(err, "loading overview")
 	}
 	data.Overview = overview
-	if data.Tiers, err = loadTiers(deps.Analytics); err != nil {
+	if data.Tiers, err = loadTiers(a); err != nil {
 		return nil, err
 	}
-	if data.Releases, err = loadReleases(deps.Analytics); err != nil {
+	if data.Releases, err = loadReleases(a); err != nil {
 		return nil, err
 	}
-	if data.Spend, err = loadSpend(deps.Analytics); err != nil {
+	if data.Spend, err = loadSpend(a); err != nil {
 		return nil, err
 	}
-	byEco, err := loadCampaigns(deps.Analytics)
+	byEco, err := loadCampaigns(a)
 	if err != nil {
 		return nil, err
 	}
@@ -126,7 +151,7 @@ func CoveragePage(ctx context.Context, req CoverageRequest, deps *Deps) (*Covera
 	}
 	// Ecosystems with attempts but no signals or campaigns still get a tab
 	// for their weekly funnel.
-	err = forEachRow(deps.Analytics, `SELECT DISTINCT ecosystem FROM coverage_weekly`,
+	err = forEachRow(a, `SELECT DISTINCT ecosystem FROM coverage_weekly`,
 		func(stmt *sqlite3.Stmt) error {
 			eco(stmt.ColumnText(0))
 			return nil
@@ -134,7 +159,7 @@ func CoveragePage(ctx context.Context, req CoverageRequest, deps *Deps) (*Covera
 	if err != nil {
 		return nil, errors.Wrap(err, "querying ecosystems")
 	}
-	err = forEachRow(deps.Analytics, `
+	err = forEachRow(a, `
 		SELECT ecosystem, tracked_packages, attempted_packages, current_packages, attempted_mass, current_mass
 		FROM signal_coverage`,
 		func(stmt *sqlite3.Stmt) error {
@@ -152,25 +177,34 @@ func CoveragePage(ctx context.Context, req CoverageRequest, deps *Deps) (*Covera
 	if err != nil {
 		return nil, errors.Wrap(err, "querying signal coverage")
 	}
-	// An unknown tab (stale link) falls back to the comparison view. The
-	// membership check also makes the interpolation below safe.
-	if e := byEco[req.Eco]; e != nil {
-		data.Eco = req.Eco
-		data.Detail = e
-		// An ecosystem tab shows only its own cohorts. Spend shares stay
-		// shares of every ecosystem's spend.
-		data.Tiers = onlyEco(data.Tiers, req.Eco, func(t EcoTiers) string { return t.Ecosystem })
-		if data.Releases != nil {
-			data.Releases.Ecos = onlyEco(data.Releases.Ecos, req.Eco, func(r EcoReleases) string { return r.Ecosystem })
-		}
-		if data.Spend != nil {
-			data.Spend.Ecos = onlyEco(data.Spend.Ecos, req.Eco, func(s EcoSpend) string { return s.Ecosystem })
-		}
-	}
 	for _, name := range slices.Sorted(maps.Keys(byEco)) {
 		data.Ecos = append(data.Ecos, *byEco[name])
 	}
 	return data, nil
+}
+
+// tab narrows the comparison view to eco's tab, leaving d as it is so it can
+// serve every tab. An unknown tab (stale link) keeps the comparison view.
+// Spend shares stay shares of every ecosystem's spend.
+func (d *CoverageData) tab(eco string) *CoverageData {
+	t := *d
+	i := slices.IndexFunc(d.Ecos, func(e CoverageEco) bool { return e.Ecosystem == eco })
+	if eco == "" || i < 0 {
+		return &t
+	}
+	t.Eco, t.Detail = eco, &d.Ecos[i]
+	t.Tiers = onlyEco(d.Tiers, eco, func(t EcoTiers) string { return t.Ecosystem })
+	if d.Releases != nil {
+		r := *d.Releases
+		r.Ecos = onlyEco(r.Ecos, eco, func(r EcoReleases) string { return r.Ecosystem })
+		t.Releases = &r
+	}
+	if d.Spend != nil {
+		s := *d.Spend
+		s.Ecos = onlyEco(s.Ecos, eco, func(s EcoSpend) string { return s.Ecosystem })
+		t.Spend = &s
+	}
+	return &t
 }
 
 // loadCampaigns counts each ecosystem's campaigns by state, and the done ones
