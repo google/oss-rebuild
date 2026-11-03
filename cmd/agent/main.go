@@ -66,6 +66,12 @@ var (
 
 var httpcfg = httpegress.Config{}
 
+// modelRequestTimeout cuts a model request the endpoint is holding instead of
+// answering, so the retrier sends it again. Left to the session's deadline,
+// Vertex can hold a request for many minutes before answering 504. Agent calls
+// answer far sooner than this.
+const modelRequestTimeout = 3 * time.Minute
+
 func main() {
 	httpcfg.RegisterFlags(flag.CommandLine)
 	flag.Parse()
@@ -138,9 +144,10 @@ func main() {
 	iterationStub := api.Stub[schema.AgentCreateIterationRequest, schema.AgentCreateIterationResponse](client, baseURL.JoinPath("agent/session/iteration"))
 	completeStub := api.Stub[schema.AgentCompleteRequest, schema.AgentCompleteResponse](client, baseURL.JoinPath("agent/session/complete"))
 	aiClient, err := genai.NewClient(ctx, &genai.ClientConfig{
-		Backend:  genai.BackendVertexAI,
-		Project:  *project,
-		Location: *location,
+		Backend:     genai.BackendVertexAI,
+		Project:     *project,
+		Location:    *location,
+		HTTPOptions: genai.HTTPOptions{Timeout: genai.Ptr(modelRequestTimeout)},
 	})
 	if err != nil {
 		log.Fatal("Failed to create genai client: ", err)
