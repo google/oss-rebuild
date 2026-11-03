@@ -24,6 +24,7 @@ const DockerRunSourcePath = "/src"
 
 // DockerRunPlanner generates Docker run execution plans using existing images
 type DockerRunPlanner struct {
+	HasRepo bool // the executor has cloned the repository into /src before the source phase
 }
 
 // dockerRunScriptArgs holds template arguments for the phase scripts
@@ -108,7 +109,9 @@ func (p *DockerRunPlanner) GeneratePlan(ctx context.Context, input rebuild.Input
 	if opts.UseSyscallMonitor {
 		return nil, errors.New("syscall monitor support not implemented")
 	}
-	instructions, err := input.Strategy.GenerateFor(input.Target, DockerRunBuildEnv())
+	env := DockerRunBuildEnv()
+	env.HasRepo = p.HasRepo
+	instructions, err := input.Strategy.GenerateFor(input.Target, env)
 	if err != nil {
 		return nil, errors.Wrap(err, "failed to generate rebuild instructions")
 	}
@@ -146,6 +149,12 @@ func (p *DockerRunPlanner) GeneratePlan(ctx context.Context, input rebuild.Input
 	}
 	if plan.Source, err = phase(rebuild.PhaseSource); err != nil {
 		return nil, err
+	}
+	if p.HasRepo {
+		// The executor's checkout may belong to another user, and git refuses
+		// a repository another user owns, so the build's user takes it first.
+		plan.RepoURL = instructions.Location.Repo
+		plan.Source = `chown -R "$(id -u):$(id -g)" ` + DockerRunSourcePath + "\n" + plan.Source
 	}
 	// No deps instructions means no deps phase. Timewarp then never starts,
 	// matching the docker build variants' conditional deps layer.
