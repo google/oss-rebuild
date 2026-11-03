@@ -440,6 +440,8 @@ func TestMostCommonRodataBuildRoot(t *testing.T) {
 				"/project/src/module.c",
 				"/tmp/pip-build-env-a1b2/overlay/lib/python3.12/site-packages/pybind11/include/pybind11/detail/common.h",
 				"/tmp/pip-build-env-a1b2/overlay/lib/python3.12/site-packages/pybind11/include/pybind11/detail/common.h",
+				"/tmp/build-env-a1b2/include/pybind11/detail/common.h",
+				"/tmp/pip-build-env-a1b2/pybind11/detail/common.h",
 			},
 			want: "/project",
 		},
@@ -470,6 +472,199 @@ func TestMostCommonRodataBuildRoot(t *testing.T) {
 			}
 			if got := mostCommonRodataBuildRoot(tc.paths, files); got != tc.want {
 				t.Errorf("mostCommonRodataBuildRoot() = %q, want %q", got, tc.want)
+			}
+		})
+	}
+}
+
+// elfWithLineFiles returns a minimal ELF shared object with a DWARF 4 line
+// table containing the given include directory and file names.
+func elfWithLineFiles(compDir, includeDir string, fileNames ...string) []byte {
+	const (
+		formString    = 0x08
+		formSecOffset = 0x17
+	)
+	abbrev := []byte{1, byte(dwarf.TagCompileUnit), 0, byte(dwarf.AttrCompDir), formString, byte(dwarf.AttrStmtList), formSecOffset, 0, 0, 0}
+	die := binary.LittleEndian.AppendUint32(slices.Concat([]byte{1}, []byte(compDir), []byte{0}), 0)
+	var info []byte
+	info = binary.LittleEndian.AppendUint32(info, uint32(7+len(die)))
+	info = binary.LittleEndian.AppendUint16(info, lineTableDWARFVersion)
+	info = binary.LittleEndian.AppendUint32(info, 0)
+	info = append(info, 8)
+	info = append(info, die...)
+	headerBody := []byte{1, 1, 1, 1, 1, 1}
+	dirIdx := byte(0)
+	if includeDir != "" {
+		headerBody = append(append(headerBody, includeDir...), 0)
+		dirIdx = 1
+	}
+	headerBody = append(headerBody, 0)
+	for _, f := range fileNames {
+		headerBody = append(append(headerBody, f...), 0, dirIdx, 0, 0)
+	}
+	headerBody = append(headerBody, 0)
+	var lineSec []byte
+	lineSec = binary.LittleEndian.AppendUint32(lineSec, uint32(2+4+len(headerBody)))
+	lineSec = binary.LittleEndian.AppendUint16(lineSec, lineTableDWARFVersion)
+	lineSec = binary.LittleEndian.AppendUint32(lineSec, uint32(len(headerBody)))
+	lineSec = append(lineSec, headerBody...)
+	return buildELF(
+		elfSection{".debug_abbrev", elf.SHT_PROGBITS, abbrev},
+		elfSection{".debug_info", elf.SHT_PROGBITS, info},
+		elfSection{".debug_line", elf.SHT_PROGBITS, lineSec},
+	)
+}
+
+const lineTableDWARFVersion = 4
+
+func TestBuildEnvPathFromELF(t *testing.T) {
+	tests := []struct {
+		name        string
+		entries     []archive.ZipEntry
+		want        string
+		wantSkipped int
+	}{
+		{
+			name: "DWARFLineTableBuildEnv",
+			entries: []archive.ZipEntry{
+				zipEntry("pkg/move.cpython-310-x86_64-linux-gnu.so", string(elfWithLineFiles(
+					"/project",
+					"/tmp/build-env-v9c0qwj_/lib/python3.10/site-packages/numpy/_core/include/numpy",
+					"__multiarray_api.h",
+					"ndarraytypes.h",
+				))),
+			},
+			want: "/tmp/build-env-v9c0qwj_",
+		},
+		{
+			name: "DWARFLineTablePipBuildEnvOverlay",
+			entries: []archive.ZipEntry{
+				zipEntry("pkg/ext.cpython-311-x86_64-linux-gnu.so", string(elfWithLineFiles(
+					"/project",
+					"/tmp/pip-build-env-zeqt36e6/overlay/lib/python3.11/site-packages/numpy/_core/include/numpy",
+					"__multiarray_api.h",
+				))),
+			},
+			want: "/tmp/pip-build-env-zeqt36e6/overlay",
+		},
+		{
+			name: "DWARFLineTablePipBuildEnvNormal",
+			entries: []archive.ZipEntry{
+				zipEntry("pkg/ext.cpython-311-x86_64-linux-gnu.so", string(elfWithLineFiles(
+					"/project",
+					"/tmp/pip-build-env-zeqt36e6/normal/lib/python3.11/site-packages/numpy/_core/include/numpy",
+					"__multiarray_api.h",
+				))),
+			},
+			want: "/tmp/pip-build-env-zeqt36e6/normal",
+		},
+		{
+			name: "BarePipBuildEnvIgnored",
+			entries: []archive.ZipEntry{
+				zipEntry("pkg/ext.cpython-311-x86_64-linux-gnu.so", string(elfWithLineFiles(
+					"/project",
+					"/tmp/pip-build-env-zeqt36e6/lib/python3.11/site-packages/numpy/_core/include/numpy",
+					"__multiarray_api.h",
+				))),
+			},
+			want: "",
+		},
+		{
+			name: "NonRootTmpParentIgnored",
+			entries: []archive.ZipEntry{
+				zipEntry("pkg/ext.cpython-311-x86_64-linux-gnu.so", string(elfWithUnits(
+					compileUnit{Name: "/var/tmp/build-env-abc123/lib/python3.11/site-packages/numpy/x.h", CompDir: "/project"},
+					compileUnit{Name: "../../tmp/build-env-abc123/lib/python3.11/site-packages/numpy/x.h", CompDir: "/home/runner/work/pkg"},
+				))),
+				zipEntry("pkg/other.cpython-311-x86_64-linux-gnu.so", string(elfWithRodata(
+					"/home/runner/tmp/pip-build-env-abc123/overlay/lib/x.h",
+				))),
+			},
+			want: "",
+		},
+		{
+			name: "DWARFCompileUnitName",
+			entries: []archive.ZipEntry{
+				zipEntry("pkg/ext.cpython-312-x86_64-linux-gnu.so", string(elfWithUnits(
+					compileUnit{Name: "/tmp/build-env-ozbs0crl/lib/python3.12/site-packages/mypyc/lib-rt/init.c", CompDir: "/project"},
+				))),
+			},
+			want: "/tmp/build-env-ozbs0crl",
+		},
+		{
+			name: "DWARFRelativeNameUnderTmpCompDir",
+			entries: []archive.ZipEntry{
+				zipEntry("pkg/ext.cpython-312-x86_64-linux-gnu.so", string(elfWithUnits(
+					compileUnit{Name: "build-env-rel123/lib/python3.12/site-packages/mypyc/lib-rt/init.c", CompDir: "/tmp"},
+				))),
+			},
+			want: "/tmp/build-env-rel123",
+		},
+		{
+			name: "MajorityAndPerCompileUnitDeduplication",
+			entries: []archive.ZipEntry{
+				zipEntry("pkg/a.cpython-312-x86_64-linux-gnu.so", string(elfWithLineFiles(
+					"/tmp/build-env-aaa111/work",
+					"/tmp/build-env-aaa111/lib/python3.12/site-packages/numpy/_core/include/numpy",
+					"__multiarray_api.h",
+					"ndarraytypes.h",
+				))),
+				zipEntry("pkg/b.cpython-312-x86_64-linux-gnu.so", string(elfWithUnits(
+					compileUnit{Name: "/tmp/build-env-zzz999/lib/python3.12/site-packages/mypyc/lib-rt/init.c", CompDir: "/project"},
+					compileUnit{Name: "/tmp/build-env-zzz999/lib/python3.12/site-packages/mypyc/lib-rt/misc_ops.c", CompDir: "/project"},
+				))),
+			},
+			want: "/tmp/build-env-zzz999",
+		},
+		{
+			name: "LexicalTieBreak",
+			entries: []archive.ZipEntry{
+				zipEntry("pkg/a.cpython-312-x86_64-linux-gnu.so", string(elfWithUnits(
+					compileUnit{Name: "/tmp/build-env-bbb222/lib/python3.12/site-packages/mypyc/lib-rt/init.c", CompDir: "/project"},
+					compileUnit{Name: "/tmp/build-env-aaa111/lib/python3.12/site-packages/mypyc/lib-rt/init.c", CompDir: "/project"},
+				))),
+			},
+			want: "/tmp/build-env-aaa111",
+		},
+		{
+			name: "RodataRelativePipBuildEnv",
+			entries: []archive.ZipEntry{
+				zipEntry("pkg/algos.cpython-311-x86_64-linux-gnu.so", string(elfWithRodata(
+					"../../tmp/pip-build-env-6nsnua45/overlay/lib/python3.11/site-packages/numpy/__init__.cython-30.pxd",
+				))),
+			},
+			want: "/tmp/pip-build-env-6nsnua45/overlay",
+		},
+		{
+			name: "DWARFTakesPrecedenceOverRodata",
+			entries: []archive.ZipEntry{
+				zipEntry("pkg/ext.cpython-312-x86_64-linux-gnu.so", string(elfWithUnits(
+					compileUnit{Name: "/tmp/build-env-dwarf123/lib/python3.12/site-packages/mypyc/lib-rt/init.c", CompDir: "/project"},
+				))),
+				zipEntry("pkg/other.cpython-312-x86_64-linux-gnu.so", string(elfWithRodata(
+					"/tmp/build-env-rodata99/lib/python3.12/site-packages/numpy/__init__.pxd",
+				))),
+			},
+			want: "/tmp/build-env-dwarf123",
+		},
+		{
+			name: "NoBuildEnvPath",
+			entries: []archive.ZipEntry{
+				zipEntry("pkg/ext.cpython-312-x86_64-linux-gnu.so", string(elfWithUnits(
+					compileUnit{Name: "src/module.c", CompDir: "/project"},
+				))),
+			},
+			want: "",
+		},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			got, skipped := buildEnvPathFromELF(readWheel(t, tc.entries...))
+			if got != tc.want {
+				t.Errorf("buildEnvPathFromELF() = %q, want %q", got, tc.want)
+			}
+			if len(skipped) != tc.wantSkipped {
+				t.Errorf("buildEnvPathFromELF() skipped %d sections, want %d: %v", len(skipped), tc.wantSkipped, skipped)
 			}
 		})
 	}

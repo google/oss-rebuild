@@ -146,6 +146,8 @@ type PlatformWheelBuild struct {
 	BaseImage string `json:"base_image,omitempty" yaml:"base_image,omitempty"`
 	// BuildRoot is the absolute path the build is run from, when set.
 	BuildRoot string `json:"build_root,omitempty" yaml:"build_root,omitempty"`
+	// BuildEnvPath is the isolated virtual environment path build dependencies are installed into, when set.
+	BuildEnvPath string `json:"build_env_path,omitempty" yaml:"build_env_path,omitempty"`
 }
 
 var _ rebuild.Strategy = &PlatformWheelBuild{}
@@ -160,11 +162,29 @@ func (b *PlatformWheelBuild) resolveBaseImage() (string, error) {
 	return platform.SelectBaseImage(b.PlatformTag)
 }
 
-// checkoutDir is where the build planners check out the repository.
-const checkoutDir = "/src"
+const (
+	// checkoutDir is where the build planners check out the repository.
+	checkoutDir = "/src"
+	// venvDir is where the dependency steps create the virtual environment by default.
+	venvDir = "/deps"
+)
 
 // buildRootPat matches absolute paths of characters that need no shell quoting.
 var buildRootPat = re.MustCompile(`^(/[A-Za-z0-9._+,@-]+)+$`)
+
+// buildEnvPathPat matches the isolated build environment paths created under
+// "/tmp" by "python -m build" and "pip wheel".
+var buildEnvPathPat = re.MustCompile(`^/tmp/(?:build-env-[A-Za-z0-9_]+|pip-build-env-[A-Za-z0-9_]+/(?:overlay|normal))$`)
+
+// NOTE: Unlike "mkdir" without "-p" for BuildRoot, "python -m venv" writes into
+// an existing directory without failing, so BuildEnvPath is restricted to fresh
+// isolated-build-env paths under "/tmp" rather than arbitrary buildRootPat paths.
+func validateBuildEnvPath(envPath string) error {
+	if envPath != "" && !buildEnvPathPat.MatchString(envPath) {
+		return errors.Errorf("build env path %q does not match %s", envPath, buildEnvPathPat)
+	}
+	return nil
+}
 
 // validateBuildRoot rejects build roots that the build step cannot use.
 func validateBuildRoot(root string) error {
@@ -188,6 +208,16 @@ func (b *PlatformWheelBuild) ToWorkflow() (*rebuild.WorkflowStrategy, error) {
 	}
 	if err := validateBuildRoot(b.BuildRoot); err != nil {
 		return nil, errors.Wrap(err, "validating build root")
+	}
+	if err := validateBuildEnvPath(b.BuildEnvPath); err != nil {
+		return nil, errors.Wrap(err, "validating build env path")
+	}
+	if b.BuildRoot != "" && b.BuildEnvPath != "" && (b.BuildRoot == b.BuildEnvPath || strings.HasPrefix(b.BuildRoot, b.BuildEnvPath+"/") || strings.HasPrefix(b.BuildEnvPath, b.BuildRoot+"/")) {
+		return nil, errors.Errorf("build root %q overlaps build env path %q", b.BuildRoot, b.BuildEnvPath)
+	}
+	venv := venvDir
+	if b.BuildEnvPath != "" {
+		venv = b.BuildEnvPath
 	}
 	var registryTime string
 	if !b.RegistryTime.IsZero() {
@@ -218,8 +248,8 @@ func (b *PlatformWheelBuild) ToWorkflow() (*rebuild.WorkflowStrategy, error) {
 				"requirements": flow.MustToJSON(b.Requirements),
 				"pythonTag":    b.PythonTag,
 				"abiTag":       b.ABITag,
-				"venv":         "/deps",
-				"wheelCli":     "/deps/wheel-cli",
+				"venv":         venv,
+				"wheelCli":     venv + "/wheel-cli",
 			},
 		}},
 		Build: []flow.Step{{
@@ -228,8 +258,8 @@ func (b *PlatformWheelBuild) ToWorkflow() (*rebuild.WorkflowStrategy, error) {
 				"dir":        b.Location.Dir,
 				"distDir":    distDir,
 				"buildRoot":  b.BuildRoot,
-				"locator":    "/deps/bin/",
-				"wheelCli":   "/deps/wheel-cli",
+				"locator":    venv + "/bin/",
+				"wheelCli":   venv + "/wheel-cli",
 				"venvOnPath": needsVenvOnPath(b.Requirements),
 				// auditwheel repair --plat requires a single policy tag rather than a compressed
 				// tag set, and the highest tag matches the build container policy.
