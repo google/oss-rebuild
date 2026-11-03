@@ -617,8 +617,11 @@ resource "google_cloud_run_v2_service" "dashboard" {
         startup_cpu_boost = true
       }
     }
-    // Every instance hydrates its own copy of the snapshot.
-    scaling { max_instance_count = 1 }
+    // Keep one instance warm, since each hydrates its own copy of the snapshot.
+    scaling {
+      min_instance_count = 1
+      max_instance_count = 1
+    }
   }
   depends_on = [google_project_service.run]
 }
