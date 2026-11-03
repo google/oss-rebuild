@@ -86,12 +86,13 @@
     <h3>Scratch execs</h3>
     {{if .Execs}}
     <table>
-        <thead><tr><th>Iter</th><th>Queued</th><th>State</th><th>Exit</th><th>Duration</th><th>Command</th><th>Output</th></tr></thead>
+        <thead><tr><th>Iter</th><th>Queued</th><th>Label</th><th>State</th><th>Exit</th><th>Duration</th><th>Command</th><th>Output</th></tr></thead>
         <tbody>
             {{range .Execs}}
             <tr>
                 <td>{{if .Iter}}{{.Iter}}{{end}}</td>
                 <td>{{.Queued}}</td>
+                <td>{{.Label}}</td>
                 <td><span class="{{.StateClass}}">{{.State}}</span></td>
                 <td>{{.ExitCode}}</td>
                 <td>{{.Duration}}</td>

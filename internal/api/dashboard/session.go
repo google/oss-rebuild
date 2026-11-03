@@ -10,8 +10,10 @@ import (
 	"fmt"
 	"io"
 	"log"
+	"maps"
 	"net/http"
 	"regexp"
+	"slices"
 	"sort"
 	"strconv"
 	"strings"
@@ -163,70 +165,99 @@ func Session(ctx context.Context, req SessionRequest, deps *Deps) (*SessionData,
 	return data, nil
 }
 
-// execClass buckets execs by argv shape. The shapes track the emitters in
-// pkg/build/scratch and internal/agent.
+// execClass buckets execs by the label their dispatcher gave them.
 type execClass int
 
 const (
-	execOther          execClass = iota
-	execKeepAlive                // the idle-reaper heartbeat
-	execToolContainer            // run_in_container's docker-ps wrapper script
-	execToolHost                 // run_on_host's sh -c, or any other unknown one
-	execBuildMachinery           // a build's executor or comparison dispatch
+	execOther          execClass = iota // a dispatch outside any build, shown as a plain exec
+	execKeepAlive                       // the idle-reaper heartbeat
+	execToolContainer                   // run_in_container
+	execToolCheck                       // check_artifact
+	execToolHost                        // run_on_host
+	execBuildMachinery                  // a build's executor or comparison dispatch
 )
 
 type classifiedExec struct {
 	class   execClass
 	buildID string // machinery only: the rb-<id> / builds/<id> attempt
-	label   string // machinery only: prepare | start | phase | stop | artifact | diff
-	script  string // the tool's command, a phase script, or the argv
+	label   string // the dispatcher's label, phase/<name> for a build phase
+	script  string // the tool's command, a sh -c or docker exec script, or the argv
 }
+
+// toolClasses are the tools that dispatch execs.
+var toolClasses = map[string]execClass{"run_on_host": execToolHost, "run_in_container": execToolContainer, "check_artifact": execToolCheck}
+
+// buildSteps are the labels of a build attempt's dispatches, which group by
+// build id with its phases.
+var buildSteps = map[schema.ScratchLabel]bool{
+	schema.ScratchLabelPrepare: true, schema.ScratchLabelStart: true, schema.ScratchLabelStop: true,
+	schema.ScratchLabelImage: true, schema.ScratchLabelRun: true, schema.ScratchLabelCleanup: true, schema.ScratchLabelTiming: true,
+	schema.ScratchLabelArtifact: true, schema.ScratchLabelCompare: true,
+}
+
+// sessionExecs are the labels of the dispatches outside any build.
+var sessionExecs = map[schema.ScratchLabel]bool{schema.ScratchLabelPrepareCompare: true, schema.ScratchLabelRestore: true, schema.ScratchLabelReadback: true, schema.ScratchLabelCtl: true}
 
 // buildsDirPattern finds a script's build directory. The last match wins
 // because the comparison script's fetch URLs come first and may hold builds/.
 var buildsDirPattern = regexp.MustCompile(`builds/([^/"]+)/`)
 
-func classifyExec(cmd []string) classifiedExec {
-	if len(cmd) == 1 && cmd[0] == "/bin/true" {
-		return classifiedExec{class: execKeepAlive}
+// classifyExec classifies an exec by the label its dispatcher gave it. The
+// argv still supplies the build id and the script, which the label does not
+// carry. The second result is false for a label the page does not know, an
+// empty one included.
+func classifyExec(e schema.ScratchExec) (classifiedExec, bool) {
+	c := classifiedExec{class: execOther, label: string(e.Label), script: scriptOf(e.Cmd)}
+	if _, ok := e.Label.Phase(); ok || buildSteps[e.Label] {
+		c.class, c.buildID = execBuildMachinery, buildIDOf(e.Cmd)
+		return c, true
 	}
-	if len(cmd) > 1 && cmd[0] == "docker" {
-		c := classifiedExec{class: execBuildMachinery, label: cmd[1], script: strings.Join(cmd, " ")}
-		switch cmd[1] {
-		case "run":
-			c.label = "start"
-		case "exec":
-			c.label, c.script = "phase", cmd[len(cmd)-1]
+	if tool, ok := e.Label.Tool(); ok {
+		class, known := toolClasses[tool]
+		if !known {
+			return c, false
 		}
+		c.class = class
+		if class == execToolHost {
+			c.script = hostToolCommand(c.script)
+		}
+		return c, true
+	}
+	switch {
+	case e.Label == schema.ScratchLabelKeepAlive:
+		c.class = execKeepAlive
+	case !sessionExecs[e.Label]:
+		return c, false
+	}
+	return c, true
+}
+
+// buildIDOf finds the build an exec belongs to: the rb-<id> container of a
+// docker argv, else the last builds/<id>/ path in its script.
+func buildIDOf(cmd []string) string {
+	if len(cmd) > 0 && cmd[0] == "docker" {
 		for _, a := range cmd {
 			if id, ok := strings.CutPrefix(a, "rb-"); ok && id != "" {
-				c.buildID = id
-				break
+				return id
 			}
 		}
-		return c
 	}
-	if len(cmd) == 3 && (cmd[0] == "/bin/sh" || cmd[0] == "sh") && cmd[1] == "-c" {
-		script := cmd[2]
-		c := classifiedExec{class: execBuildMachinery, script: script}
-		switch {
-		case strings.HasPrefix(script, "c=$(docker ps -aq"):
-			return classifiedExec{class: execToolContainer, script: script}
-		case strings.HasPrefix(script, "set -eu\nmkdir -p "):
-			c.label = "prepare"
-		case strings.HasPrefix(script, "set -eu\n[ -f "):
-			c.label = "artifact"
-		case strings.HasPrefix(script, "set -eu\ndie() {"):
-			c.label = "diff"
-		default:
-			return classifiedExec{class: execToolHost, script: hostToolCommand(script)}
-		}
-		if m := buildsDirPattern.FindAllStringSubmatch(script, -1); m != nil {
-			c.buildID = m[len(m)-1][1]
-		}
-		return c
+	if m := buildsDirPattern.FindAllStringSubmatch(strings.Join(cmd, " "), -1); m != nil {
+		return m[len(m)-1][1]
 	}
-	return classifiedExec{class: execOther, script: strings.Join(cmd, " ")}
+	return ""
+}
+
+// scriptOf is what an exec ran, for display: a docker exec's or sh -c's
+// script, else the argv.
+func scriptOf(cmd []string) string {
+	switch {
+	case len(cmd) > 2 && cmd[0] == "docker" && cmd[1] == "exec":
+		return cmd[len(cmd)-1]
+	case len(cmd) == 3 && (cmd[0] == "/bin/sh" || cmd[0] == "sh") && cmd[1] == "-c":
+		return cmd[2]
+	}
+	return strings.Join(cmd, " ")
 }
 
 // hostToolCommand unwraps the model's command from run_on_host's output
@@ -267,22 +298,22 @@ var iterOfBuildID = regexp.MustCompile(`^iter-(\d+)(?:-canon)?$`)
 // shows as a call, and execs outside every window stay in the ledger only.
 func composeTrajectory(data *SessionData, groups map[int]*IterationGroup, groupFor func(int) *IterationGroup) {
 	hasTranscript := false
-	called := make(map[string]bool)
 	for _, g := range groups {
 		for _, e := range g.Events {
 			hasTranscript = hasTranscript || !e.At.IsZero() || e.Kind == "proposal"
-			if e.Kind == "call" && e.Command != "" {
-				called[e.Command] = true
-			}
 		}
 	}
 	windows := newIterationWindows(groups)
 	var attempts []*BuildAttemptView
 	byID := make(map[string]*BuildAttemptView)
+	unknown := map[string]int{}
 	for i := range data.Execs {
 		v := &data.Execs[i]
 		v.Iter = windows.covering(v.CreatedAt)
-		cls := classifyExec(v.Cmd)
+		cls, ok := classifyExec(v.ScratchExec)
+		if !ok {
+			unknown[string(v.Label)]++
+		}
 		switch cls.class {
 		case execKeepAlive:
 			continue
@@ -302,19 +333,15 @@ func composeTrajectory(data *SessionData, groups map[int]*IterationGroup, groupF
 			}
 			a.Steps = append(a.Steps, BuildStep{Label: cls.label, Script: cls.script, State: v.State, ExitCode: v.ExitCode, Duration: v.Duration, OutPath: v.OutPath})
 			continue
-		case execToolContainer:
-			// Only run_in_container emits the wrapper, so the transcript has its call.
+		case execToolContainer, execToolCheck, execToolHost:
+			// The transcript shows these as calls.
 			if hasTranscript {
-				continue
-			}
-		case execToolHost:
-			if hasTranscript && called[cls.script] {
 				continue
 			}
 		}
 		if v.Iter > 0 {
 			g := groupFor(v.Iter)
-			g.Events = append(g.Events, execEvent(*v))
+			g.Events = append(g.Events, execEvent(*v, cls.script))
 		}
 	}
 	for _, a := range attempts {
@@ -329,6 +356,16 @@ func composeTrajectory(data *SessionData, groups map[int]*IterationGroup, groupF
 			At:    a.At,
 			Build: a,
 		})
+	}
+	for _, l := range slices.Sorted(maps.Keys(unknown)) {
+		switch n := unknown[l]; {
+		case l != "":
+			data.Warnings = append(data.Warnings, fmt.Sprintf("unknown exec label %q", l))
+		case n == 1:
+			data.Warnings = append(data.Warnings, "1 exec without a label")
+		default:
+			data.Warnings = append(data.Warnings, fmt.Sprintf("%d execs without a label", n))
+		}
 	}
 }
 
@@ -373,7 +410,7 @@ func (ws iterationWindows) covering(t time.Time) int {
 	return iter
 }
 
-// buildOutcome summarizes an attempt's steps. The agent runs the diff step
+// buildOutcome summarizes an attempt's steps. The agent runs the comparison
 // only on a mismatch, and its exits above 1 are setup failures.
 func buildOutcome(steps []BuildStep) string {
 	for _, s := range steps {
@@ -382,39 +419,44 @@ func buildOutcome(steps []BuildStep) string {
 			return "running"
 		case s.State != schema.ScratchExecCompleted:
 			return fmt.Sprintf("%s %s", s.Label, s.State)
-		case s.Label == "diff" && s.ExitCode <= 1:
+		case s.Label == string(schema.ScratchLabelCompare) && s.ExitCode <= 1:
 			return "mismatch"
 		case s.ExitCode != 0:
 			return fmt.Sprintf("%s exit %d", s.Label, s.ExitCode)
 		}
 	}
 	for _, s := range steps {
-		if s.Label == "artifact" {
+		if s.Label == string(schema.ScratchLabelArtifact) {
 			return "succeeded"
 		}
 	}
 	return "completed"
 }
 
-// execEvent renders one ledger row: the exec's state, exit code, duration
-// on the worker's clock, full argv, and a link to its raw output.
-func execEvent(v ExecView) TranscriptEvent {
-	title := fmt.Sprintf("exec · %s", v.State)
+// execEvent renders an exec's ledger row as a trajectory event: its label,
+// state, exit code, and duration on the worker's clock, the script it ran,
+// and a link to its raw output.
+func execEvent(v ExecView, script string) TranscriptEvent {
+	parts := []string{"exec"}
+	if v.Label != "" {
+		parts = append(parts, string(v.Label))
+	}
+	parts = append(parts, string(v.State))
 	switch v.State {
 	case schema.ScratchExecCompleted, schema.ScratchExecTimedOut:
-		title = fmt.Sprintf("exec · %s · exit %d · %s", v.State, v.ExitCode, v.Duration)
+		parts = append(parts, fmt.Sprintf("exit %d", v.ExitCode), v.Duration)
 	}
-	note := v.CmdLine
+	note := script
 	if len(note) > 100 {
 		note = note[:100] + "..."
 	}
-	body := v.CmdLine
+	body := script
 	if v.ErrorMsg != "" {
 		body += "\n\n# error: " + v.ErrorMsg
 	}
 	return TranscriptEvent{
 		Kind:     "exec",
-		Title:    title,
+		Title:    strings.Join(parts, " · "),
 		At:       v.CreatedAt,
 		Note:     note,
 		Body:     body,
