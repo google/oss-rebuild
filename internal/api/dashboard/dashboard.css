@@ -435,6 +435,15 @@ table.spend th, table.spend td:not(.mixcell) { white-space: nowrap; }
     .hero-figure { font-size: 2.8rem; }
 }
 
+/* Series charts: the group color, legend keys, and threshold zones. */
+.group { --c: var(--viz-live); }
+.key-line, .key-dash { display: inline-block; flex: none; width: 16px; height: 0; border-top: 2px solid var(--c); }
+.key-dash { border-top-style: dashed; }
+.chart .zone { fill: var(--c); fill-opacity: 0.06; }
+.chart .thresh { stroke: var(--viz-bad); stroke-width: 1.5; stroke-dasharray: 5 4; }
+.chart path.line.dash { stroke-width: 1.5; stroke-dasharray: 4 4; }
+.chart .group path.line { stroke-width: 1.5; stroke-opacity: 0.75; }
+
 .chart svg { display: block; overflow: visible; }
 .chart .rise path { fill: var(--c); }
 .chart path.area { fill: var(--c); fill-opacity: 0.1; }

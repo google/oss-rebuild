@@ -104,13 +104,13 @@
   }
 
   // yAxis grids the plot at the ticks up to max and returns the top one.
-  function yAxis(c, max) {
+  function yAxis(c, max, fmt = v => compact.format(v)) {
     const tk = ticks(max);
     const top = tk[tk.length - 1];
     for (const v of tk) {
       const y = c.ih - (v / top) * c.ih;
       hline(c, 'grid', y);
-      text(c.g, {class: 'tick', x: -8, y: y + 4, 'text-anchor': 'end'}, compact.format(v));
+      text(c.g, {class: 'tick', x: -8, y: y + 4, 'text-anchor': 'end'}, fmt(v));
     }
     return top;
   }
@@ -310,7 +310,83 @@
     return c;
   }
 
-  const forms = {columns, growth, spark, hist, releases};
+  // series: measures over time against an alert threshold. Data is {Start,
+  // End, Step, Fmt, Threshold: {Value, Above}, Series: [{Label, Class, Kind,
+  // Points: [[t, v]]}]}. Areas draw under lines and dashed guides. A gap
+  // over twice the usual spacing breaks a line. With several group lines the
+  // first, the highest, is named at its peak. The threshold is a dashed line
+  // with its alerting side shaded.
+  function series(el, data) {
+    const t0 = data.Start;
+    const t1 = Math.max(data.End, t0 + 1);
+    const fmt = data.Fmt === 'pct'
+      ? v => `${(100 * v).toFixed(Math.abs(v) < 0.1 ? 1 : 0)}%`
+      : v => (Math.abs(v) >= 100 ? compact.format(v) : String(+v.toPrecision(2)));
+    const th = data.Threshold;
+    const all = (data.Series || []).filter(sr => sr.Points && sr.Points.length);
+    const c = frame(el, +el.dataset.h || 140, {t: 8, r: 6, b: 22, l: 42});
+    const {g, iw, ih} = c;
+    const ymax = yAxis(c, Math.max(1e-9, ...all.flatMap(sr => sr.Points.map(p => p[1])), th ? th.Value * 1.15 : 0), fmt);
+    const x = t => ((t - t0) / (t1 - t0)) * iw;
+    const y = v => ih - (Math.max(0, v) / ymax) * ih;
+    if (th) svg('rect', {class: 'zone bad', x: 0, width: iw, y: th.Above ? 0 : y(th.Value), height: th.Above ? y(th.Value) : ih - y(th.Value)}, g);
+    const plot = svg('g', {class: 'reveal'}, g);
+    // runs splits points into the stretches a line joins: a gap wider than
+    // the chart's step, or than the usual spacing without one, has no data.
+    const runs = pts => {
+      const gaps = pts.slice(1).map((p, i) => p[0] - pts[i][0]).sort((a, b) => a - b);
+      const usual = data.Step || (gaps.length ? gaps[gaps.length >> 1] : Infinity);
+      const out = [];
+      pts.forEach((p, i) => {
+        if (i && p[0] - pts[i - 1][0] <= 1.5 * usual) out[out.length - 1].push(p);
+        else out.push([p]);
+      });
+      return out;
+    };
+    const lineD = run => line(run.map(p => [x(p[0]), y(p[1])]));
+    const order = {area: 0, line: 1, dash: 2};
+    for (const sr of [...all].sort((a, b) => order[a.Kind] - order[b.Kind])) {
+      const rs = runs(sr.Points);
+      const grp = svg('g', {class: sr.Class}, plot);
+      if (sr.Kind === 'area') svg('path', {class: 'area', d: rs.map(r => `${lineD(r)}V${ih}H${x(r[0][0])}Z`).join('')}, grp);
+      svg('path', {class: sr.Kind === 'dash' ? 'line dash' : 'line', d: rs.map(lineD).join('')}, grp);
+      // A point with no neighbor to join is a dot.
+      for (const r of rs) if (r.length === 1) svg('circle', {class: 'dot', cx: x(r[0][0]), cy: y(r[0][1]), r: 3}, grp);
+    }
+    if (th) hline(c, 'thresh', y(th.Value));
+    const groups = all.filter(sr => sr.Class === 'group');
+    if (groups.length > 1) {
+      const pk = groups[0].Points.reduce((a, p) => (p[1] > a[1] ? p : a));
+      const px = x(pk[0]);
+      text(g, {class: 'cap', x: px, y: Math.max(10, y(pk[1]) - 6), 'text-anchor': px > iw * 0.75 ? 'end' : px < iw * 0.25 ? 'start' : 'middle'}, groups[0].Label);
+    }
+    hline(c, 'axis', ih);
+    // Hour labels within two days, day labels past that, 64px apart.
+    if (t1 - t0 <= 2 * DAY) {
+      const every = ([1, 2, 3, 6, 12].find(h => x(t0 + h * HOUR) >= 64) || 24) * HOUR;
+      for (let t = Math.ceil(t0 / every) * every; t <= t1; t += every) xTick(c, x(t), clock(t));
+    } else {
+      const every = Math.max(1, Math.ceil(64 / x(t0 + DAY))) * DAY;
+      for (let t = Math.ceil(t0 / DAY) * DAY; t <= t1; t += every) xTick(c, x(t), day(t));
+    }
+    const near = (pts, t) => pts.reduce((a, p) => (Math.abs(p[0] - t) <= Math.abs(a[0] - t) ? p : a));
+    c.cur = svg('line', {class: 'cross', y1: 0, y2: ih}, g);
+    c.at = px => {
+      const t = t0 + (px / iw) * (t1 - t0);
+      // A point counts as under the cursor within 2% of the range.
+      const rows = all.map(sr => [sr, near(sr.Points, t)])
+        .filter(([, p]) => Math.abs(p[0] - t) <= (t1 - t0) / 50)
+        .sort((a, b) => b[1][1] - a[1][1])
+        .slice(0, 6)
+        .map(([sr, p]) => [sr.Class, fmt(p[1]), sr.Label]);
+      if (th) rows.push(['bad', fmt(th.Value), 'threshold']);
+      attr(c.cur, {x1: px, x2: px});
+      return [hour(Math.round(t / 60) * 60), rows];
+    };
+    return c;
+  }
+
+  const forms = {columns, growth, spark, hist, releases, series};
   const parsed = new Map();
   function source(id) {
     if (!parsed.has(id)) parsed.set(id, JSON.parse(document.getElementById(id).textContent));
