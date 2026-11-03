@@ -7,6 +7,7 @@ import (
 	"bytes"
 	"context"
 	"io"
+	"math"
 	"strings"
 	"testing"
 	"time"
@@ -42,6 +43,11 @@ func coverageFixture(t *testing.T) memAnalytics {
 			inference_seconds REAL, input_tokens INT, cached_input_tokens INT, output_tokens INT, first_version_successes INT)`,
 		`INSERT INTO ecosystem_daily VALUES ('npm', '2026-08-30', 3, 1, 100, 3600, 1800, 0, 0, 0, 0, 2), ('maven', '2026-08-30', 1, 1, 0, 3600, 0, 0, 0, 0, 0, 1),
 			('npm', '2026-08-31', 2, 2, 0, 0, 0, 0, 1000000, 0, 0, 1), ('npm', '', 5, 0, 0, 0, 0, 0, 0, 0, 0, 0)`,
+		// Only sessions inside the spend window count, so the 08-24 session
+		// and the attempt row do not.
+		`CREATE TABLE cost_observations (ecosystem TEXT, source TEXT, model TEXT, input_tokens INT, cached_input_tokens INT, output_tokens INT, timestamp TEXT)`,
+		`INSERT INTO cost_observations VALUES ('npm', 'agent_session', 'gemini-3.7-flash', 1000000, 0, 0, '2026-08-31T10:00:00.000Z'),
+			('npm', 'agent_session', 'gemini-3.7-flash', 5000000, 0, 0, '2026-08-24T23:00:00.000Z'), ('npm', 'attempt', NULL, NULL, NULL, NULL, '2026-08-31T09:00:00.000Z')`,
 		`CREATE TABLE popularity_tiers (ecosystem TEXT, tier INT, packages INT, reproduced INT, not_reproduced INT, retrying INT, in_flight INT, queued INT)`,
 		`INSERT INTO popularity_tiers VALUES ('npm', 100, 100, 90, 4, 6, 0, 0), ('npm', 1000, 300, 250, 20, 30, 0, 0), ('pypi', 100, 40, 20, 0, 12, 1, 7)`,
 		// 2012 folds into the first charted year.
@@ -58,7 +64,7 @@ var (
 	npmReleases   = EcoReleases{Ecosystem: "npm", Counts: [][5]int64{{3, 1, 0, 0, 0}, {}, {5, 1, 1, 0, 2}}}
 	pypiReleases  = EcoReleases{Ecosystem: "pypi", Counts: [][5]int64{{}, {}, {3, 0, 0, 1, 0}}}
 	mavenSpend    = EcoSpend{Ecosystem: "maven", Builder: 3600 * builderCoreHPerSecond, NewVersions: 1, Share: 31}
-	npmSpend      = EcoSpend{Ecosystem: "npm", Builder: 3600 * builderCoreHPerSecond, Guests: 1800 * guestCoreHPerSecond, LLM: 1e6 * inputCoreHPerToken, NewVersions: 3, Share: 69}
+	npmSpend      = EcoSpend{Ecosystem: "npm", Builder: 3600 * builderCoreHPerSecond, Guests: 1800 * guestCoreHPerSecond, LLM: llmCoreHours("gemini-3.7-flash", 1e6, 0, 0), NewVersions: 3, Share: 69}
 	coverageSpend = func(ecos ...EcoSpend) *Spend { return &Spend{From: "2026-08-25", To: "2026-08-31", Ecos: ecos} }
 )
 
@@ -160,6 +166,22 @@ func TestTierLabel(t *testing.T) {
 	} {
 		if got := tc.tier.Label(); got != tc.want {
 			t.Errorf("Label() of %d of top %d = %q, want %q", tc.tier.Packages, tc.tier.Tier, got, tc.want)
+		}
+	}
+}
+
+func TestLLMCoreHours(t *testing.T) {
+	for _, tc := range []struct {
+		model                 string
+		input, cached, output float64
+		wantUSD               float64
+	}{
+		{"gemini-3.7-flash", 1e6, 8e5, 1e4, 0.15 + 0.06 + 0.0375},
+		{"gemini-4-argon", 1e6, 8e5, 1e4, 0.4 + 0.08 + 0.1},
+		{"", 1e6, 8e5, 1e4, 0.15 + 0.06 + 0.0375}, // priced as gemini-3.7-flash
+	} {
+		if got := llmCoreHours(tc.model, tc.input, tc.cached, tc.output) * coreHourUSD; math.Abs(got-tc.wantUSD) > 1e-9 {
+			t.Errorf("llmCoreHours(%q) = $%g, want $%g", tc.model, got, tc.wantUSD)
 		}
 	}
 }

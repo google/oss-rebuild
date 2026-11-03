@@ -221,7 +221,7 @@ func Session(ctx context.Context, req SessionRequest, deps *Deps) (*SessionData,
 		}
 	}
 	if u := s.Usage; u != nil {
-		data.CoreHours = float64(u.Input-u.CachedInput)*inputCoreHPerToken + float64(u.CachedInput)*cachedCoreHPerToken + float64(u.Output)*outputCoreHPerToken
+		data.CoreHours = llmCoreHours(u.Model, float64(u.Input), float64(u.CachedInput), float64(u.Output))
 	}
 	if end.After(s.Created) {
 		data.CoreHours += end.Sub(s.Created).Seconds() * guestCoreHPerSecond
