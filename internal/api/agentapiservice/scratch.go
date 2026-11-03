@@ -249,7 +249,7 @@ func pollHealthy(ctx context.Context, timeout, interval time.Duration, probe fun
 // Each host is named on the record before admission, so no guest exists
 // without a record naming its host.
 func admitAnywhere(ctx context.Context, deps *ScratchCreateDeps, scratch *schema.Scratch, class ClassConfig) (Instance, error) {
-	labels := hostLabels(scratch.MachineClass)
+	labels := hostLabels(scratch.MachineClass, class.InstanceTemplate)
 	now := time.Now().UTC()
 	for _, host := range listHosts(ctx, deps.GCE, deps.Zones, labels) {
 		if !admissible(host, now, hostMaxAge) {
