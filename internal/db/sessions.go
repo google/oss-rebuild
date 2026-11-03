@@ -9,6 +9,7 @@ import (
 
 	"cloud.google.com/go/firestore"
 	"github.com/google/oss-rebuild/internal/iterx"
+	"github.com/google/oss-rebuild/pkg/rebuild/rebuild"
 	"github.com/google/oss-rebuild/pkg/rebuild/schema"
 	"google.golang.org/api/iterator"
 )
@@ -19,6 +20,8 @@ type Sessions interface {
 	Resource[schema.AgentSession, string]
 	// ListNonTerminal returns sessions still INITIALIZING or RUNNING.
 	ListNonTerminal(ctx context.Context) ([]schema.AgentSession, error)
+	// ListPackage returns every session on any version of the package.
+	ListPackage(ctx context.Context, eco rebuild.Ecosystem, pkg string) ([]schema.AgentSession, error)
 }
 
 const sessionCollection = "agent_sessions"
@@ -40,7 +43,15 @@ func NewFirestoreSessions(c *firestore.Client) Sessions {
 }
 
 func (f *firestoreSessions) ListNonTerminal(ctx context.Context) ([]schema.AgentSession, error) {
-	it := f.client.Collection(sessionCollection).Where("status", "in", nonTerminalSessionStatuses).Documents(ctx)
+	return f.collect(f.client.Collection(sessionCollection).Where("status", "in", nonTerminalSessionStatuses).Documents(ctx))
+}
+
+func (f *firestoreSessions) ListPackage(ctx context.Context, eco rebuild.Ecosystem, pkg string) ([]schema.AgentSession, error) {
+	q := f.client.Collection(sessionCollection).Where("target.Ecosystem", "==", string(eco)).Where("target.Package", "==", pkg)
+	return f.collect(q.Documents(ctx))
+}
+
+func (f *firestoreSessions) collect(it *firestore.DocumentIterator) ([]schema.AgentSession, error) {
 	defer it.Stop()
 	var out []schema.AgentSession
 	for snap, err := range iterx.ToSeq2(it, iterator.Done) {
@@ -70,6 +81,18 @@ func (m *memorySessions) ListNonTerminal(ctx context.Context) ([]schema.AgentSes
 	var out []schema.AgentSession
 	for _, s := range m.data {
 		if slices.Contains(nonTerminalSessionStatuses, s.Status) {
+			out = append(out, s)
+		}
+	}
+	return out, nil
+}
+
+func (m *memorySessions) ListPackage(ctx context.Context, eco rebuild.Ecosystem, pkg string) ([]schema.AgentSession, error) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	var out []schema.AgentSession
+	for _, s := range m.data {
+		if s.Target.Ecosystem == eco && s.Target.Package == pkg {
 			out = append(out, s)
 		}
 	}

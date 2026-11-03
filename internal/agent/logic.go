@@ -94,6 +94,8 @@ type defaultAgent struct {
 	reinfer          inferFunc               // inferAt, or a test's fake
 	ff               *freeFormDriver         // nil outside free-form mode
 	newChat          chatMaker
+	seedTried        bool // seed relocation was attempted
+	seedBuilt        bool // the seed's build ran
 }
 
 // chatMaker starts a session-model chat with a system prompt and tools.
@@ -868,6 +870,9 @@ func (a *defaultAgent) historyContext(prev *executionDetails) []string {
 			)
 		}
 	}
+	if a.deps.Seed != nil {
+		prompt = append(prompt, a.renderSeed(a.deps.Seed)...)
+	}
 	return prompt
 }
 
@@ -1043,6 +1048,8 @@ func (a *defaultAgent) Propose(ctx context.Context, opts *ProposeOpts) (*schema.
 			return nil, context.Cause(ictx)
 		}
 		record = "0-inference-proposal.json"
+	} else if seed := a.seedProposal(); seed != nil {
+		s, record = seed, seedProposalRecord
 	} else if a.ff != nil {
 		s, err = a.ff.propose(ctx, opts)
 	} else {
