@@ -71,7 +71,7 @@ func (s *chatSession) turn(ctx context.Context, prompt string) (json.RawMessage,
 			break
 		}
 		s.part++
-		s.a.ff.record(ctx, s.opts, fmt.Sprintf("%s-%d-%s.json", stamp(), s.part, content.Role), content)
+		s.a.ff.record(ctx, s.opts, fmt.Sprintf("%s-%d-%s.json", stamp(), s.part, content.Role), transcriptRecord(content, s.chat))
 	}
 	if g := s.giveUp; g != nil {
 		s.giveUp = nil

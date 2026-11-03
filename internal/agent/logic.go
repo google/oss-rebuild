@@ -925,7 +925,7 @@ func (a *defaultAgent) generate(ctx context.Context, prompt []string, opts *Prop
 			}
 			enc := json.NewEncoder(writer)
 			enc.SetIndent("", "  ")
-			if err := enc.Encode(content); err != nil {
+			if err := enc.Encode(transcriptRecord(content, a.deps.Chat)); err != nil {
 				writer.Close()
 				return "", errors.Wrap(err, "writing to bucket")
 			}
@@ -938,6 +938,22 @@ func (a *defaultAgent) generate(ctx context.Context, prompt []string, opts *Prop
 		partNum++
 	}
 	return textOf(response.Parts), nil
+}
+
+// transcriptTurn is a chat content's transcript record. A model turn also
+// carries its call's usage, recorded nowhere else per call.
+type transcriptTurn struct {
+	*genai.Content
+	UsageMetadata *genai.GenerateContentResponseUsageMetadata `json:"usageMetadata,omitempty"`
+}
+
+// transcriptRecord is what the transcript keeps of a chat content.
+func transcriptRecord(content *genai.Content, chat *llm.Chat) transcriptTurn {
+	t := transcriptTurn{Content: content}
+	if content.Role == genai.RoleModel && chat != nil {
+		t.UsageMetadata = chat.LastUsage()
+	}
+	return t
 }
 
 // textOf joins a model turn's text parts, skipping thoughts. A long script can
