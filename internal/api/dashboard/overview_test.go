@@ -4,8 +4,6 @@
 package dashboard
 
 import (
-	"bytes"
-	"strings"
 	"testing"
 
 	"github.com/google/go-cmp/cmp"
@@ -34,18 +32,6 @@ func TestOverviewOnly(t *testing.T) {
 	} {
 		if diff := cmp.Diff(want, o.Only(eco)); diff != "" {
 			t.Errorf("Only(%q) diff (-want +got):\n%s", eco, diff)
-		}
-	}
-}
-
-func TestIndexRendersOverview(t *testing.T) {
-	var buf bytes.Buffer
-	if err := IndexTmpl.Execute(&buf, &IndexData{Overview: coverageOverview}); err != nil {
-		t.Fatal(err)
-	}
-	for _, want := range []string{`data-chart="columns"`, `data-eco="npm"`, `id="overview-activity"`, `style="flex-grow: 9"`, `data-k="not reproduced"`, `data-k="not reproduced, retrying"`, `data-k="in flight"`, `data-k="queued"`} {
-		if !strings.Contains(buf.String(), want) {
-			t.Errorf("rendered index lacks %s", want)
 		}
 	}
 }

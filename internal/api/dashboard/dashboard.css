@@ -465,6 +465,7 @@ summary:hover { color: var(--heading); }
 .stage-replay { --c: var(--viz-stage-replay); }
 .stage-infer { --c: var(--viz-stage-infer); }
 .stage-agent { --c: var(--viz-stage-agent); }
+.ok-deep { --c: var(--viz-ok-deep); }
 .cost-builder { --c: var(--viz-cost-builder); }
 .cost-infer { --c: var(--viz-cost-infer); }
 .cost-guest { --c: var(--viz-cost-guest); }
@@ -481,17 +482,6 @@ summary:hover { color: var(--heading); }
 .hero-figure { font-size: 3.4rem; margin: 8px 0 6px; }
 .hero-sub { color: var(--secondary); margin-bottom: 18px; }
 .hero-sub b, .chart-sub b { color: var(--heading); }
-.hero {
-    display: grid;
-    grid-template-columns: minmax(260px, 2fr) 3fr;
-    gap: 36px;
-    align-items: start;
-    margin: 24px 0 16px;
-    padding: 26px 28px 20px;
-    background: linear-gradient(120deg, #fff 50%, color-mix(in srgb, var(--viz-ok) 8%, #fff));
-}
-.hero .segbar { height: 18px; }
-.hero .legend { gap: 6px 14px; font-size: 0.82rem; }
 .chart-title { display: flex; align-items: center; font-weight: 600; color: var(--heading); font-size: 0.95rem; margin-bottom: 4px; }
 .chart-sub { color: var(--secondary); font-size: 0.85rem; }
 .chart-note { color: var(--muted); font-size: 0.8rem; }
@@ -550,8 +540,70 @@ table.spend th, table.spend td:not(.mixcell) { white-space: nowrap; }
     table.spend th, table.spend td { padding-inline: 6px; }
 }
 @media (max-width: 760px) {
-    .hero, .band { grid-template-columns: 1fr; }
+    .band { grid-template-columns: 1fr; }
     .hero-figure { font-size: 2.8rem; }
+}
+
+/* Home: the headline figures over their running counts, a tile per
+   ecosystem, builds and campaigns side by side, then the give-ups to
+   triage. Below 1080px beside the sidebar the three figures no longer fit
+   one row, so the lead takes its own and the paired panels stack. */
+.home { display: grid; grid-template-columns: minmax(0, 1fr); gap: 18px; margin-bottom: 8px; }
+.home .card { padding: 20px 24px; }
+.panel-head { display: flex; flex-wrap: wrap; align-items: baseline; justify-content: space-between; gap: 4px 14px; margin-bottom: 10px; }
+.home .legend { gap: 4px 14px; font-size: 0.82rem; }
+.panel-head .legend { margin: 0; }
+.headline { display: grid; grid-template-columns: 1.3fr 1fr 1fr; gap: 14px 28px; margin-bottom: 14px; }
+.headline > div + div { padding-left: 24px; border-left: 1px solid var(--viz-grid); }
+.headline .hero-figure { margin: 6px 0 4px; }
+.headline .figure-value { margin: 6px 0 4px; line-height: 1.05; }
+.headline .hero-sub { margin: 0; }
+.eco-tiles { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); overflow: hidden; }
+.home .card.eco-tiles { padding: 0; }
+/* Each tile rules its left and top edges, and the card clips the rules on
+   its outer edges however the tiles wrap. */
+.eco-tile { display: flex; flex-direction: column; gap: 8px; padding: 16px 18px; color: inherit; box-shadow: -1px 0 var(--viz-grid), 0 -1px var(--viz-grid); }
+.eco-tile:hover { background: color-mix(in srgb, var(--fill) 60%, transparent); text-decoration: none; }
+.eco-tile-head { display: flex; justify-content: space-between; align-items: baseline; gap: 8px; color: var(--heading); }
+.eco-tile-head span { color: var(--muted); font-size: 0.75rem; }
+.eco-tile-fig { color: var(--heading); font-size: 1.9rem; font-weight: 650; letter-spacing: -0.02em; line-height: 1.05; }
+.eco-tile-fig.weak { color: var(--failure); }
+.eco-tiers { display: grid; gap: 5px; }
+.eco-tier { display: grid; grid-template-columns: 3.4rem minmax(0, 1fr) 2.2rem; gap: 6px; align-items: center; color: var(--secondary); font-size: 0.75rem; font-variant-numeric: tabular-nums; white-space: nowrap; }
+.eco-tier > :last-child { text-align: right; }
+.track { display: block; height: 6px; border-radius: 3px; background: var(--fill); overflow: hidden; }
+.track > span { display: block; height: 100%; border-radius: 3px; background: var(--c); }
+.eco-tile-foot { padding-top: 8px; border-top: 1px solid var(--viz-grid); color: var(--secondary); font-size: 0.8rem; font-variant-numeric: tabular-nums; }
+.home-pair { display: grid; grid-template-columns: minmax(0, 1.25fr) minmax(0, 1fr); gap: 18px; }
+.home .outcomes { margin: 4px 0 0; }
+.home .outcome-row .segbar { height: 14px; }
+.home .card.attention { padding: 18px 0 0; }
+.attention .panel-head { padding: 0 24px; }
+.attention .rows { margin: 0; border: none; border-top: 1px solid var(--border); border-radius: 0 0 8px 8px; }
+.attention .row { padding-inline: 24px; }
+@media (max-width: 1080px) {
+    .headline { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+    .headline > :first-child { grid-column: 1 / -1; }
+    .headline > :nth-child(2) { padding-left: 0; border-left: none; }
+    .headline > :nth-child(n+2) { padding-top: 12px; border-top: 1px solid var(--viz-grid); }
+    .home-pair { grid-template-columns: minmax(0, 1fr); }
+}
+@media (max-width: 640px) {
+    .home { gap: 14px; }
+    .home .card { padding: 16px; }
+    .headline .hero-figure { font-size: 2.6rem; }
+    .headline .figure-value { font-size: 1.5rem; }
+    .headline .hero-sub { font-size: 0.85rem; }
+    /* A tile becomes a row: the figures on the left, the tiers on the right. */
+    .eco-tiles { grid-template-columns: minmax(0, 1fr); }
+    .eco-tile { display: grid; grid-template-columns: minmax(0, 1fr) 10rem; grid-template-areas: "head tiers" "fig tiers" "foot tiers"; gap: 2px 14px; padding: 10px 16px; }
+    .eco-tile-head { grid-area: head; }
+    .eco-tile-fig { grid-area: fig; font-size: 1.4rem; }
+    .eco-tiers { grid-area: tiers; align-self: center; }
+    .eco-tile-foot { grid-area: foot; padding-top: 0; border-top: none; }
+    .home .card.attention { padding: 14px 0 0; }
+    .attention .panel-head { padding: 0 16px; }
+    .attention .row { padding-inline: 16px; }
 }
 
 /* Series charts: the group color, legend keys, and threshold zones. */

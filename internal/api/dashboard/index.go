@@ -39,6 +39,7 @@ func (IndexRequest) Validate() error { return nil }
 
 type IndexData struct {
 	Frame
+	Home             *Home // nil without a snapshot
 	BenchmarkTitle   string
 	BenchmarkStats   BenchmarkStats
 	BenchmarkTargets []BenchmarkTarget
@@ -47,7 +48,6 @@ type IndexData struct {
 	RebuildTones     map[string]int // RecentRebuilds by Tone, for the filter chips
 	SessionsDone     int            // RecentSessions that have stopped
 	SessionsLive     int            // RecentSessions still going
-	Overview         *Overview      // nil unless the snapshot has signals
 }
 
 // recentSessionLimit bounds the number of agent sessions shown on the landing page.
@@ -133,9 +133,9 @@ func Index(ctx context.Context, _ IndexRequest, deps *Deps) (*IndexData, error) 
 	}
 	applySuccessRegex(deps.SuccessRegex, rebuilds)
 	if deps.Analytics != nil {
-		data.Overview, err = loadOverview(deps.Analytics)
+		data.Home, err = loadHome(deps.Analytics)
 		if err != nil {
-			return nil, errors.Wrap(err, "loading overview")
+			return nil, errors.Wrap(err, "loading home")
 		}
 	}
 	data.RecentRebuilds = make([]RebuildView, len(rebuilds))

@@ -4,28 +4,102 @@
  SPDX-License-Identifier: Apache-2.0
 -->
 
-    {{with .Overview}}
-    <section class="card hero">
-        <div class="hero-main">
-            <div class="eyebrow">Packages reproduced</div>
-            <div class="hero-figure">{{num .Total.Reproduced}}</div>
-            <div class="hero-sub"><b>{{.Total.Pct}}%</b> of {{num .Total.Attempted}} attempted, {{num .Total.InScope}} in scope across {{len .Ecos}} ecosystems</div>
-            {{template "standing" .Total}}
-            {{template "standing-legend"}}
-        </div>
-        <div class="hero-side">
-            <div class="chart-title">Builds per day</div>
-            <div class="chart" data-chart="columns" data-src="overview-activity" data-h="150" data-label="Completed builds per day, succeeded and failed"></div>
-            <div class="legend">
-                <span class="legend-item"><i class="swatch ok"></i>Succeeded</span>
-                <span class="legend-item"><i class="swatch bad"></i>Failed</span>
+    <h1>Overview</h1>
+    {{with .Home}}{{$home := .}}
+    <div class="home">
+    <section class="card">
+        <div class="headline">
+            {{- with .Reproduced.Total}}
+            <div>
+                <div class="eyebrow">Package versions reproduced</div>
+                <div class="hero-figure">{{num .Versions}}</div>
+                <div class="hero-sub"><b>{{.VersionsPct}}%</b> of {{num .VersionsAttempted}} versions attempted</div>
             </div>
+            <div>
+                <div class="eyebrow">Packages</div>
+                <div class="figure-value">{{num .Packages}}</div>
+                <div class="hero-sub"><b>{{.PackagesPct}}%</b> of {{num .PackagesAttempted}} have a version reproduced</div>
+            </div>
+            {{- end}}
+            {{- with .Reproduced.Top}}{{if .Packages}}
+            <div>
+                <div class="eyebrow">Top-1k coverage</div>
+                <div class="figure-value">{{printf "%.1f" .Share}}%</div>
+                <div class="hero-sub"><b>{{num .Reproduced}}</b> of each ecosystem's top 1,000 at their latest version</div>
+            </div>
+            {{- end}}{{end}}
         </div>
+        {{- with .Cumulative}}
+        <div class="chart" data-chart="series" data-src="home-cumulative" data-h="170" data-label="Package versions and packages reproduced, cumulative by day"></div>
+        <div class="legend">
+            <span class="legend-item"><i class="key-line ok"></i>Versions</span>
+            <span class="legend-item"><i class="key-dash ok-deep"></i>Packages</span>
+        </div>
+        <script type="application/json" id="home-cumulative">{{.}}</script>
+        {{- end}}
     </section>
-    {{template "ecocards" .Ecos}}
-    <p class="asof">Counts from the rollup at {{.AsOf}}</p>
-    <script type="application/json" id="overview">{{.}}</script>
-    <script type="application/json" id="overview-activity">{{.Activity}}</script>
+
+    <section class="card eco-tiles">
+        {{- range .Reproduced.Ecos}}
+        <a class="eco-tile" href="/coverage?eco={{.Ecosystem}}">
+            <span class="eco-tile-head"><b>{{.Ecosystem}}</b><span>top 1k</span></span>
+            {{- with .Top}}
+            <span class="eco-tile-fig{{if and .Packages (lt .Share 60.0)}} weak{{end}}">{{if .Packages}}{{printf "%.0f" .Share}}%{{else}}&ndash;{{end}}</span>
+            {{- end}}
+            <span class="eco-tiers">
+                {{- range .Tiers}}
+                <span class="eco-tier"><span>{{.Label}}</span><span class="track"><span class="{{if lt .Share 60.0}}warn{{else}}ok{{end}}" style="width: {{printf "%.1f" .Share}}%"></span></span><span>{{printf "%.0f" .Share}}%</span></span>
+                {{- end}}
+            </span>
+            <span class="eco-tile-foot">{{num .Versions}} versions<br>{{num .Packages}} packages</span>
+        </a>
+        {{- end}}
+    </section>
+
+    <div class="home-pair">
+        <section class="card">
+            <div class="panel-head">
+                <span class="eyebrow">Builds per day</span>
+                <span class="legend">
+                    <span class="legend-item"><i class="swatch ok"></i>Succeeded</span>
+                    <span class="legend-item"><i class="swatch bad"></i>Failed</span>
+                </span>
+            </div>
+            <div class="chart" data-chart="columns" data-src="home-activity" data-h="170" data-label="Completed builds per day, succeeded and failed"></div>
+            <script type="application/json" id="home-activity">{{.Activity}}</script>
+        </section>
+        {{- with .Campaigns}}
+        <section class="card">
+            <div class="panel-head">
+                <span class="eyebrow">Campaigns</span>
+                <span class="chart-note">one per package version</span>
+            </div>
+            <div class="outcomes">
+                {{- range .}}
+                <div class="outcome-row">
+                    <div class="outcome-name">{{.Ecosystem}}</div>
+                    <div style="width: {{printf "%.1f" ($home.CampaignShare .Campaigns)}}%">{{template "campaigns" .}}</div>
+                    <div class="outcome-total">{{num .Campaigns}}</div>
+                </div>
+                {{- end}}
+            </div>
+            {{template "campaigns-legend"}}
+        </section>
+        {{- end}}
+    </div>
+
+    {{- with .Attention}}
+    <section class="card attention">
+        <div class="panel-head">
+            <span class="eyebrow">Needs attention{{template "def" "Package versions the agent gave up on whose campaigns await triage, highest campaign score first, one per package."}}</span>
+            <span class="chart-note"><b>{{num $home.GaveUp}}</b> packages with a give-up awaiting triage &middot; <a href="/packages">All packages</a></span>
+        </div>
+        <ul class="rows">
+            {{- range .}}{{template "sessionRow" .}}{{end}}
+        </ul>
+    </section>
+    {{- end}}
+    </div>
     {{end}}
 
     {{if .BenchmarkTargets}}
