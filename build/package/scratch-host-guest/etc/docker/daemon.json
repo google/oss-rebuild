@@ -1,0 +1,4 @@
+{
+  "data-root": "/scratch/docker",
+  "features": { "containerd-snapshotter": true }
+}
