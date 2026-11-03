@@ -220,16 +220,15 @@ func TestRebuildViewOutcome(t *testing.T) {
 }
 
 func TestPackageHandler(t *testing.T) {
-	// Timeline: session@t0, rebuild@t1, session@t2 — expect most-recent-first
-	// with attempts and sessions intermingled.
+	// 1 fails by session then by rebuild, and 2 reproduces after both.
 	t0 := time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC)
 	t1 := t0.Add(time.Hour)
 	t2 := t0.Add(2 * time.Hour)
 	rebuilds := &fakeReader{recent: []rundex.Rebuild{
-		{RebuildAttempt: schema.RebuildAttempt{Ecosystem: "npm", Package: "a", Version: "1", RunID: "run1", Created: t1}},
+		{RebuildAttempt: schema.RebuildAttempt{Ecosystem: "npm", Package: "a", Version: "1", Artifact: "a-1.tgz", RunID: "run1", Status: schema.RebuildStatusError, Message: "getting strategy: no git repo", Created: t1}},
 	}}
 	sessions := &fakeSessionReader{sessions: []schema.AgentSession{
-		{ID: "old-session", Target: rebuild.Target{Ecosystem: "npm", Package: "a", Version: "1"}, Status: schema.AgentSessionStatusCompleted, StopReason: schema.AgentCompleteReasonFailed, Created: t0},
+		{ID: "old-session", Target: rebuild.Target{Ecosystem: "npm", Package: "a", Version: "1"}, Status: schema.AgentSessionStatusCompleted, StopReason: schema.AgentCompleteReasonFailed, Summary: "Maximum iterations (5) reached", Created: t0},
 		{ID: "new-session", Target: rebuild.Target{Ecosystem: "npm", Package: "a", Version: "2"}, Status: schema.AgentSessionStatusCompleted, StopReason: schema.AgentCompleteReasonSuccess, Summary: "Build successful", Created: t2},
 	}}
 	deps := &Deps{Rundex: rebuilds, Sessions: sessions, Registry: unreachableRegistry()}
@@ -237,26 +236,33 @@ func TestPackageHandler(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(got.Events) != 3 {
-		t.Fatalf("expected 3 events, got %d", len(got.Events))
+	if len(got.Versions) != 2 || got.Versions[0].Version != "2" || got.Versions[1].Version != "1" {
+		t.Fatalf("expected versions 2 then 1, got %+v", got.Versions)
 	}
-	// Most recent first: new-session (t2), rebuild (t1), old-session (t0).
-	if got.Events[0].Session == nil || got.Events[0].Session.ID != "new-session" {
-		t.Errorf("event[0] should be new-session: %+v", got.Events[0])
+	if evs := got.Versions[1].Events; len(evs) != 2 || evs[0].Href != "/session/old-session" || evs[1].Href != "/attempt/npm/a/1/a-1.tgz/run1" {
+		t.Errorf("version 1 events should be the session then the rebuild: %+v", evs)
 	}
-	if got.Events[1].Rebuild == nil || got.Events[1].Rebuild.RunID != "run1" {
-		t.Errorf("event[1] should be rebuild run1: %+v", got.Events[1])
+	if s := got.Summary; s.LastOK == nil || s.LastOK.Href != "/session/new-session" || s.StreakRebuilds+s.StreakSessions != 0 || s.FailedRebuilds != 1 || s.FailedSessions != 1 {
+		t.Errorf("unexpected summary: %+v", s)
 	}
-	if got.Events[2].Session == nil || got.Events[2].Session.ID != "old-session" {
-		t.Errorf("event[2] should be old-session: %+v", got.Events[2])
+	if len(got.Causes) != 2 || got.Causes[0].Latest.Cause != "no git repo" {
+		t.Errorf("expected the newer of two causes first: %+v", got.Causes)
 	}
-	// The template must render the merged timeline without error.
 	var buf strings.Builder
 	if err := PackageTmpl.Execute(&buf, got); err != nil {
 		t.Fatalf("rendering package template: %v", err)
 	}
 	out := buf.String()
-	for _, want := range []string{`class="tag row-kind">agent<`, `class="tag row-kind">rebuild<`, `href="/session/new-session"`, ">reproduced<"} {
+	for _, want := range []string{
+		`<h1>a</h1>`,
+		`href="/package/npm/a/version/1"`,
+		`class="mk bad agent" href="/session/old-session"`,
+		`class="mk bad" href="/attempt/npm/a/1/a-1.tgz/run1"`,
+		`class="mk ok agent" href="/session/new-session"`,
+		`>not reproduced<`,
+		`>Last reproduced<`,
+		`1 failed rebuild · 1 failed agent session`,
+	} {
 		if !strings.Contains(out, want) {
 			t.Errorf("rendered output missing %q:\n%s", want, out)
 		}
@@ -272,49 +278,31 @@ func TestPackageHandlerNilSessions(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(got.Events) != 1 || got.Events[0].Rebuild == nil {
-		t.Errorf("expected a single rebuild event, got %+v", got.Events)
+	if len(got.Versions) != 1 || got.Summary.Rebuilds != 1 || got.Summary.Sessions != 0 {
+		t.Errorf("expected a single rebuild, got %+v", got)
 	}
 	if err := PackageTmpl.Execute(new(strings.Builder), got); err != nil {
 		t.Fatalf("rendering package template: %v", err)
 	}
 }
 
-func TestPackageHandlerFilteredTimelines(t *testing.T) {
-	// The per-kind tabs are the merged timeline filtered, so each must carry only
-	// its own kind and together they must account for every event.
+func TestPackageHandlerUpstream(t *testing.T) {
+	// The upstream is the latest attempt's whose strategy names a repo.
 	t0 := time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC)
-	deps := &Deps{
-		Rundex: &fakeReader{recent: []rundex.Rebuild{
-			{RebuildAttempt: schema.RebuildAttempt{Ecosystem: "npm", Package: "a", Version: "1", RunID: "run1", Created: t0.Add(time.Hour)}},
-		}},
-		Sessions: &fakeSessionReader{sessions: []schema.AgentSession{
-			{ID: "s1", Target: rebuild.Target{Ecosystem: "npm", Package: "a", Version: "1"}, Status: schema.AgentSessionStatusCompleted, StopReason: schema.AgentCompleteReasonSuccess, Created: t0},
-		}},
-		Registry: unreachableRegistry(),
+	located := func(repo string) schema.StrategyOneOf {
+		return schema.StrategyOneOf{LocationHint: &rebuild.LocationHint{Location: rebuild.Location{Repo: repo}}}
 	}
+	deps := &Deps{Rundex: &fakeReader{recent: []rundex.Rebuild{
+		{RebuildAttempt: schema.RebuildAttempt{Ecosystem: "npm", Package: "a", Version: "2", RunID: "run3", Created: t0.Add(2 * time.Hour)}},
+		{RebuildAttempt: schema.RebuildAttempt{Ecosystem: "npm", Package: "a", Version: "1", RunID: "run1", Strategy: located("https://github.com/old/a"), Created: t0}},
+		{RebuildAttempt: schema.RebuildAttempt{Ecosystem: "npm", Package: "a", Version: "2", RunID: "run2", Strategy: located("https://github.com/new/a"), Created: t0.Add(time.Hour)}},
+	}}, Registry: unreachableRegistry()}
 	got, err := Package(context.Background(), PackageRequest{Ecosystem: "npm", Package: "a"}, deps)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(got.RebuildEvents) != 1 || got.RebuildEvents[0].Rebuild == nil || got.RebuildEvents[0].Session != nil {
-		t.Errorf("RebuildEvents should hold only rebuilds: %+v", got.RebuildEvents)
-	}
-	if len(got.SessionEvents) != 1 || got.SessionEvents[0].Session == nil || got.SessionEvents[0].Rebuild != nil {
-		t.Errorf("SessionEvents should hold only sessions: %+v", got.SessionEvents)
-	}
-	if len(got.Events) != len(got.RebuildEvents)+len(got.SessionEvents) {
-		t.Errorf("merged timeline missed events: %d, want %d", len(got.Events), len(got.RebuildEvents)+len(got.SessionEvents))
-	}
-	var buf strings.Builder
-	if err := PackageTmpl.Execute(&buf, got); err != nil {
-		t.Fatalf("rendering package template: %v", err)
-	}
-	out := buf.String()
-	for _, want := range []string{"panel-rebuilds", "panel-sessions", ">Rebuilds<", ">Agent sessions<"} {
-		if !strings.Contains(out, want) {
-			t.Errorf("rendered output missing %q", want)
-		}
+	if got.Upstream != "https://github.com/new/a" || got.UpstreamLabel() != "github.com/new/a" {
+		t.Errorf("Upstream = %q (%q), want the newer repo", got.Upstream, got.UpstreamLabel())
 	}
 }
 
@@ -334,8 +322,8 @@ func TestPackageHandlerVersionListingFailure(t *testing.T) {
 	if got.Warning == "" {
 		t.Error("expected a warning for a failed version lookup")
 	}
-	if got.Summary.Supported {
-		t.Error("a failed lookup must not report the version history as enumerable")
+	if got.Untried != 0 {
+		t.Errorf("a failed lookup must not count untried versions, got %d", got.Untried)
 	}
 
 	// An ecosystem with no lister degrades identically but stays quiet.

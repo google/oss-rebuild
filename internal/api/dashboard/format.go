@@ -18,6 +18,8 @@ import (
 var pageFuncs = template.FuncMap{
 	"num":     groupDigits,
 	"ago":     func(t time.Time) string { return since(time.Now(), t) },
+	"day":     func(t time.Time) string { return day(time.Now(), t) },
+	"plural":  plural,
 	"stage":   failedStage,
 	"cause":   failureCause,
 	"variant": artifactVariant,
@@ -51,6 +53,23 @@ func since(now, t time.Time) string {
 	default:
 		return t.Format("2006-01-02")
 	}
+}
+
+// day renders t's date, with the year only when it is not now's.
+func day(now, t time.Time) string {
+	if t.Year() == now.Year() {
+		return t.Format("Jan 2")
+	}
+	return t.Format("Jan 2, 2006")
+}
+
+// plural renders a count of a noun with a regular plural: 1 rebuild, 2
+// rebuilds.
+func plural(n int, noun string) string {
+	if n == 1 {
+		return "1 " + noun
+	}
+	return strconv.Itoa(n) + " " + noun + "s"
 }
 
 // failedStage names the stage an attempt failed in, read from the wrapping

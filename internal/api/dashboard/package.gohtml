@@ -4,112 +4,112 @@
  SPDX-License-Identifier: Apache-2.0
 -->
 
-    <h2>{{.Ecosystem}}: {{.PackageName}}</h2>
-
-    <div class="cards">
-        <div class="card">
-            <div class="card-value">{{.Summary.VerifiedPct}}%</div>
-            <div class="card-label">verified{{if .Summary.Supported}} of {{.Summary.TotalVersions}} versions{{else}} of {{.Summary.Attempted}} attempted{{end}}</div>
-        </div>
-        <div class="card">
-            <div class="card-value">{{.Summary.Verified}}</div>
-            <div class="card-label">verified</div>
-        </div>
-        <div class="card">
-            <div class="card-value">{{.Summary.Failed}}</div>
-            <div class="card-label">failed</div>
-        </div>
-        <div class="card">
-            <div class="card-value">{{.Summary.Running}}</div>
-            <div class="card-label">running</div>
-        </div>
-        <div class="card">
-            <div class="card-value">{{.Summary.NeedsAttention}}</div>
-            <div class="card-label">regressions</div>
-        </div>
-        <div class="card">
-            <div class="card-value">{{.Summary.AgentRuns}}</div>
-            <div class="card-label">agent runs</div>
-        </div>
+<div class="page-head">
+    <div class="crumbs"><a href="/packages">Packages</a> / <a href="/packages?eco={{.Ecosystem}}">{{.Ecosystem}}</a></div>
+    <div class="title-row">
+        <h1>{{.PackageName}}</h1>
+        {{- with .Upstream}}<a class="pkg-repo" href="{{.}}">upstream {{$.UpstreamLabel}}</a>{{end}}
     </div>
+</div>
 
-    {{if .Versions}}
-    <div class="strip-head">
-        <span>Versions ({{if .Summary.Supported}}newest to oldest{{else}}most recently active first{{end}}) &middot; {{.WindowFrom}}-{{.WindowTo}} of {{if .Summary.Supported}}{{.Summary.TotalVersions}}{{else}}{{.Summary.Attempted}}{{end}}</span>
-        <span class="strip-nav">
-            {{/* TODO: Move these client-side */}}
-            {{if .Expanded}}<a href="?offset={{.Offset}}">Collapse</a>{{else}}<a href="?offset={{.Offset}}&expanded=1">Expand</a>{{end}}
-            {{if .HasPrev}}<a href="?offset={{.PrevOffset}}{{if .Expanded}}&expanded=1{{end}}">newer</a>{{end}}
-            {{if .HasNext}}<a href="?offset={{.NextOffset}}{{if .Expanded}}&expanded=1{{end}}">older</a>{{end}}
+{{with .Summary}}
+<section class="card pkg-sum">
+    <div class="sum-cell">
+        <span class="eyebrow">Versions reproduced</span>
+        <span class="sum-fig">{{.Verified}} <small>of {{.Attempted}}</small></span>
+        {{- with $.Versions}}
+        <span class="vstrip">{{range .}}<i class="{{.State}}" title="{{.Version}} {{.State.Label}}"></i>{{end}}</span>
+        {{- end}}
+    </div>
+    <div class="sum-cell">
+        {{- if or .StreakRebuilds .StreakSessions}}
+        <span class="eyebrow">{{if .LastOK}}Not reproduced since{{else}}Failing since{{end}}</span>
+        <span class="sum-fig bad">{{day .Since}}</span>
+        <span class="sum-sub">{{if .LastOK}}then {{end}}{{plural .StreakRebuilds "rebuild"}} and {{plural .StreakSessions "agent session"}}, none reproduced</span>
+        {{- else if .LastOK}}
+        <span class="eyebrow">Last reproduced</span>
+        <span class="sum-fig">{{day .Since}}</span>
+        <span class="sum-sub">{{.LastOK.Version}} by {{if .LastOK.Agent}}an agent session{{else}}a rebuild{{end}}, nothing failed since</span>
+        {{- else}}
+        <span class="eyebrow">Last reproduced</span>
+        <span class="sum-fig muted">never</span>
+        <span class="sum-sub">No attempt has finished.</span>
+        {{- end}}
+    </div>
+    <div class="sum-cell sum-fail">
+        <span class="eyebrow">Latest failure{{with .Failure}} · {{day .Created}}{{end}}</span>
+        {{- with .Failure}}
+        <span class="sum-head">{{with .Stage}}<span class="stage">{{.}}</span>{{end}}<a href="{{.Href}}" title="{{.Message}}">{{.Headline}}</a></span>
+        {{- with .Context}}
+        <span class="sum-context">{{.}}</span>
+        {{- end}}
+        {{- else}}
+        <span class="sum-sub">None recorded.</span>
+        {{- end}}
+    </div>
+    <div class="sum-cell sum-attempts">
+        <span class="eyebrow">Attempts</span>
+        <span class="sum-fig">{{.Attempts}}</span>
+        <span class="sum-sub">{{plural .Rebuilds "rebuild"}} · {{plural .Sessions "agent session"}}</span>
+    </div>
+</section>
+{{end}}
+
+<section class="card pkg-panel ledger">
+    <div class="pkg-panel-head">
+        <span class="eyebrow">Versions</span>
+        <span class="legend">
+            <span class="legend-item"><i class="mk bad"></i>rebuild</span>
+            <span class="legend-item"><i class="mk agent bad"></i>agent session</span>
+            <span class="legend-item"><i class="mk agent ok"></i>reproduced</span>
+            <span class="legend-item"><i class="mk agent warn"></i>gave up</span>
         </span>
     </div>
-    <div class="strip{{if .Expanded}} expanded{{end}}">
-        {{range .Versions}}
-        <a class="cell state-{{.State}}{{if .Regressed}} state-regressed{{end}}"
-           href="/package/{{.Encoded.Ecosystem}}/{{.Encoded.Package}}/version/{{.Encoded.Version}}"
-           title="{{.Version}} &middot; {{.State}}{{if .Regressed}} (regressed){{end}}{{if .Agent}} &middot; agent {{.Agent}}{{end}}"></a>
-        {{end}}
-    </div>
-    <div class="legend">
-        <span class="legend-item"><span class="legend-swatch state-verified"></span>verified</span>
-        <span class="legend-item"><span class="legend-swatch state-failed"></span>failed</span>
-        <span class="legend-item"><span class="legend-swatch state-running"></span>running</span>
-        <span class="legend-item"><span class="legend-swatch state-untried"></span>untried</span>
-        <span class="legend-item"><span class="legend-swatch state-regressed"></span>regression</span>
-    </div>
-    {{if .Warning}}<p class="hint">{{.Warning}}</p>
-    {{else if not .Summary.Supported}}<p class="hint">Version enumeration isn't available for this ecosystem, showing attempted versions only.</p>{{end}}
-    {{end}}
-    <section class="tabbed">
-        <input type="radio" id="tab-events" name="pkgtab" class="tab-radio" checked>
-        <input type="radio" id="tab-rebuilds" name="pkgtab" class="tab-radio">
-        <input type="radio" id="tab-sessions" name="pkgtab" class="tab-radio">
-        <input type="radio" id="tab-versions" name="pkgtab" class="tab-radio">
-        <div class="tabs">
-            <label for="tab-events" class="tab">Recent events</label>
-            <label for="tab-rebuilds" class="tab">Rebuilds</label>
-            <label for="tab-sessions" class="tab">Agent sessions</label>
-            <label for="tab-versions" class="tab">By version</label>
-        </div>
-
-        <div id="panel-events" class="tab-panel">{{template "eventTable" .Events}}</div>
-        <div id="panel-rebuilds" class="tab-panel">{{template "eventTable" .RebuildEvents}}</div>
-        <div id="panel-sessions" class="tab-panel">{{template "eventTable" .SessionEvents}}</div>
-
-
-        <div id="panel-versions" class="tab-panel">
-            <table>
-                <thead>
-                    <tr>
-                        <th>Version</th>
-                        <th>Status</th>
-                        <th>Agent</th>
-                        <th>Attempts</th>
-                        <th>Sessions</th>
-                    </tr>
-                </thead>
-                <tbody>
-                    {{range .Versions}}
-                    <tr>
-                        <td><a href="/package/{{.Encoded.Ecosystem}}/{{.Encoded.Package}}/version/{{.Encoded.Version}}">{{.Version}}</a></td>
-                        <td><span class="badge state-{{.State}}">{{.State}}</span>{{if .Regressed}} <span class="badge state-regressed">regressed</span>{{end}}</td>
-                        <td>{{if .Agent}}{{.Agent}}{{else}}-{{end}}</td>
-                        <td>{{.Attempts}}</td>
-                        <td>{{.Sessions}}</td>
-                    </tr>
-                    {{end}}
-                </tbody>
-            </table>
-        </div>
-    </section>
-{{end}}
-
-{{define "eventTable"}}
-    {{if .}}
-    <ul class="rows in-package">
-        {{- range .}}{{if .Session}}{{template "sessionRow" .Session}}{{else}}{{template "rebuildRow" .Rebuild}}{{end}}{{end}}
+    {{- if .Versions}}
+    <div class="lrow lhead" aria-hidden="true"><span>Version</span><span>Status</span><span>Attempts, oldest first</span><span>Latest failure</span><span>Last tried</span></div>
+    <ul class="lrows">
+        {{- range .Versions}}
+        <li class="lrow">
+            <a class="l-ver" href="/package/{{.Encoded.Ecosystem}}/{{.Encoded.Package}}/version/{{.Encoded.Version}}" title="{{.Version}}">{{.Version}}</a>
+            <span class="l-state"><span class="vstate {{.State}}">{{.State.Label}}</span></span>
+            <span class="l-marks">{{range .Events}}<a class="mk {{.Tone}}{{if .Agent}} agent{{end}}" href="{{.Href}}" title="{{if .Agent}}agent session{{else}}rebuild{{end}}{{with .Variant}} {{.}}{{end}}, {{.Outcome}}, {{day .Created}}"></a>{{end}}</span>
+            <span class="l-fail{{if .Fixed}} fixed{{end}}">{{with .Failure}}{{template "failure" .}}{{end}}</span>
+            <span class="l-last">{{template "when" .Last}}</span>
+        </li>
+        {{- end}}
     </ul>
-    {{else}}
-    <p class="hint">Nothing recorded yet.</p>
-    {{end}}
+    {{- else}}
+    <p class="pkg-panel-foot">No rebuild attempts or agent sessions recorded.</p>
+    {{- end}}
+    {{- if or .Untried .Warning}}
+    <p class="pkg-panel-foot">{{with .Untried}}{{plural . "more published version"}} never attempted. {{end}}{{.Warning}}</p>
+    {{- end}}
+</section>
+
+{{- with .Causes}}
+<section class="card pkg-panel fails">
+    <div class="pkg-panel-head">
+        <span class="eyebrow">Why it fails</span>
+        <span class="pkg-panel-note">{{plural $.Summary.FailedRebuilds "failed rebuild"}} · {{plural $.Summary.FailedSessions "failed agent session"}}</span>
+    </div>
+    <ul class="fail-rows">
+        {{- range .}}
+        <li class="fail-row">
+            <span class="fail-n">{{.N}}</span>
+            <span class="fail-line">{{template "failure" .Latest}}</span>
+            <span class="fail-scope"><span class="fail-track"><i style="width: {{.Pct}}%"></i></span>{{if .Latest.Agent}}{{plural .N "agent session"}}{{else}}{{plural .N "rebuild"}}{{end}} · {{.Versions}} · {{day .First}}{{if ne (day .First) (day .Latest.Created)}} to {{day .Latest.Created}}{{end}}</span>
+        </li>
+        {{- end}}
+    </ul>
+    {{- with $.MoreCauses}}
+    <p class="pkg-panel-foot">{{plural . "more cause"}} not shown.</p>
+    {{- end}}
+</section>
+{{- end}}
 {{end}}
+
+{{define "failure"}}
+{{- with .Stage}}<span class="stage">{{.}}</span>{{end}}
+{{- if eq .Tone "warn"}}<a class="note" href="{{.Href}}" title="{{.Cause}}">{{.Cause}}</a>
+{{- else}}<a class="cause" href="{{.Href}}" title="{{.Message}}">{{.Cause}}</a>{{end}}
+{{- end}}

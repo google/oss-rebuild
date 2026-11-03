@@ -217,7 +217,7 @@ details.traj-body > summary { cursor: pointer; color: var(--secondary); font-siz
 .page-head { display: flex; flex-direction: column; gap: 4px; margin-bottom: 18px; }
 .crumbs { color: var(--muted); font-size: 0.85rem; }
 .title-row { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 12px; }
-.title-row h1 { margin: 0; }
+.title-row h1 { margin: 0; overflow-wrap: anywhere; }
 .outcome { padding: 1px 10px; border-radius: 999px; background: var(--fill); font-size: 0.78rem; font-weight: 700; }
 .outcome.tone-ok { background: #ccfbf1; }
 .outcome.tone-bad { background: #fee2e2; }
@@ -360,48 +360,12 @@ details.transcript > summary h2 { display: inline; margin: 0; }
 .card-value { font-size: 1.9rem; }
 .card-label { color: var(--secondary); font-size: 0.9rem; margin-top: 4px; }
 
-/* Version status strip. */
-
-/* Per-version status colors, shared by strip cells and legend swatches. */
-.state-verified { background: var(--accent); }
-.state-failed   { background: var(--mismatch); }
-.state-running  { background: var(--failure); }
-.state-untried  { background: var(--fill); }
-
-.strip-head {
-    display: flex;
-    justify-content: space-between;
-    align-items: baseline;
-    margin: 18px 0 6px;
-    color: var(--secondary);
-    font-size: 0.9rem;
-}
-.strip-nav a { margin-left: 12px; }
-/* The strip is a fixed-column grid; cells fill each column (1fr) so a row always
-   fits the width without a scrollbar. Collapsed, the server renders one row's
-   worth of cells. Expanded, several rows. Keep the column count in sync with
-   stripCols in package.go. */
-.strip {
-    display: grid;
-    grid-template-columns: repeat(50, 1fr);
-    gap: 3px;
-    margin-bottom: 10px;
-}
-.strip .cell {
-    aspect-ratio: 1;
-    border-radius: 3px;
-    border: 1px solid rgba(0, 0, 0, 0.10);
-}
-.strip .state-untried { border-style: dashed; }
-.state-regressed { box-shadow: inset 0 0 0 2px var(--failure), 0 0 0 1px var(--failure); }
-.strip .cell:hover { outline: 2px solid var(--heading); outline-offset: 1px; }
+/* Legends: each series' swatch or mark beside its name. */
 .legend { display: flex; flex-wrap: wrap; gap: 16px; margin-top: 8px; font-size: 0.85rem; }
 .legend-item { display: inline-flex; align-items: center; gap: 6px; }
-.legend-swatch { width: 12px; height: 12px; border-radius: 3px; display: inline-block; border: 1px solid rgba(0, 0, 0, 0.10); }
-.legend-swatch.state-untried { border-style: dashed; }
 
-/* Tabs (pure CSS via hidden radios). */
-.tabbed { margin-top: 20px; }
+/* Tabs: links to filtered views, the current one marked server-side.
+   .tab-radio hides the radios behind filter chips. */
 .tab-radio { position: absolute; opacity: 0; width: 0; height: 0; }
 .tabs {
     display: flex;
@@ -419,26 +383,6 @@ details.transcript > summary h2 { display: inline; margin: 0; }
     font-weight: 600;
 }
 .tab:hover { color: var(--secondary); }
-.tab-panel { display: none; }
-#tab-events:checked ~ #panel-events { display: block; }
-#tab-rebuilds:checked ~ #panel-rebuilds { display: block; }
-#tab-sessions:checked ~ #panel-sessions { display: block; }
-#tab-versions:checked ~ #panel-versions { display: block; }
-#tab-events:checked ~ .tabs label[for="tab-events"],
-#tab-rebuilds:checked ~ .tabs label[for="tab-rebuilds"],
-#tab-sessions:checked ~ .tabs label[for="tab-sessions"],
-#tab-versions:checked ~ .tabs label[for="tab-versions"] {
-    color: var(--heading);
-    border-bottom-color: var(--accent);
-}
-#tab-events:focus-visible ~ .tabs label[for="tab-events"],
-#tab-rebuilds:focus-visible ~ .tabs label[for="tab-rebuilds"],
-#tab-sessions:focus-visible ~ .tabs label[for="tab-sessions"],
-#tab-versions:focus-visible ~ .tabs label[for="tab-versions"] {
-    outline: 2px solid var(--accent);
-    outline-offset: -2px;
-}
-/* Link tabs (ecosystem filters) mark the current one server-side. */
 .tabs a.tab:hover { text-decoration: none; }
 .tabs a.active { color: var(--heading); border-bottom-color: var(--accent); }
 
@@ -458,18 +402,17 @@ details.transcript > summary h2 { display: inline; margin: 0; }
 .beads i { flex: none; width: 4px; height: 7px; align-self: flex-end; background: var(--mismatch); border-radius: 0 0 2px 2px; }
 .beads .ok { align-self: flex-start; background: var(--accent); border-radius: 2px 2px 0 0; }
 
-/* Status badges in the by-version table. */
+/* Badges naming a kind or severity. */
 .badge {
     display: inline-block;
     padding: 1px 9px;
+    border: 1px solid var(--border);
     border-radius: 999px;
+    background: var(--fill);
+    color: var(--secondary);
     font-size: 0.78rem;
     font-weight: 600;
-    color: #fff;
 }
-.badge.state-untried { color: var(--secondary); border: 1px solid var(--border); }
-.badge:not([class*="state-"]) { color: var(--secondary); background: var(--fill); border: 1px solid var(--border); }
-.badge.state-regressed { background: transparent; color: var(--failure); border: 1px solid var(--failure); box-shadow: none; }
 
 /* Shared page furniture: snapshot timestamps, de-emphasized values, magnitude
    bars, and the definitions behind a "?" marker. A hidden definition is
@@ -502,7 +445,7 @@ summary:hover { color: var(--heading); }
 @media print {
     body { background: #fff; }
     .shell { display: block; }
-    .side, .strip-nav, .info, html.navigating::before { display: none; }
+    .side, .info, html.navigating::before { display: none; }
     a { color: inherit; }
     tr, .card, .session, .traj-event { break-inside: avoid; }
     pre, .traj-text { max-height: none; overflow: visible; white-space: pre-wrap; }
@@ -659,3 +602,85 @@ table.spend th, table.spend td:not(.mixcell) { white-space: nowrap; }
 .viz-tip-row b { font-variant-numeric: tabular-nums; }
 .viz-tip-row span { color: #d6d3d1; }
 .viz-tip .key { flex: none; width: 12px; height: 3px; border-radius: 2px; background: var(--c); }
+
+/* Package page: the summary figures over the version ledger, a row per
+   attempted version with a mark per attempt, and the causes its failures
+   share. Below 1180px the ledger columns no longer fit beside the sidebar,
+   so each row folds onto two lines, and on a phone the marks take a line of
+   their own. */
+.pkg-repo { color: var(--muted); font-family: ui-monospace, monospace; font-size: 0.8rem; overflow-wrap: anywhere; }
+/* The 1px gaps over the panel's background draw the rules between cells in
+   any arrangement. */
+.pkg-sum { display: grid; grid-template-columns: 1fr 1fr 1.5fr 1fr; gap: 1px; margin-bottom: 18px; padding: 0; overflow: hidden; background: var(--viz-grid); }
+.sum-cell { display: flex; flex-direction: column; gap: 8px; min-width: 0; padding: 16px 20px; background: #fff; }
+.sum-fig { color: var(--heading); font-size: 1.9rem; font-weight: 800; line-height: 1; font-variant-numeric: tabular-nums; }
+.sum-fig small { color: var(--muted); font-size: 1rem; font-weight: 600; }
+.sum-fig.bad { color: var(--mismatch); }
+.sum-fig.muted { color: var(--muted); }
+.sum-sub { color: var(--secondary); font-size: 0.8rem; }
+.vstrip { display: flex; gap: 2px; height: 10px; }
+.vstrip i { flex: 1; min-width: 1px; border-radius: 2px; background: var(--c); }
+.sum-head { display: flex; align-items: center; gap: 8px; min-width: 0; }
+.sum-head a, .sum-context { display: -webkit-box; -webkit-box-orient: vertical; overflow: hidden; overflow-wrap: anywhere; }
+.sum-head a { -webkit-line-clamp: 2; color: var(--heading); font-weight: 700; }
+.sum-context { -webkit-line-clamp: 3; color: var(--secondary); font-family: ui-monospace, monospace; font-size: 0.75rem; }
+
+.pkg-panel { margin-bottom: 18px; padding: 14px 0 6px; }
+.pkg-panel-head { display: flex; flex-wrap: wrap; justify-content: space-between; align-items: baseline; gap: 6px 16px; padding: 0 22px 10px; }
+.pkg-panel-head .legend { margin: 0; gap: 14px; font-size: 0.75rem; }
+.pkg-panel-head .legend-item { gap: 5px; }
+.pkg-panel-note { color: var(--muted); font-size: 0.75rem; }
+.pkg-panel-foot { margin: 0; padding: 10px 22px 8px; border-top: 1px solid var(--viz-grid); color: var(--secondary); font-size: 0.8rem; }
+.lrows, .fail-rows { list-style: none; margin: 0; padding: 0; }
+.lrow { position: relative; display: grid; grid-template-columns: 96px 112px 232px minmax(0, 1fr) 84px; gap: 14px; align-items: center; padding: 9px 22px; border-top: 1px solid var(--viz-grid); }
+.lrows .lrow:hover { background: color-mix(in srgb, var(--fill) 60%, transparent); }
+.lhead { padding-block: 2px 6px; border-top: none; color: var(--muted); font-size: 0.72rem; font-weight: 600; }
+.lhead span:last-child, .l-last { text-align: right; }
+.l-ver { overflow: hidden; color: var(--heading); font-family: ui-monospace, monospace; font-size: 0.82rem; font-weight: 500; text-overflow: ellipsis; white-space: nowrap; }
+/* The version link covers its row. Positioning lifts the marks and the
+   failure link above it. */
+.l-ver::after { content: ""; position: absolute; inset: 0; }
+.l-fail a, .mk { position: relative; }
+.l-marks { display: flex; flex-wrap: wrap; gap: 3px; }
+.l-fail { display: flex; align-items: center; gap: 8px; min-width: 0; }
+.l-fail.fixed { opacity: 0.55; }
+.l-fail .note, .fail-line .note { color: var(--secondary); font-size: 0.82rem; }
+.l-last { color: var(--secondary); font-size: 0.8rem; white-space: nowrap; }
+.vstate { padding: 1px 8px; border-radius: 999px; background: color-mix(in srgb, var(--c) 16%, #fff); color: var(--secondary); font-size: 0.72rem; font-weight: 700; white-space: nowrap; }
+.vstate.ok { color: var(--accent); }
+.vstate.bad { color: var(--mismatch); }
+/* A square per rebuild and a circle per agent session, hollow when the
+   session did not reproduce. */
+.mk { flex: none; width: 9px; height: 9px; border-radius: 2px; background: var(--c); }
+.mk.agent { border-radius: 50%; }
+.mk.agent:not(.ok) { background: none; box-shadow: inset 0 0 0 2px var(--c); }
+a.mk:hover { outline: 2px solid var(--heading); outline-offset: 1px; }
+.fail-row { display: grid; grid-template-columns: 34px minmax(0, 1fr); gap: 3px 12px; padding: 9px 22px; border-top: 1px solid var(--viz-grid); }
+.fail-n { grid-row: span 2; color: var(--mismatch); font-size: 1.05rem; font-weight: 800; line-height: 1.3; text-align: right; font-variant-numeric: tabular-nums; }
+.fail-line { display: flex; align-items: center; gap: 8px; min-width: 0; }
+.fail-scope { display: flex; align-items: center; gap: 10px; min-width: 0; color: var(--muted); font-size: 0.75rem; }
+.fail-track { flex: none; width: 120px; height: 4px; border-radius: 2px; background: var(--viz-grid); }
+.fail-track i { display: block; height: 100%; min-width: 2px; border-radius: 2px; background: var(--viz-bad); }
+@media (max-width: 1180px) {
+    .pkg-sum { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+    .sum-fail { grid-column: 1 / -1; order: 1; }
+    .lhead { display: none; }
+    .lrow { grid-template-columns: minmax(0, max-content) auto minmax(0, 1fr) auto; grid-template-areas: "ver state marks last" "fail fail fail fail"; gap: 6px 10px; padding: 10px 16px; }
+    .l-ver { grid-area: ver; }
+    .l-state { grid-area: state; }
+    .l-marks { grid-area: marks; }
+    .l-fail { grid-area: fail; }
+    .l-fail:empty { display: none; }
+    .l-last { grid-area: last; }
+    .pkg-panel-head, .pkg-panel-foot, .fail-row { padding-inline: 16px; }
+}
+@media (max-width: 640px) {
+    .pkg-sum { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+    .sum-attempts { display: none; }
+    .lrow { grid-template-areas: "ver state . last" "marks marks marks marks" "fail fail fail fail"; gap: 6px 8px; }
+    .sum-cell { padding: 14px 16px; }
+    .sum-fig { font-size: 1.6rem; }
+    .fail-line { flex-direction: column; align-items: stretch; gap: 3px; }
+    .fail-line .stage { align-self: flex-start; }
+    .fail-track { display: none; }
+}
