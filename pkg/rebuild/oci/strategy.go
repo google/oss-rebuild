@@ -25,9 +25,9 @@ func (s *DockerfileBuild) ToWorkflow() *rebuild.WorkflowStrategy {
 			Uses: "oci/build",
 			With: map[string]string{
 				"dockerfile": s.Dockerfile,
-				"repo":       s.Repo,
-				"ref":        s.Ref,
-				"dir":        s.Dir,
+				"repo":       "{{.Location.Repo}}",
+				"ref":        "{{.Location.Ref}}",
+				"dir":        "{{.Location.Dir}}",
 			},
 		}},
 		Requires: rebuild.RequiredEnv{
