@@ -8,7 +8,6 @@ import (
 	"bytes"
 	"debug/elf"
 	"fmt"
-	"io"
 	"path"
 	re "regexp"
 	"slices"
@@ -343,39 +342,37 @@ func inspectWheelRustVersion(zr *zip.Reader) (string, error) {
 		return "", nil
 	}
 	for _, f := range zr.File {
-		if f.FileInfo().IsDir() || f.UncompressedSize64 > maxELFFileSize {
+		if f.FileInfo().IsDir() {
 			continue
 		}
 		baseName := path.Base(f.Name)
 		if !sharedLibNamePat.MatchString(strings.ToLower(baseName)) || isBundledLibPath(f.Name) {
 			continue
 		}
-		rc, err := f.Open()
-		if err != nil {
-			return "", errors.Wrapf(err, "opening %s in wheel", f.Name)
-		}
-		data, err := io.ReadAll(rc)
-		rc.Close()
-		if err != nil {
-			return "", errors.Wrapf(err, "reading %s in wheel", f.Name)
-		}
-		ef, err := elf.NewFile(bytes.NewReader(data))
-		if err != nil {
-			continue
-		}
-		sec := ef.Section(".comment")
-		if sec == nil {
-			continue
-		}
-		comment, err := sec.Data()
-		if err != nil {
-			continue
-		}
-		for _, entry := range bytes.Split(comment, []byte{0}) {
-			v, err := parseRustcComment(strings.TrimSpace(string(entry)))
-			if err != nil || v != "" {
-				return v, err
+		var found string
+		err := withWheelELF(f, func(ef *elf.File) error {
+			sec := ef.Section(".comment")
+			if sec == nil {
+				return nil
 			}
+			comment, err := sec.Data()
+			if err != nil {
+				return nil
+			}
+			for _, entry := range bytes.Split(comment, []byte{0}) {
+				v, err := parseRustcComment(strings.TrimSpace(string(entry)))
+				if err != nil || v != "" {
+					found = v
+					return err
+				}
+			}
+			return nil
+		})
+		if err != nil {
+			return "", err
+		}
+		if found != "" {
+			return found, nil
 		}
 	}
 	return "", nil

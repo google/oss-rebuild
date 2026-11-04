@@ -6,6 +6,7 @@ package pypi
 import (
 	"archive/zip"
 	"bytes"
+	"compress/flate"
 	"context"
 	"encoding/binary"
 	"fmt"
@@ -154,6 +155,66 @@ func TestInspectWheelRustVersion(t *testing.T) {
 			got, err := inspectWheelRustVersion(zr)
 			if (err != nil) != tc.wantErr {
 				t.Fatalf("inspectWheelRustVersion() error = %v, wantErr %v", err, tc.wantErr)
+			}
+			if diff := cmp.Diff(tc.want, got); diff != "" {
+				t.Errorf("inspectWheelRustVersion() diff (-want +got):\n%s", diff)
+			}
+		})
+	}
+}
+
+func paddedELFZipReader(t *testing.T, entryName string, elfPrefix []byte, totalSize int64) *zip.Reader {
+	t.Helper()
+	var buf bytes.Buffer
+	zw := zip.NewWriter(&buf)
+	zw.RegisterCompressor(zip.Deflate, func(out io.Writer) (io.WriteCloser, error) {
+		return flate.NewWriter(out, flate.BestSpeed)
+	})
+	w, err := zw.CreateHeader(&zip.FileHeader{Name: entryName, Method: zip.Deflate})
+	if err != nil {
+		t.Fatalf("CreateHeader() error = %v", err)
+	}
+	if _, err := w.Write(elfPrefix); err != nil {
+		t.Fatalf("Write(elfPrefix) error = %v", err)
+	}
+	zeroChunk := make([]byte, 1<<20)
+	remaining := totalSize - int64(len(elfPrefix))
+	for remaining > 0 {
+		n := min(remaining, int64(len(zeroChunk)))
+		if _, err := w.Write(zeroChunk[:n]); err != nil {
+			t.Fatalf("Write(zeroChunk) error = %v", err)
+		}
+		remaining -= n
+	}
+	if err := zw.Close(); err != nil {
+		t.Fatalf("zw.Close() error = %v", err)
+	}
+	return must(zip.NewReader(bytes.NewReader(buf.Bytes()), int64(buf.Len())))
+}
+
+func TestInspectWheelRustVersionLargeELF(t *testing.T) {
+	elfBody := elfWithComment("rustc version 1.94.0-nightly (abcdef123 2026-08-31)")
+	for _, tc := range []struct {
+		name string
+		size int64
+		want string
+	}{
+		{
+			name: "OversizedAbove128MiBStreamedViaTempFile",
+			size: 130 << 20,
+			want: "nightly-2026-09-01",
+		},
+		{
+			name: "OversizedAbove512MiBSkipped",
+			size: 513 << 20,
+			want: "",
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			zr := paddedELFZipReader(t, "polars/_plr.abi3.so", elfBody, tc.size)
+			got, err := inspectWheelRustVersion(zr)
+			if err != nil {
+				t.Fatalf("inspectWheelRustVersion() error = %v", err)
 			}
 			if diff := cmp.Diff(tc.want, got); diff != "" {
 				t.Errorf("inspectWheelRustVersion() diff (-want +got):\n%s", diff)
