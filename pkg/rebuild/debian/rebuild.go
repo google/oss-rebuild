@@ -16,7 +16,7 @@ type Rebuilder struct{}
 
 var _ rebuild.Rebuilder = Rebuilder{}
 
-// We expect target.Packge to be in the form "<component>/<name>".
+// We expect target.Package to be in the form "<component>/<name>".
 func ParseComponent(pkg string) (component, name string, err error) {
 	component, name, found := strings.Cut(pkg, "/")
 	if !found {
@@ -34,7 +34,7 @@ func (r Rebuilder) Upstream(ctx context.Context, t rebuild.Target, mux rebuild.R
 	if err != nil {
 		return nil, errors.Wrap(err, "parsing package name")
 	}
-	return mux.Debian.Artifact(ctx, component, name, t.Artifact)
+	return mux.Debian.Artifact(ctx, component, name, t.Version, t.Artifact)
 }
 
 func (r Rebuilder) UpstreamURL(ctx context.Context, t rebuild.Target, mux rebuild.RegistryMux) (string, error) {
@@ -42,5 +42,5 @@ func (r Rebuilder) UpstreamURL(ctx context.Context, t rebuild.Target, mux rebuil
 	if err != nil {
 		return "", errors.Wrap(err, "parsing package name")
 	}
-	return mux.Debian.ArtifactURL(ctx, name, t.Artifact)
+	return mux.Debian.ArtifactURL(ctx, name, t.Version, t.Artifact)
 }

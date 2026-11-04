@@ -294,22 +294,24 @@ func TestHTTPRegistry_Artifact(t *testing.T) {
 		name        string
 		component   string
 		pkg         string
+		version     string
 		artifact    string
 		calls       []httpxtest.Call
 		expected    string
 		expectedErr error
 	}{
 		{
-			name:      "",
+			name:      "Standard",
 			component: "main",
 			pkg:       "xz-utils",
+			version:   "5.4.1-0.2",
 			artifact:  "xz-utils_5.4.1-0.2_amd64.deb",
 			calls: []httpxtest.Call{
 				{
 					URL: "https://snapshot.debian.org/mr/package/xz-utils/5.4.1-0.2/binfiles/xz-utils/5.4.1-0.2?fileinfo=1",
 					Response: &http.Response{
 						StatusCode: 200,
-						Body:       httpxtest.Body(`{"fileinfo":{"deadbeef":[{"archive_name":"debian","name":"xz-utils_5.4.1-0.2_amd64.deb"}]}","result":[{"architecture":"amd64","hash":"deadbeef"}]`),
+						Body:       httpxtest.Body(`{"fileinfo":{"deadbeef":[{"archive_name":"debian","name":"xz-utils_5.4.1-0.2_amd64.deb"}]},"result":[{"architecture":"amd64","hash":"deadbeef"}]}`),
 					},
 				},
 				{
@@ -323,6 +325,113 @@ func TestHTTPRegistry_Artifact(t *testing.T) {
 			expected:    "artifact_contents",
 			expectedErr: nil,
 		},
+		{
+			name:      "WithEpoch0",
+			component: "main",
+			pkg:       "xz-utils",
+			version:   "0:5.4.1-0.2",
+			artifact:  "xz-utils_5.4.1-0.2_amd64.deb",
+			calls: []httpxtest.Call{
+				{
+					URL: "https://snapshot.debian.org/mr/package/xz-utils/5.4.1-0.2/binfiles/xz-utils/5.4.1-0.2?fileinfo=1",
+					Response: &http.Response{
+						StatusCode: 200,
+						Body:       httpxtest.Body(`{"fileinfo":{"deadbeef":[{"archive_name":"debian","name":"xz-utils_5.4.1-0.2_amd64.deb"}]},"result":[{"architecture":"amd64","hash":"deadbeef"}]}`),
+					},
+				},
+				{
+					URL: "https://snapshot.debian.org/file/deadbeef",
+					Response: &http.Response{
+						StatusCode: 200,
+						Body:       httpxtest.Body("artifact_contents"),
+					},
+				},
+			},
+			expected:    "artifact_contents",
+			expectedErr: nil,
+		},
+		{
+			name:      "WithEpoch",
+			component: "main",
+			pkg:       "xrt",
+			version:   "1:2.25.0-4",
+			artifact:  "xrt-xocl-dkms_2.25.0-4_amd64.deb",
+			calls: []httpxtest.Call{
+				{
+					URL: "https://snapshot.debian.org/mr/package/xrt/1:2.25.0-4/binfiles/xrt-xocl-dkms/1:2.25.0-4?fileinfo=1",
+					Response: &http.Response{
+						StatusCode: 200,
+						Body:       httpxtest.Body(`{"fileinfo":{"c1d9b002":[{"archive_name":"debian","name":"xrt-xocl-dkms_2.25.0-4_amd64.deb"}]},"result":[{"architecture":"amd64","hash":"c1d9b002"}]}`),
+					},
+				},
+				{
+					URL: "https://snapshot.debian.org/file/c1d9b002",
+					Response: &http.Response{
+						StatusCode: 200,
+						Body:       httpxtest.Body("xrt_artifact_contents"),
+					},
+				},
+			},
+			expected:    "xrt_artifact_contents",
+			expectedErr: nil,
+		},
+		{
+			name:      "WithEpoch2",
+			component: "main",
+			pkg:       "gmp",
+			version:   "2:6.2.1+dfsg1-1.1",
+			artifact:  "libgmp10_6.2.1+dfsg1-1.1_amd64.deb",
+			calls: []httpxtest.Call{
+				{
+					URL: "https://snapshot.debian.org/mr/package/gmp/2:6.2.1+dfsg1-1.1/binfiles/libgmp10/2:6.2.1+dfsg1-1.1?fileinfo=1",
+					Response: &http.Response{
+						StatusCode: 200,
+						Body:       httpxtest.Body(`{"fileinfo":{"feedcafe":[{"archive_name":"debian","name":"libgmp10_6.2.1+dfsg1-1.1_amd64.deb"}]},"result":[{"architecture":"amd64","hash":"feedcafe"}]}`),
+					},
+				},
+				{
+					URL: "https://snapshot.debian.org/file/feedcafe",
+					Response: &http.Response{
+						StatusCode: 200,
+						Body:       httpxtest.Body("gmp_artifact_contents"),
+					},
+				},
+			},
+			expected:    "gmp_artifact_contents",
+			expectedErr: nil,
+		},
+		{
+			name:      "FallbackToEpoch1",
+			component: "main",
+			pkg:       "xrt",
+			version:   "2.25.0-4",
+			artifact:  "xrt-xocl-dkms_2.25.0-4_amd64.deb",
+			calls: []httpxtest.Call{
+				{
+					URL: "https://snapshot.debian.org/mr/package/xrt/2.25.0-4/binfiles/xrt-xocl-dkms/2.25.0-4?fileinfo=1",
+					Response: &http.Response{
+						StatusCode: 404,
+						Body:       httpxtest.Body("Not Found"),
+					},
+				},
+				{
+					URL: "https://snapshot.debian.org/mr/package/xrt/1:2.25.0-4/binfiles/xrt-xocl-dkms/1:2.25.0-4?fileinfo=1",
+					Response: &http.Response{
+						StatusCode: 200,
+						Body:       httpxtest.Body(`{"fileinfo":{"c1d9b002":[{"archive_name":"debian","name":"xrt-xocl-dkms_2.25.0-4_amd64.deb"}]},"result":[{"architecture":"amd64","hash":"c1d9b002"}]}`),
+					},
+				},
+				{
+					URL: "https://snapshot.debian.org/file/c1d9b002",
+					Response: &http.Response{
+						StatusCode: 200,
+						Body:       httpxtest.Body("xrt_artifact_contents"),
+					},
+				},
+			},
+			expected:    "xrt_artifact_contents",
+			expectedErr: nil,
+		},
 	}
 	for _, tc := range testCases {
 		t.Run(tc.name, func(t *testing.T) {
@@ -330,21 +439,100 @@ func TestHTTPRegistry_Artifact(t *testing.T) {
 				Calls:        tc.calls,
 				URLValidator: httpxtest.NewURLValidator(t),
 			}
-			actual, err := HTTPRegistry{Client: mockClient}.Artifact(context.Background(), tc.component, tc.pkg, tc.artifact)
-			if err != nil && tc.expectedErr != nil && err.Error() != tc.expectedErr.Error() {
-				t.Errorf("Error mismatch: got %v, want %v", err, tc.expectedErr)
+			actual, err := HTTPRegistry{Client: mockClient}.Artifact(context.Background(), tc.component, tc.pkg, tc.version, tc.artifact)
+			if tc.expectedErr != nil {
+				if err == nil || err.Error() != tc.expectedErr.Error() {
+					t.Fatalf("Error mismatch: got %v, want %v", err, tc.expectedErr)
+				}
+				return
 			}
 			if err != nil {
-				return
+				t.Fatalf("Unexpected error: %v", err)
 			}
 			actualStr := string(must(io.ReadAll(actual)))
 			if tc.expected != actualStr {
-				if diff := cmp.Diff(actual, tc.expected); diff != "" {
+				if diff := cmp.Diff(actualStr, tc.expected); diff != "" {
 					t.Errorf("Artifact mismatch: diff\n%v", diff)
 				}
 			}
-			if mockClient.CallCount() != 1 {
-				t.Errorf("Expected 1 call, got %d", mockClient.CallCount())
+			if mockClient.CallCount() != len(tc.calls) {
+				t.Errorf("Expected %d calls, got %d", len(tc.calls), mockClient.CallCount())
+			}
+		})
+	}
+}
+
+func TestHTTPRegistry_ArtifactURL(t *testing.T) {
+	testCases := []struct {
+		name        string
+		pkg         string
+		version     string
+		artifact    string
+		calls       []httpxtest.Call
+		expectedURL string
+		expectedErr bool
+	}{
+		{
+			name:     "WithEpoch",
+			pkg:      "xrt",
+			version:  "1:2.25.0-4",
+			artifact: "xrt-xocl-dkms_2.25.0-4_amd64.deb",
+			calls: []httpxtest.Call{
+				{
+					URL: "https://snapshot.debian.org/mr/package/xrt/1:2.25.0-4/binfiles/xrt-xocl-dkms/1:2.25.0-4?fileinfo=1",
+					Response: &http.Response{
+						StatusCode: 200,
+						Body:       httpxtest.Body(`{"fileinfo":{"c1d9b002":[{"archive_name":"debian","name":"xrt-xocl-dkms_2.25.0-4_amd64.deb"}]},"result":[{"architecture":"amd64","hash":"c1d9b002"}]}`),
+					},
+				},
+			},
+			expectedURL: "https://snapshot.debian.org/file/c1d9b002",
+		},
+		{
+			name:     "EmptyVersionFallback",
+			pkg:      "xrt",
+			version:  "",
+			artifact: "xrt-xocl-dkms_2.25.0-4_amd64.deb",
+			calls: []httpxtest.Call{
+				{
+					URL: "https://snapshot.debian.org/mr/package/xrt/2.25.0-4/binfiles/xrt-xocl-dkms/2.25.0-4?fileinfo=1",
+					Response: &http.Response{
+						StatusCode: 404,
+						Body:       httpxtest.Body("Not Found"),
+					},
+				},
+				{
+					URL: "https://snapshot.debian.org/mr/package/xrt/1:2.25.0-4/binfiles/xrt-xocl-dkms/1:2.25.0-4?fileinfo=1",
+					Response: &http.Response{
+						StatusCode: 200,
+						Body:       httpxtest.Body(`{"fileinfo":{"c1d9b002":[{"archive_name":"debian","name":"xrt-xocl-dkms_2.25.0-4_amd64.deb"}]},"result":[{"architecture":"amd64","hash":"c1d9b002"}]}`),
+					},
+				},
+			},
+			expectedURL: "https://snapshot.debian.org/file/c1d9b002",
+		},
+	}
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			mockClient := &httpxtest.MockClient{
+				Calls:        tc.calls,
+				URLValidator: httpxtest.NewURLValidator(t),
+			}
+			actualURL, err := HTTPRegistry{Client: mockClient}.ArtifactURL(context.Background(), tc.pkg, tc.version, tc.artifact)
+			if tc.expectedErr {
+				if err == nil {
+					t.Fatalf("Expected error, got nil")
+				}
+				return
+			}
+			if err != nil {
+				t.Fatalf("Unexpected error: %v", err)
+			}
+			if actualURL != tc.expectedURL {
+				t.Errorf("URL mismatch: got %v, want %v", actualURL, tc.expectedURL)
+			}
+			if mockClient.CallCount() != len(tc.calls) {
+				t.Errorf("Expected %d calls, got %d", len(tc.calls), mockClient.CallCount())
 			}
 		})
 	}
