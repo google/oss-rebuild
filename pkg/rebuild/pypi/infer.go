@@ -574,18 +574,8 @@ func inferBuild(ctx context.Context, t rebuild.Target, mux rebuild.RegistryMux, 
 		}
 		var maturin *MaturinOptions
 		if usesMaturin(reqs) {
-			usesCibw, err := usesCibuildwheel(tree, dir)
-			if err != nil {
-				return nil, errors.Wrap(err, "detecting cibuildwheel configuration")
-			}
-			// cibuildwheel drives maturin through PEP 517 and repairs with auditwheel,
-			// which platform-wheel reproduces. Only direct maturin releases use maturin-wheel.
-			if !usesCibw {
-				features, err := inferMaturinFeatures(tree, dir, tags)
-				if err != nil {
-					return nil, errors.Wrap(err, "inferring maturin features")
-				}
-				maturin = &MaturinOptions{Features: features}
+			if maturin, err = inferMaturinOptions(tree, dir, tags); err != nil {
+				return nil, err
 			}
 		}
 		return &PlatformWheelBuild{

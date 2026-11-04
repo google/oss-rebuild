@@ -88,6 +88,18 @@ func usesCibuildwheel(tree *git2.Tree, searchDir string) (bool, error) {
 	if tree == nil {
 		return false, nil
 	}
+	if hasCfg, err := hasCibuildwheelConfig(tree, searchDir); err != nil || hasCfg {
+		return hasCfg, err
+	}
+	var found bool
+	err := forEachWorkflow(tree, func(contents []byte) bool {
+		found = workflowUsesCibuildwheel(contents)
+		return !found
+	})
+	return found, err
+}
+
+func hasCibuildwheelConfig(tree *git2.Tree, searchDir string) (bool, error) {
 	var dirs []string
 	if cleanDir := path.Clean(searchDir); cleanDir != "." {
 		dirs = append(dirs, cleanDir)
@@ -120,12 +132,7 @@ func usesCibuildwheel(tree *git2.Tree, searchDir string) (bool, error) {
 			return false, errors.Wrapf(err, "finding %s", pyprojPath)
 		}
 	}
-	var found bool
-	err := forEachWorkflow(tree, func(contents []byte) bool {
-		found = workflowUsesCibuildwheel(contents)
-		return !found
-	})
-	return found, err
+	return false, nil
 }
 
 // forEachWorkflow calls yield with the contents of each GitHub Actions

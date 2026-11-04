@@ -258,31 +258,9 @@ func (b *PlatformWheelBuild) ToWorkflow() (*rebuild.WorkflowStrategy, error) {
 	}
 	var buildStep flow.Step
 	if b.Maturin != nil {
-		compatibilityPolicy, err := platform.HighestPolicy(b.PlatformTag)
+		buildStep, err = b.maturinBuildStep(*b.Maturin, distDir, nonCanonicalName, rustHostTriple)
 		if err != nil {
-			return nil, errors.Wrap(err, "selecting maturin compatibility policy")
-		}
-		var retagABI string
-		if strings.Contains(b.ABITag, ".") {
-			retagABI = b.ABITag
-		}
-		buildStep = flow.Step{
-			Uses: "pypi/build/maturin-wheel",
-			With: map[string]string{
-				"dir":                 b.Location.Dir,
-				"distDir":             distDir,
-				"buildRoot":           b.BuildRoot,
-				"locator":             "/deps/bin/",
-				"pythonBin":           "/deps/bin/python3",
-				"wheelCli":            "/deps/wheel-cli",
-				"compatibilityPolicy": compatibilityPolicy,
-				"targetPlatformTag":   b.PlatformTag,
-				"retagABI":            retagABI,
-				"nonCanonicalName":    nonCanonicalName,
-				"rustVersion":         b.RustVersion,
-				"rustHost":            rustHostTriple,
-				"maturinFeatures":     strings.Join(b.Maturin.Features, ","),
-			},
+			return nil, err
 		}
 	} else {
 		buildStep = flow.Step{
@@ -316,6 +294,35 @@ func (b *PlatformWheelBuild) ToWorkflow() (*rebuild.WorkflowStrategy, error) {
 		Deps:      depsSteps,
 		Build:     []flow.Step{buildStep},
 		OutputDir: distDir,
+	}, nil
+}
+
+func (b *PlatformWheelBuild) maturinBuildStep(opts MaturinOptions, distDir, nonCanonicalName, rustHostTriple string) (flow.Step, error) {
+	compatibilityPolicy, err := platform.HighestPolicy(b.PlatformTag)
+	if err != nil {
+		return flow.Step{}, errors.Wrap(err, "selecting maturin compatibility policy")
+	}
+	var retagABI string
+	if strings.Contains(b.ABITag, ".") {
+		retagABI = b.ABITag
+	}
+	return flow.Step{
+		Uses: "pypi/build/maturin-wheel",
+		With: map[string]string{
+			"dir":                 b.Location.Dir,
+			"distDir":             distDir,
+			"buildRoot":           b.BuildRoot,
+			"locator":             "/deps/bin/",
+			"pythonBin":           "/deps/bin/python3",
+			"wheelCli":            "/deps/wheel-cli",
+			"compatibilityPolicy": compatibilityPolicy,
+			"targetPlatformTag":   b.PlatformTag,
+			"retagABI":            retagABI,
+			"nonCanonicalName":    nonCanonicalName,
+			"rustVersion":         b.RustVersion,
+			"rustHost":            rustHostTriple,
+			"maturinFeatures":     strings.Join(opts.Features, ","),
+		},
 	}, nil
 }
 

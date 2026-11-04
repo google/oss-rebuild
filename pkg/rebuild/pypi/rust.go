@@ -91,6 +91,24 @@ func usesMaturin(reqs []string) bool {
 	return hasRequirement(reqs, "maturin")
 }
 
+// inferMaturinOptions returns options for a direct maturin build. It returns nil
+// when cibuildwheel drives maturin through PEP 517 and auditwheel, because the
+// platform-wheel step already reproduces that path.
+func inferMaturinOptions(tree *git2.Tree, dir string, tags WheelTags) (*MaturinOptions, error) {
+	usesCibw, err := usesCibuildwheel(tree, dir)
+	if err != nil {
+		return nil, errors.Wrap(err, "detecting cibuildwheel configuration")
+	}
+	if usesCibw {
+		return nil, nil
+	}
+	features, err := inferMaturinFeatures(tree, dir, tags)
+	if err != nil {
+		return nil, errors.Wrap(err, "inferring maturin features")
+	}
+	return &MaturinOptions{Features: features}, nil
+}
+
 // inferMaturinFeatures inspects pyproject.toml and Cargo.toml when building an
 // abi3 wheel with maturin and selects a single non-default Cargo feature that
 // enables pyo3's abi3 mode. Because passing "--features" on the CLI overrides
@@ -134,9 +152,20 @@ func inferMaturinFeatures(tree *git2.Tree, dir string, tags WheelTags) ([]string
 			}
 		}
 	}
+	feat, ok := selectABI3Feature(cargoToml.Features, tags)
+	if !ok {
+		return nil, nil
+	}
+	return append(slices.Clip(pyprojFeatures), feat), nil
+}
+
+// selectABI3Feature returns the Cargo feature that enables pyo3 abi3 for tags,
+// preferring an exact Python version match, then an unversioned one, then any
+// match, and only when that tier has a single candidate.
+func selectABI3Feature(features map[string][]string, tags WheelTags) (string, bool) {
 	targetPySuffix := targetPyO3VersionSuffix(tags.Python)
 	var exactMatches, unversionedMatches, allMatches []string
-	for feat, deps := range cargoToml.Features {
+	for feat, deps := range features {
 		if feat == "default" || !validMaturinFeaturePat.MatchString(feat) {
 			continue
 		}
@@ -164,10 +193,10 @@ func inferMaturinFeatures(tree *git2.Tree, dir string, tags WheelTags) ([]string
 	}
 	for _, candidates := range [][]string{exactMatches, unversionedMatches, allMatches} {
 		if len(candidates) == 1 {
-			return append(slices.Clip(pyprojFeatures), candidates[0]), nil
+			return candidates[0], true
 		}
 	}
-	return nil, nil
+	return "", false
 }
 
 func readMaturinConfig(tree *git2.Tree, dir string) (pypiresolver.MaturinConfig, error) {
