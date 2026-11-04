@@ -153,8 +153,9 @@ type PlatformWheelBuild struct {
 	BaseImage string `json:"base_image,omitempty" yaml:"base_image,omitempty"`
 	// BuildRoot is the absolute path the build is run from, when set.
 	BuildRoot string `json:"build_root,omitempty" yaml:"build_root,omitempty"`
-	// RustVersion is the pinned rustc release (such as "1.97.1") to install when
-	// the wheel compiles Rust extensions. Empty means no Rust toolchain is installed.
+	// RustVersion is the pinned rustup toolchain version (such as "1.97.1" or
+	// "nightly-2026-05-01") to install when the wheel compiles Rust extensions.
+	// Empty means no Rust toolchain is installed.
 	RustVersion string `json:"rust_version,omitempty" yaml:"rust_version,omitempty"`
 	// Maturin runs "maturin build --release --compatibility <policy>" directly
 	// instead of PEP 517 plus "auditwheel repair" when non-nil.
@@ -238,7 +239,7 @@ func (b *PlatformWheelBuild) ToWorkflow() (*rebuild.WorkflowStrategy, error) {
 	}}
 	var rustHostTriple string
 	if b.RustVersion != "" {
-		if !validRustVersionPat.MatchString(b.RustVersion) {
+		if !isValidRustVersion(b.RustVersion) {
 			return nil, errors.Errorf("invalid rust version %q", b.RustVersion)
 		}
 		host, err := rustHostForPlatform(b.PlatformTag)

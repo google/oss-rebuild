@@ -43,18 +43,21 @@ var (
 		triple:       "x86_64-unknown-linux-musl",
 		rustupSHA256: "1552169aba2836777136ccff7a381e95c17233b5d8250cd5e10ae3cb971bfcfc",
 	}
-	// rustcVersionPat extracts the rustc version and any pre-release suffix stamped
-	// into ELF .comment sections (e.g. "rustc version 1.97.1 (8bab26f4f 2026-07-14)").
-	rustcVersionPat = re.MustCompile(`rustc (?:version )?(\d+\.\d+\.\d+)(-[\w.]+)?(?:\s|$)`)
-	// toolchainChannelPat matches a numeric stable Rust release channel in
+	// rustcVersionPat extracts the rustc version, any pre-release suffix, and an
+	// optional commit date stamped into ELF .comment sections (such as
+	// "rustc version 1.97.1 (8bab26f4f 2026-07-14)" or
+	// "rustc version 1.97.0-nightly (f53b654a8 2026-04-30)").
+	rustcVersionPat = re.MustCompile(`rustc (?:version )?(\d+\.\d+\.\d+)(-[\w.]+)?(?: \([0-9a-f]+ (\d{4}-\d{2}-\d{2})\))?(?:\s|$)`)
+	// toolchainChannelPat matches a numeric stable or dated nightly Rust channel in
 	// rust-toolchain(.toml), optionally suffixed with an <arch>-<vendor>-<os> target triple.
-	toolchainChannelPat = re.MustCompile(`^(\d+\.\d+(?:\.\d+)?)(?:-[A-Za-z0-9_]+-[A-Za-z0-9_]+-[A-Za-z0-9_-]+)?$`)
+	toolchainChannelPat = re.MustCompile(`^(nightly-\d{4}-\d{2}-\d{2}|\d+\.\d+(?:\.\d+)?)(?:-[A-Za-z0-9_]+-[A-Za-z0-9_]+-[A-Za-z0-9_-]+)?$`)
 	// stableChannelPat matches the floating "stable" channel in rust-toolchain(.toml),
 	// optionally suffixed with an <arch>-<vendor>-<os> target triple.
 	stableChannelPat = re.MustCompile(`^stable(?:-[A-Za-z0-9_]+-[A-Za-z0-9_]+-[A-Za-z0-9_-]+)?$`)
-	// validRustVersionPat requires a fully pinned 3-component release before shell
-	// interpolation. A major.minor channel would let rustup pick the newest patch at build time.
-	validRustVersionPat = re.MustCompile(`^\d+\.\d+\.\d+$`)
+	// validRustVersionPat requires a pinned 3-component release or dated nightly
+	// channel before shell interpolation. Floating channels such as "1.96" or
+	// "nightly" would resolve to the newest release at build time.
+	validRustVersionPat = re.MustCompile(`^(\d+\.\d+\.\d+|nightly-\d{4}-\d{2}-\d{2})$`)
 	// validMaturinFeaturePat validates a Cargo feature identifier before shell interpolation.
 	validMaturinFeaturePat = re.MustCompile(`^[A-Za-z0-9_+-]+(/[A-Za-z0-9_+-]+)?$`)
 )
@@ -317,6 +320,10 @@ func inferRustVersion(zr *zip.Reader, tree *git2.Tree, dir string, registryTime 
 		return "", err
 	}
 	if ch != "" {
+		// A dated nightly channel is already pinned and has no release list to check against registryTime.
+		if strings.HasPrefix(ch, "nightly-") {
+			return ch, nil
+		}
 		resolved, ok := resolveStableChannel(ch, registryTime)
 		if !ok {
 			return "", errors.Errorf("rust-toolchain channel %q has no known release at %s", ch, registryTime.Format(time.RFC3339))
@@ -365,19 +372,34 @@ func inspectWheelRustVersion(zr *zip.Reader) (string, error) {
 			continue
 		}
 		for _, entry := range bytes.Split(comment, []byte{0}) {
-			s := strings.TrimSpace(string(entry))
-			m := rustcVersionPat.FindStringSubmatch(s)
-			if m == nil {
-				continue
+			v, err := parseRustcComment(strings.TrimSpace(string(entry)))
+			if err != nil || v != "" {
+				return v, err
 			}
-			if m[2] != "" {
-				// TODO: Map dated -nightly (<sha> <YYYY-MM-DD>) comments to rustup nightly-<date> channels.
-				return "", errors.Errorf("wheel built with non-stable rustc %s%s", m[1], m[2])
-			}
-			return m[1], nil
 		}
 	}
 	return "", nil
+}
+
+// parseRustcComment extracts a rustup toolchain version from an ELF .comment
+// entry. Nightly rustc builds stamp the commit date from the day before the
+// rustup nightly channel publication date, so "2026-04-30" maps to
+// "nightly-2026-05-01".
+func parseRustcComment(s string) (string, error) {
+	m := rustcVersionPat.FindStringSubmatch(s)
+	if m == nil {
+		return "", nil
+	}
+	if m[2] == "" {
+		return m[1], nil
+	}
+	if m[2] == "-nightly" && m[3] != "" {
+		commitDate, err := time.Parse(time.DateOnly, m[3])
+		if err == nil {
+			return "nightly-" + commitDate.AddDate(0, 0, 1).Format(time.DateOnly), nil
+		}
+	}
+	return "", errors.Errorf("wheel built with non-stable rustc %s%s", m[1], m[2])
 }
 
 func readRustToolchainFile(tree *git2.Tree, dir string) (string, error) {
@@ -443,9 +465,13 @@ func parseRustToolchainContent(content string) (string, error) {
 		return "", nil
 	}
 	if m := toolchainChannelPat.FindStringSubmatch(ch); m != nil {
+		if dateStr, ok := strings.CutPrefix(m[1], "nightly-"); ok {
+			if _, err := time.Parse(time.DateOnly, dateStr); err != nil {
+				return "", errors.Errorf("invalid rust-toolchain nightly date in %q", ch)
+			}
+		}
 		return m[1], nil
 	}
-	// TODO: Support dated nightly-YYYY-MM-DD channels.
 	return "", errors.Errorf("unsupported rust-toolchain channel %q", ch)
 }
 
@@ -476,6 +502,17 @@ func resolveStableChannel(channel string, registryTime time.Time) (string, bool)
 		resolved = candidate
 	}
 	return resolved, resolved != ""
+}
+
+func isValidRustVersion(v string) bool {
+	if !validRustVersionPat.MatchString(v) {
+		return false
+	}
+	if dateStr, ok := strings.CutPrefix(v, "nightly-"); ok {
+		_, err := time.Parse(time.DateOnly, dateStr)
+		return err == nil
+	}
+	return true
 }
 
 // rustHostForPlatform returns the rustup host target and installer digest for a

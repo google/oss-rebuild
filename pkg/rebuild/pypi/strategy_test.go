@@ -876,6 +876,40 @@ cd the_dir
 				OutputPath: "the_dir/dist/the_artifact",
 			},
 		},
+		{
+			"WithMaturinBuildNightlyRust",
+			&PlatformWheelBuild{
+				Location:     defaultLocation,
+				PythonTag:    "cp38",
+				ABITag:       "abi3",
+				PlatformTag:  "manylinux_2_17_x86_64.manylinux2014_x86_64",
+				Requirements: []string{"maturin==1.14.0"},
+				RustVersion:  "nightly-2026-05-01",
+				Maturin:      &MaturinOptions{},
+			},
+			rebuild.Instructions{
+				Location: defaultLocation,
+				Source:   "git checkout --force 'the_ref'",
+				Deps: `for py in /opt/python/cp38-abi3/bin/python /opt/python/cp38-*/bin/python /opt/python/cp3*/bin/python; do [ -x "$py" ] && break; done
+"$py" -m venv /deps
+/deps/bin/pip install build wheel
+/deps/bin/pip install --target /deps/wheel-cli wheel
+/deps/bin/pip install 'maturin==1.14.0'
+wget -O rustup-init https://static.rust-lang.org/rustup/archive/1.29.3/x86_64-unknown-linux-gnu/rustup-init
+echo 'b1c8cb14e30889e7e2999e6b69e62d9e9b9ffc0f4df8180564d306d9680e6c55  rustup-init' | sha256sum -c -
+chmod +x rustup-init
+CARGO_HOME=/root/.cargo RUSTUP_HOME=/root/.rustup ./rustup-init -y --profile minimal --default-toolchain nightly-2026-05-01 --no-modify-path
+rm -f rustup-init`,
+				Build: `export CARGO_HOME=/root/.cargo RUSTUP_HOME=/root/.rustup RUSTUP_TOOLCHAIN=nightly-2026-05-01 PATH=/root/.rustup/toolchains/nightly-2026-05-01-x86_64-unknown-linux-gnu/bin:/root/.cargo/bin:$PATH
+cd the_dir
+/deps/bin/maturin build --release --out dist -i /deps/bin/python3 --compatibility manylinux_2_17`,
+				Requires: rebuild.RequiredEnv{
+					BaseImage:  "quay.io/pypa/manylinux2014_x86_64",
+					SystemDeps: []string{"git", "wget"},
+				},
+				OutputPath: "the_dir/dist/the_artifact",
+			},
+		},
 	}
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
@@ -1068,12 +1102,36 @@ func TestPlatformWheelBuildRustValidation(t *testing.T) {
 		wantErr  bool
 	}{
 		{
-			name: "NightlyRustVersionRejected",
+			name: "SemverNightlyRustVersionRejected",
 			strategy: &PlatformWheelBuild{
 				PlatformTag: "manylinux_2_17_x86_64",
 				RustVersion: "1.97.1-nightly",
 			},
 			wantErr: true,
+		},
+		{
+			name: "BareNightlyRustVersionRejected",
+			strategy: &PlatformWheelBuild{
+				PlatformTag: "manylinux_2_17_x86_64",
+				RustVersion: "nightly",
+			},
+			wantErr: true,
+		},
+		{
+			name: "DatedNightlyInvalidCalendarDateRejected",
+			strategy: &PlatformWheelBuild{
+				PlatformTag: "manylinux_2_17_x86_64",
+				RustVersion: "nightly-2026-02-30",
+			},
+			wantErr: true,
+		},
+		{
+			name: "DatedNightlyRustVersionAccepted",
+			strategy: &PlatformWheelBuild{
+				PlatformTag: "manylinux_2_17_x86_64",
+				RustVersion: "nightly-2026-05-01",
+			},
+			wantErr: false,
 		},
 		{
 			name: "TwoComponentRustVersionRejected",

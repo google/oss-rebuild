@@ -87,6 +87,16 @@ func TestInspectWheelRustVersion(t *testing.T) {
 			want: "1.97.1",
 		},
 		{
+			name: "NightlyRustcAdvancesDateByOneDay",
+			entries: []archive.ZipEntry{
+				{
+					FileHeader: &zip.FileHeader{Name: "pkg/_native.abi3.so"},
+					Body:       elfWithComment("GCC: (GNU) 10.2.1\x00rustc version 1.97.0-nightly (f53b654a8 2026-04-30)"),
+				},
+			},
+			want: "nightly-2026-05-01",
+		},
+		{
 			name: "BundledLibInLibsDirIgnored",
 			entries: []archive.ZipEntry{
 				{
@@ -97,11 +107,21 @@ func TestInspectWheelRustVersion(t *testing.T) {
 			want: "",
 		},
 		{
-			name: "NightlyRustcRejected",
+			name: "DatelessNightlyRustcRejected",
+			entries: []archive.ZipEntry{
+				{
+					FileHeader: &zip.FileHeader{Name: "pkg/_native.abi3.so"},
+					Body:       elfWithComment("rustc version 1.97.0-nightly"),
+				},
+			},
+			wantErr: true,
+		},
+		{
+			name: "InvalidDateNightlyRustcRejected",
 			entries: []archive.ZipEntry{
 				{
 					FileHeader: &zip.FileHeader{Name: "pkg/_native.cpython-312-x86_64-linux-gnu.so"},
-					Body:       elfWithComment("rustc version 1.98.0-nightly (abc 2026-08-01)"),
+					Body:       elfWithComment("rustc version 1.98.0-nightly (abc 2026-02-30)"),
 				},
 			},
 			wantErr: true,
@@ -116,6 +136,16 @@ func TestInspectWheelRustVersion(t *testing.T) {
 			},
 			wantErr: true,
 		},
+		{
+			name: "DevRustcRejected",
+			entries: []archive.ZipEntry{
+				{
+					FileHeader: &zip.FileHeader{Name: "pkg/_native.abi3.so"},
+					Body:       elfWithComment("rustc version 1.97.0-dev"),
+				},
+			},
+			wantErr: true,
+		},
 	}
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
@@ -125,8 +155,8 @@ func TestInspectWheelRustVersion(t *testing.T) {
 			if (err != nil) != tc.wantErr {
 				t.Fatalf("inspectWheelRustVersion() error = %v, wantErr %v", err, tc.wantErr)
 			}
-			if got != tc.want {
-				t.Errorf("inspectWheelRustVersion() = %q, want %q", got, tc.want)
+			if diff := cmp.Diff(tc.want, got); diff != "" {
+				t.Errorf("inspectWheelRustVersion() diff (-want +got):\n%s", diff)
 			}
 		})
 	}
@@ -143,10 +173,14 @@ func TestParseRustToolchainContent(t *testing.T) {
 		{"PlainToolchainWithTargetTriple", "1.94.0-x86_64-unknown-linux-gnu\n", "1.94.0", false},
 		{"TOMLWithChannelAndPatch", "[toolchain]\nchannel = \"1.96.0\"\n", "1.96.0", false},
 		{"TOMLWithTwoComponentChannel", "[toolchain]\nchannel = \"1.96\"\n", "1.96", false},
+		{"TOMLDatedNightlyChannel", "[toolchain]\nchannel = \"nightly-2026-09-01\"\n", "nightly-2026-09-01", false},
+		{"PlainDatedNightlyWithTargetTriple", "nightly-2026-09-01-x86_64-unknown-linux-gnu\n", "nightly-2026-09-01", false},
 		{"PlainStableChannelFallsThrough", "stable\n", "", false},
 		{"PlainStableWithTargetTripleFallsThrough", "stable-x86_64-unknown-linux-gnu\n", "", false},
 		{"TOMLStableChannelFallsThrough", "[toolchain]\nchannel = \"stable\"\n", "", false},
-		{"TOMLNightlyChannelRejected", "[toolchain]\nchannel = \"nightly-2026-01-01\"\n", "", true},
+		{"PlainBareNightlyChannelRejected", "nightly\n", "", true},
+		{"TOMLBareNightlyChannelRejected", "[toolchain]\nchannel = \"nightly\"\n", "", true},
+		{"TOMLNightlyInvalidDateRejected", "[toolchain]\nchannel = \"nightly-2026-02-30\"\n", "", true},
 		{"TOMLBetaVersionChannelRejected", "[toolchain]\nchannel = \"1.98.0-beta.1\"\n", "", true},
 		{"Empty", "", "", false},
 	}
@@ -156,8 +190,8 @@ func TestParseRustToolchainContent(t *testing.T) {
 			if (err != nil) != tc.wantErr {
 				t.Fatalf("parseRustToolchainContent(%q) error = %v, wantErr %v", tc.content, err, tc.wantErr)
 			}
-			if got != tc.want {
-				t.Errorf("parseRustToolchainContent(%q) = %q, want %q", tc.content, got, tc.want)
+			if diff := cmp.Diff(tc.want, got); diff != "" {
+				t.Errorf("parseRustToolchainContent(%q) diff (-want +got):\n%s", tc.content, diff)
 			}
 		})
 	}
@@ -313,6 +347,18 @@ func TestInferRustVersion(t *testing.T) {
 			want:         "1.96.1",
 		},
 		{
+			name: "DatedNightlyToolchainChannel",
+			repo: `commits:
+  - id: initial
+    files:
+      rust-toolchain.toml: |
+        [toolchain]
+        channel = "nightly-2026-05-01"
+`,
+			registryTime: publishTime,
+			want:         "nightly-2026-05-01",
+		},
+		{
 			name: "PinnedChannelNewerThanRegistryTimeReturnsError",
 			repo: `commits:
   - id: initial
@@ -325,13 +371,31 @@ func TestInferRustVersion(t *testing.T) {
 			wantErr:      true,
 		},
 		{
-			name: "NightlyToolchainChannelReturnsError",
+			name: "BareNightlyToolchainChannelReturnsError",
 			repo: `commits:
   - id: initial
     files:
       rust-toolchain.toml: |
         [toolchain]
-        channel = "nightly-2026-01-01"
+        channel = "nightly"
+`,
+			registryTime: publishTime,
+			wantErr:      true,
+		},
+		{
+			name: "BetaCommentReturnsErrorEvenWithToolchainFile",
+			entries: []archive.ZipEntry{
+				{
+					FileHeader: &zip.FileHeader{Name: "pkg/_native.abi3.so"},
+					Body:       elfWithComment("rustc version 1.97.0-beta.1 (abc 2026-04-30)"),
+				},
+			},
+			repo: `commits:
+  - id: initial
+    files:
+      rust-toolchain.toml: |
+        [toolchain]
+        channel = "nightly-2026-05-01"
 `,
 			registryTime: publishTime,
 			wantErr:      true,
