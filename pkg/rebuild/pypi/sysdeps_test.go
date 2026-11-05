@@ -272,3 +272,177 @@ func TestInferELFSystemDeps(t *testing.T) {
 		})
 	}
 }
+
+func TestInferELFSystemDepsWheelBornBundledLibs(t *testing.T) {
+	tests := []struct {
+		name    string
+		entries []archive.ZipEntry
+		libc    platform.LibcImpl
+		want    []string
+	}{
+		{
+			name: "NumpyManylinuxWheelBornOpenBLAS",
+			entries: []archive.ZipEntry{
+				{
+					FileHeader: &zip.FileHeader{Name: "numpy/_core/_multiarray_umath.cpython-312-x86_64-linux-gnu.so"},
+					Body:       createTestELF([]string{"libscipy_openblas64_-61654e39.so", "libm.so.6", "libc.so.6"}, ""),
+				},
+				{
+					FileHeader: &zip.FileHeader{Name: "numpy.libs/libscipy_openblas64_-61654e39.so"},
+					Body:       createTestELF([]string{"libgfortran-83c28eba-468e71e5.so.5.0.0", "libm.so.6", "libc.so.6"}, "libscipy_openblas64_-61654e39.so"),
+				},
+				{
+					FileHeader: &zip.FileHeader{Name: "numpy.libs/libgfortran-83c28eba-468e71e5.so.5.0.0"},
+					Body:       createTestELF([]string{"libquadmath-2284e583-a9307bba.so.0.0.0", "libz.so.1", "libc.so.6"}, "libgfortran-83c28eba-468e71e5.so.5.0.0"),
+				},
+				{
+					FileHeader: &zip.FileHeader{Name: "numpy.libs/libquadmath-2284e583-a9307bba.so.0.0.0"},
+					Body:       createTestELF([]string{"libc.so.6"}, "libquadmath-2284e583-a9307bba.so.0.0.0"),
+				},
+			},
+			libc: platform.Glibc,
+			want: nil,
+		},
+		{
+			name: "NumpyMusllinuxWheelBornOpenBLAS",
+			entries: []archive.ZipEntry{
+				{
+					FileHeader: &zip.FileHeader{Name: "numpy/_core/_multiarray_umath.cpython-312-x86_64-linux-musl.so"},
+					Body:       createTestELF([]string{"libscipy_openblas64_-9e5b0af3.so", "libgcc_s-0cd532bd.so.1", "libstdc++-5d72f927.so.6.0.33"}, ""),
+				},
+				{
+					FileHeader: &zip.FileHeader{Name: "numpy.libs/libscipy_openblas64_-9e5b0af3.so"},
+					Body:       createTestELF([]string{"libgfortran-2c33b284-17a27ac2.so.5.0.0"}, "libscipy_openblas64_-9e5b0af3.so"),
+				},
+				{
+					FileHeader: &zip.FileHeader{Name: "numpy.libs/libgfortran-2c33b284-17a27ac2.so.5.0.0"},
+					Body:       createTestELF([]string{"libquadmath-bb76a5fc-feb0f212.so.0.0.0", "libgcc_s-0cd532bd-c8f934f9.so.1"}, "libgfortran-2c33b284-17a27ac2.so.5.0.0"),
+				},
+				{
+					FileHeader: &zip.FileHeader{Name: "numpy.libs/libquadmath-bb76a5fc-feb0f212.so.0.0.0"},
+					Body:       createTestELF(nil, "libquadmath-bb76a5fc-feb0f212.so.0.0.0"),
+				},
+				{
+					FileHeader: &zip.FileHeader{Name: "numpy.libs/libgcc_s-0cd532bd-c8f934f9.so.1"},
+					Body:       createTestELF(nil, "libgcc_s-0cd532bd-c8f934f9.so.1"),
+				},
+				{
+					FileHeader: &zip.FileHeader{Name: "numpy.libs/libgcc_s-0cd532bd.so.1"},
+					Body:       createTestELF(nil, "libgcc_s-0cd532bd.so.1"),
+				},
+				{
+					FileHeader: &zip.FileHeader{Name: "numpy.libs/libstdc++-5d72f927.so.6.0.33"},
+					Body:       createTestELF(nil, "libstdc++-5d72f927.so.6.0.33"),
+				},
+			},
+			libc: platform.Musl,
+			want: nil,
+		},
+		{
+			name: "BundledLibNeedingPreHashedSoname",
+			entries: []archive.ZipEntry{
+				{
+					FileHeader: &zip.FileHeader{Name: "pkg/_ext.cpython-312-x86_64-linux-gnu.so"},
+					Body:       createTestELF([]string{"libscipy_openblas64_-61654e39.so", "libz.so.1"}, ""),
+				},
+				{
+					FileHeader: &zip.FileHeader{Name: "pkg.libs/libscipy_openblas64_-61654e39.so"},
+					Body:       createTestELF([]string{"libgfortran-83c28eba.so.5.0.0"}, "libscipy_openblas64_-61654e39.so"),
+				},
+			},
+			libc: platform.Glibc,
+			want: []string{
+				"libz.so.1()(64bit)",
+				"/usr/lib64/libz.so",
+			},
+		},
+		{
+			name: "WheelBornAndHostGraftedSameLibrary",
+			entries: []archive.ZipEntry{
+				{
+					FileHeader: &zip.FileHeader{Name: "pkg/_ext.cpython-312-x86_64-linux-gnu.so"},
+					Body:       createTestELF([]string{"libscipy_openblas64_-61654e39.so", "libz-cccccccc.so.1"}, ""),
+				},
+				{
+					FileHeader: &zip.FileHeader{Name: "pkg.libs/libscipy_openblas64_-61654e39.so"},
+					Body:       createTestELF([]string{"libz-aaaaaaaa-bbbbbbbb.so.1.2.13"}, "libscipy_openblas64_-61654e39.so"),
+				},
+				{
+					FileHeader: &zip.FileHeader{Name: "pkg.libs/libz-aaaaaaaa-bbbbbbbb.so.1.2.13"},
+					Body:       createTestELF([]string{"libc.so.6"}, "libz-aaaaaaaa-bbbbbbbb.so.1"),
+				},
+				{
+					FileHeader: &zip.FileHeader{Name: "pkg.libs/libz-cccccccc.so.1.2.13"},
+					Body:       createTestELF([]string{"libc.so.6"}, "libz-cccccccc.so.1"),
+				},
+			},
+			libc: platform.Glibc,
+			want: []string{
+				"libz.so.1()(64bit)",
+				"/usr/lib64/libz.so",
+			},
+		},
+		{
+			name: "HostGraftedSingleHashChainPreserved",
+			entries: []archive.ZipEntry{
+				{
+					FileHeader: &zip.FileHeader{Name: "pkg/_ext.cpython-312-x86_64-linux-gnu.so"},
+					Body:       createTestELF([]string{"libgvc-12345678.so.6"}, ""),
+				},
+				{
+					FileHeader: &zip.FileHeader{Name: "pkg.libs/libgvc-12345678.so.6.2.0"},
+					Body:       createTestELF([]string{"libcgraph-17278668.so.6", "libexpat.so.1"}, "libgvc-12345678.so.6"),
+				},
+				{
+					FileHeader: &zip.FileHeader{Name: "pkg.libs/libcgraph-17278668.so.6.0.0"},
+					Body:       createTestELF([]string{"libc.so.6"}, "libcgraph-17278668.so.6"),
+				},
+			},
+			libc: platform.Glibc,
+			want: []string{
+				"libgvc.so.6()(64bit)",
+				"/usr/lib64/libgvc.so",
+				"libcgraph.so.6()(64bit)",
+				"/usr/lib64/libcgraph.so",
+				"libexpat.so.1()(64bit)",
+				"/usr/lib64/libexpat.so",
+			},
+		},
+		{
+			name: "MultiHopWheelBornChain",
+			entries: []archive.ZipEntry{
+				{
+					FileHeader: &zip.FileHeader{Name: "pkg/_ext.cpython-312-x86_64-linux-gnu.so"},
+					Body:       createTestELF([]string{"libopenblas-11111111.so.0"}, ""),
+				},
+				{
+					FileHeader: &zip.FileHeader{Name: "pkg.libs/libopenblas-11111111.so.0.3"},
+					Body:       createTestELF([]string{"liblapack-22222222.so.3"}, "libopenblas-11111111.so.0"),
+				},
+				{
+					FileHeader: &zip.FileHeader{Name: "pkg.libs/liblapack-22222222.so.3.11"},
+					Body:       createTestELF([]string{"libgfortran-83c28eba-468e71e5.so.5.0.0"}, "liblapack-22222222.so.3"),
+				},
+				{
+					FileHeader: &zip.FileHeader{Name: "pkg.libs/libgfortran-83c28eba-468e71e5.so.5.0.0"},
+					Body:       createTestELF([]string{"libc.so.6"}, "libgfortran-83c28eba-468e71e5.so.5.0.0"),
+				},
+			},
+			libc: platform.Glibc,
+			want: nil,
+		},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			buf := must(archivetest.ZipFile(tc.entries))
+			zr := must(zip.NewReader(bytes.NewReader(buf.Bytes()), int64(buf.Len())))
+			got, err := inferELFSystemDeps(zr, tc.libc)
+			if err != nil {
+				t.Fatalf("inferELFSystemDeps() unexpected error: %v", err)
+			}
+			if diff := cmp.Diff(tc.want, got); diff != "" {
+				t.Errorf("inferELFSystemDeps() diff (-want +got):\n%s", diff)
+			}
+		})
+	}
+}
