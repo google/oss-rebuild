@@ -13,6 +13,7 @@ import (
 	"io"
 	"io/fs"
 	"log"
+	"math"
 	"net/http"
 	"os"
 	"path/filepath"
@@ -37,11 +38,11 @@ import (
 var thresholdFudgeFactor = 24 * time.Hour
 
 // A fill stops at fillTimeout, below the service's 60-minute request timeout
-// so the request can still report it, or once it stages more than its size
-// budget, checked every sizePollInterval.
+// so the request can still report it, or once the instance runs short of
+// memory, checked every memPollInterval.
 var (
-	fillTimeout      = 55 * time.Minute
-	sizePollInterval = 5 * time.Second
+	fillTimeout     = 55 * time.Minute
+	memPollInterval = time.Second
 )
 
 // sizeLimitHeader carries the fill budget on a 413.
@@ -68,10 +69,11 @@ const fillRetryAfter = 10 * time.Second
 
 // Server provides HTTP handling for the git cache.
 type Server struct {
-	backend   cacheBackend
-	cloneFunc gitx.CloneFunc
-	remote    func(repo string) string // clone URL. defaults to https
-	fillBytes int64                    // fill budget in bytes. 0 means none
+	backend      cacheBackend
+	cloneFunc    gitx.CloneFunc
+	remote       func(repo string) string // clone URL. defaults to https
+	fillBytes    int64                    // memory a fill may use in bytes. 0 means no limit
+	memAvailable func() (int64, error)    // the instance's allocatable memory
 }
 
 func (s *Server) remoteURL(repo string) string {
@@ -237,7 +239,7 @@ func (s *Server) populateCache(ctx context.Context, repo, ref string, cachePath 
 		return errors.Wrap(err, "creating temp directory")
 	}
 	defer os.RemoveAll(tmpDir)
-	ctx, stop := s.watchSize(ctx, repo, tmpDir)
+	ctx, stop := s.watchMemory(ctx, repo, tmpDir)
 	defer stop()
 	defer func() { err = fillErr(ctx, err) }()
 	// Set up filesystem storage in the temp directory
@@ -297,7 +299,7 @@ func (s *Server) refreshCache(ctx context.Context, repo, cachePath string) (err 
 		return errors.Wrap(err, "creating temp directory")
 	}
 	defer os.RemoveAll(tmpDir)
-	ctx, stop := s.watchSize(ctx, repo, tmpDir)
+	ctx, stop := s.watchMemory(ctx, repo, tmpDir)
 	defer stop()
 	defer func() { err = fillErr(ctx, err) }()
 	r, err := s.backend.reader(ctx, cachePath)
@@ -534,16 +536,20 @@ func fillErr(ctx context.Context, err error) error {
 	return err
 }
 
-// watchSize returns a context that ends with a RepoTooLargeError once dir
-// stages more than the fill budget, and a func to stop watching.
-func (s *Server) watchSize(ctx context.Context, repo, dir string) (context.Context, func()) {
-	if s.fillBytes <= 0 {
+// watchMemory returns a context that ends with a RepoTooLargeError once the
+// instance's available memory falls under fillMemoryReserve, and a func to
+// stop watching. The fill's files in dir and its git processes' heaps both
+// draw that memory down, and either can be most of it.
+func (s *Server) watchMemory(ctx context.Context, repo, dir string) (watched context.Context, stop func()) {
+	if s.fillBytes <= 0 || s.memAvailable == nil {
 		return ctx, func() {}
 	}
 	ctx, cancel := context.WithCancelCause(ctx)
-	done := make(chan struct{})
+	done, exited := make(chan struct{}), make(chan struct{})
+	least, staged := int64(math.MaxInt64), int64(0)
 	go func() {
-		t := time.NewTicker(sizePollInterval)
+		defer close(exited)
+		t := time.NewTicker(memPollInterval)
 		defer t.Stop()
 		for {
 			select {
@@ -552,7 +558,12 @@ func (s *Server) watchSize(ctx context.Context, repo, dir string) (context.Conte
 			case <-ctx.Done():
 				return
 			case <-t.C:
-				if dirBytes(dir) > s.fillBytes {
+				avail, err := s.memAvailable()
+				if err != nil || avail >= least {
+					continue
+				}
+				least, staged = avail, dirBytes(dir)
+				if avail < fillMemoryReserve {
 					cancel(&gitx.RepoTooLargeError{URL: "https://" + repo, Limit: s.fillBytes})
 					return
 				}
@@ -561,7 +572,11 @@ func (s *Server) watchSize(ctx context.Context, repo, dir string) (context.Conte
 	}()
 	return ctx, func() {
 		close(done)
+		<-exited
 		cancel(nil)
+		if least < math.MaxInt64 {
+			log.Printf("Fill of %s: least memory available %d MiB, with %d MiB staged", repo, least>>20, staged>>20)
+		}
 	}
 }
 

@@ -879,16 +879,21 @@ func stagingClone(n int) gitx.CloneFunc {
 	}
 }
 
-func TestFillStopsAtSizeBudget(t *testing.T) {
-	defer func(d time.Duration) { sizePollInterval = d }(sizePollInterval)
-	sizePollInterval = 10 * time.Millisecond
+func TestFillStopsShortOfMemory(t *testing.T) {
+	defer func(d time.Duration) { memPollInterval = d }(memPollInterval)
+	memPollInterval = 10 * time.Millisecond
 	cacheDir := t.TempDir()
 	var fills int
 	clone := stagingClone(2 << 20)
-	s := &Server{backend: &localBackend{baseDir: cacheDir}, fillBytes: 1 << 20, cloneFunc: func(ctx context.Context, st storage.Storer, fs billy.Filesystem, o *git.CloneOptions) (*gitx.Repo, error) {
-		fills++
-		return clone(ctx, st, fs, o)
-	}}
+	s := &Server{
+		backend:      &localBackend{baseDir: cacheDir},
+		fillBytes:    1 << 20,
+		memAvailable: func() (int64, error) { return fillMemoryReserve - 1, nil },
+		cloneFunc: func(ctx context.Context, st storage.Storer, fs billy.Filesystem, o *git.CloneOptions) (*gitx.Repo, error) {
+			fills++
+			return clone(ctx, st, fs, o)
+		},
+	}
 	for i := range 2 {
 		rr := httptest.NewRecorder()
 		s.HandleGet(rr, httptest.NewRequest("GET", "/get?uri=github.com/org/repo", nil))
@@ -899,6 +904,34 @@ func TestFillStopsAtSizeBudget(t *testing.T) {
 	// A repository over budget stays over it, so the second request fails fast.
 	if fills != 1 {
 		t.Errorf("fills = %d, want 1", fills)
+	}
+}
+
+func TestFillUsesMemoryDownToReserve(t *testing.T) {
+	defer func(d time.Duration) { memPollInterval = d }(memPollInterval)
+	memPollInterval = 10 * time.Millisecond
+	// Staging past fillBytes does not stop a fill while memory remains.
+	s := &Server{
+		backend:      &localBackend{baseDir: t.TempDir()},
+		fillBytes:    1 << 20,
+		memAvailable: func() (int64, error) { return fillMemoryReserve, nil },
+		cloneFunc: func(ctx context.Context, st storage.Storer, _ billy.Filesystem, _ *git.CloneOptions) (*gitx.Repo, error) {
+			dir := st.(*filesystem.Storage).Filesystem().Root()
+			if err := os.WriteFile(filepath.Join(dir, "pack"), make([]byte, 2<<20), 0o644); err != nil {
+				return nil, err
+			}
+			select {
+			case <-ctx.Done():
+				return nil, context.Cause(ctx)
+			case <-time.After(10 * memPollInterval):
+				return nil, nil
+			}
+		},
+	}
+	rr := httptest.NewRecorder()
+	s.HandleGet(rr, httptest.NewRequest("GET", "/get?uri=github.com/org/repo", nil))
+	if rr.Code != http.StatusOK {
+		t.Errorf("HandleGet() = %d %q, want 200", rr.Code, rr.Body.String())
 	}
 }
 
