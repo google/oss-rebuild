@@ -23,6 +23,22 @@ import (
 	"github.com/google/oss-rebuild/pkg/stabilize"
 )
 
+func TestUnparsableUpstreamURI(t *testing.T) {
+	ctx := context.Background()
+	metadata := rebuild.NewFilesystemAssetStore(memfs.New())
+	target := rebuild.Target{Ecosystem: rebuild.PyPI, Package: "foo", Version: "1.0.0", Artifact: "foo-1.0.0.whl"}
+	w, err := metadata.Writer(ctx, rebuild.RebuildAsset.For(target))
+	orDie(err)
+	must(w.Write(must(archivetest.ZipFile(nil)).Bytes()))
+	const uri = "https://example.com/%zz"
+	if _, _, err := SummarizeArtifacts(ctx, metadata, target, uri, []crypto.Hash{crypto.SHA256}, nil); err == nil {
+		t.Errorf("SummarizeArtifacts() error = nil, want a parse error")
+	}
+	if _, err := DiffSummary(ctx, metadata, target, uri); err == nil {
+		t.Errorf("DiffSummary() error = nil, want a parse error")
+	}
+}
+
 func TestSummarizeArtifacts(t *testing.T) {
 	ctx := context.Background()
 	t.Run("success", func(t *testing.T) {

@@ -116,6 +116,16 @@ func TestHTTPRegistry_Artifact(t *testing.T) {
 	}
 }
 
+func TestHTTPRegistry_UnparsableVersion(t *testing.T) {
+	reg := HTTPRegistry{Client: http.DefaultClient}
+	if _, err := reg.Version(context.Background(), "rails", "1.0%zz"); err == nil {
+		t.Errorf("Version() error = nil, want a parse error")
+	}
+	if _, err := reg.Artifact(context.Background(), "rails", "1.0%zz"); err == nil {
+		t.Errorf("Artifact() error = nil, want a parse error")
+	}
+}
+
 func TestHTTPRegistry_ArtifactURL(t *testing.T) {
 	reg := HTTPRegistry{Client: http.DefaultClient}
 	url := reg.ArtifactURL("rails", "7.1.0")

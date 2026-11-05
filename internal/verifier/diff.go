@@ -41,7 +41,10 @@ func DiffSummary(ctx context.Context, metadata rebuild.LocatableAssetStore, t re
 	if err := stab(&rebuilt, rd); err != nil {
 		return "", errors.Wrap(err, "stabilizing rebuild artifact")
 	}
-	req, _ := http.NewRequest(http.MethodGet, upstreamURI, nil)
+	req, err := http.NewRequest(http.MethodGet, upstreamURI, nil)
+	if err != nil {
+		return "", errors.Wrap(err, "building upstream request")
+	}
 	resp, err := rebuild.DoContext(ctx, req)
 	if err != nil {
 		return "", errors.Wrap(err, "fetching upstream artifact")
