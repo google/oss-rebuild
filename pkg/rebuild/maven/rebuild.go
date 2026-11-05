@@ -5,10 +5,21 @@ package maven
 
 import (
 	"context"
+	"fmt"
 	"io"
+	"strings"
 
 	"github.com/google/oss-rebuild/pkg/rebuild/rebuild"
 )
+
+// ArtifactName is the primary jar of a "group:artifact" package version.
+func ArtifactName(t rebuild.Target) string {
+	_, a, found := strings.Cut(t.Package, ":")
+	if !found {
+		return ""
+	}
+	return fmt.Sprintf("%s-%s.jar", a, t.Version)
+}
 
 type Rebuilder struct{}
 
