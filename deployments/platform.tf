@@ -226,7 +226,7 @@ resource "google_firestore_index" "scratch-state-updated" {
     field_path = "__name__"
     order      = "ASCENDING"
   }
-  depends_on = [google_app_engine_application.dummy_app]
+  depends_on = [google_firestore_database.default]
 }
 
 # Composite indexes for querying attempts
