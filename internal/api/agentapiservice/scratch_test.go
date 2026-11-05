@@ -8,6 +8,7 @@ import (
 	"errors"
 	"fmt"
 	"maps"
+	"path"
 	"slices"
 	"strings"
 	"sync"
@@ -37,13 +38,13 @@ func stockoutErr() error {
 
 func testStandard() ClassConfig {
 	return ClassConfig{
-		InstanceTemplate: "projects/p/global/instanceTemplates/scratch-host-standard",
+		InstanceTemplates: []string{"projects/p/global/instanceTemplates/scratch-host-standard"},
 	}
 }
 
 func testJumbo() *ClassConfig {
 	return &ClassConfig{
-		InstanceTemplate: "projects/p/global/instanceTemplates/scratch-host-jumbo",
+		InstanceTemplates: []string{"projects/p/global/instanceTemplates/scratch-host-jumbo"},
 	}
 }
 
@@ -65,7 +66,7 @@ func newCreateDeps(gce GCE, hosts *fakeHosts, scratches db.Scratch, idGen func()
 
 // seedHost registers a running, admissible host in both fakes.
 func seedHost(gce *MemoryGCE, hosts *fakeHosts, zone, name, ip string, capacity int) {
-	gce.SeedRunning(zone, name, hostLabels(schema.MachineClassStandard, testStandard().InstanceTemplate), ip, time.Now().UTC())
+	gce.SeedRunning(zone, name, hostLabels(schema.MachineClassStandard, testStandard().InstanceTemplates[0]), ip, time.Now().UTC())
 	hosts.AddHost(name, capacity)
 }
 
@@ -404,6 +405,125 @@ func TestScratchCreate_AllZonesExhausted(t *testing.T) {
 	}
 }
 
+// twoFamilies is a standard class that falls back to a second machine family.
+func twoFamilies() ClassConfig {
+	return ClassConfig{InstanceTemplates: []string{
+		"projects/p/global/instanceTemplates/scratch-host-standard",
+		"projects/p/global/instanceTemplates/scratch-host-standard-n4d",
+	}}
+}
+
+// insertTemplates returns the template of each insert attempt in log order.
+func insertTemplates(log []string) []string {
+	var out []string
+	for _, line := range log {
+		if args, ok := strings.CutPrefix(line, "InsertInstanceFromTemplate("); ok {
+			out = append(out, path.Base(strings.TrimSuffix(args[strings.LastIndex(args, ",")+1:], ")")))
+		}
+	}
+	return out
+}
+
+func TestScratchCreate_FallsThroughToNextTemplate(t *testing.T) {
+	gce := NewMemoryGCE()
+	gce.FailNext("InsertInstanceFromTemplate", stockoutErr())
+	gce.FailNext("InsertInstanceFromTemplate", stockoutErr())
+	hosts := newFakeHosts()
+	hosts.AutoProvision(6)
+	deps := newCreateDeps(gce, hosts, db.NewMemoryScratch(), func() string { return "sT" })
+	deps.Zones = []string{"us-central1-a", "us-central1-b"}
+	deps.Standard = twoFamilies()
+
+	got, err := ScratchCreate(context.Background(), schema.ScratchCreateRequest{
+		BuildID: "b", MachineClass: schema.MachineClassStandard,
+	}, deps)
+	if err != nil {
+		t.Fatalf("ScratchCreate: %v", err)
+	}
+	want := []string{"scratch-host-standard", "scratch-host-standard", "scratch-host-standard-n4d"}
+	if diff := cmp.Diff(want, insertTemplates(gce.Log())); diff != "" {
+		t.Errorf("insert templates mismatch (-want +got):\n%s", diff)
+	}
+	if got.Zone != "us-central1-a" {
+		t.Errorf("Zone = %q; want us-central1-a, the second template's first zone", got.Zone)
+	}
+	gce.mu.Lock()
+	label := gce.labels[got.Zone+"/"+got.Host][hostLabelTemplateKey]
+	gce.mu.Unlock()
+	if label != "scratch-host-standard-n4d" {
+		t.Errorf("host template label = %q; want the template it was minted from", label)
+	}
+}
+
+func TestScratchCreate_AdmitsOnLaterTemplateHost(t *testing.T) {
+	gce := NewMemoryGCE()
+	hosts := newFakeHosts()
+	deps := newCreateDeps(gce, hosts, db.NewMemoryScratch(), func() string { return "sL" })
+	deps.Standard = twoFamilies()
+	gce.SeedRunning("us-central1-a", "h-n4d", hostLabels(schema.MachineClassStandard, deps.Standard.InstanceTemplates[1]), "10.0.0.1", time.Now().UTC())
+	hosts.AddHost("h-n4d", 4)
+
+	got, err := ScratchCreate(context.Background(), schema.ScratchCreateRequest{
+		BuildID: "b", MachineClass: schema.MachineClassStandard,
+	}, deps)
+	if err != nil {
+		t.Fatalf("ScratchCreate: %v", err)
+	}
+	if got.Host != "h-n4d" {
+		t.Errorf("Host = %q; want h-n4d, a host of the class's second template", got.Host)
+	}
+	if ins := insertTemplates(gce.Log()); len(ins) != 0 {
+		t.Errorf("inserted %v; want no new host", ins)
+	}
+}
+
+func TestScratchCreate_CooledTemplateSkipsToNext(t *testing.T) {
+	gce := NewMemoryGCE()
+	gce.FailNext("InsertInstanceFromTemplate", stockoutErr())
+	hosts := newFakeHosts()
+	// Single-slot hosts: the second call has to mint again, so its template
+	// choice is observable.
+	hosts.AutoProvision(1)
+	var seq int
+	deps := newCreateDeps(gce, hosts, db.NewMemoryScratch(), func() string {
+		seq++
+		return fmt.Sprintf("sK%d", seq)
+	})
+	deps.Standard = twoFamilies()
+	for range 2 {
+		if _, err := ScratchCreate(context.Background(), schema.ScratchCreateRequest{
+			BuildID: "b", MachineClass: schema.MachineClassStandard,
+		}, deps); err != nil {
+			t.Fatalf("ScratchCreate: %v", err)
+		}
+	}
+	// The first template's only zone cooled down after the stockout, so the
+	// second call goes straight to the next template.
+	want := []string{"scratch-host-standard", "scratch-host-standard-n4d", "scratch-host-standard-n4d"}
+	if diff := cmp.Diff(want, insertTemplates(gce.Log())); diff != "" {
+		t.Errorf("insert templates mismatch (-want +got):\n%s", diff)
+	}
+}
+
+func TestScratchCreate_EveryTemplateCooledTriesAll(t *testing.T) {
+	gce := NewMemoryGCE()
+	hosts := newFakeHosts()
+	hosts.AutoProvision(1)
+	deps := newCreateDeps(gce, hosts, db.NewMemoryScratch(), func() string { return "sA" })
+	deps.Standard = twoFamilies()
+	for _, tmpl := range deps.Standard.InstanceTemplates {
+		deps.Cooldown.mark(tmpl, "us-central1-a")
+	}
+	if _, err := ScratchCreate(context.Background(), schema.ScratchCreateRequest{
+		BuildID: "b", MachineClass: schema.MachineClassStandard,
+	}, deps); err != nil {
+		t.Fatalf("ScratchCreate: %v", err)
+	}
+	if diff := cmp.Diff([]string{"scratch-host-standard"}, insertTemplates(gce.Log())); diff != "" {
+		t.Errorf("insert templates mismatch (-want +got):\n%s", diff)
+	}
+}
+
 func TestScratchCreate_NonStockoutDoesNotFallThrough(t *testing.T) {
 	gce := NewMemoryGCE()
 	gce.FailNext("InsertInstanceFromTemplate", errors.New("permission denied: invalid template"))
@@ -552,19 +672,23 @@ func TestZoneCooldown_ActivePreservesOrderAndExpires(t *testing.T) {
 
 	// Live cooldown: mark sticks, order is preserved.
 	c := NewZoneCooldown(time.Hour)
-	if diff := cmp.Diff(zones, c.active(zones)); diff != "" {
+	if diff := cmp.Diff(zones, c.active("t", zones)); diff != "" {
 		t.Errorf("empty cooldown active mismatch (-want +got):\n%s", diff)
 	}
-	c.mark("b")
-	if diff := cmp.Diff([]string{"a", "c"}, c.active(zones)); diff != "" {
+	c.mark("t", "b")
+	if diff := cmp.Diff([]string{"a", "c"}, c.active("t", zones)); diff != "" {
 		t.Errorf("after mark(b) active mismatch (-want +got):\n%s", diff)
+	}
+	// A zone out of one template's shape still takes another's.
+	if diff := cmp.Diff(zones, c.active("u", zones)); diff != "" {
+		t.Errorf("other template active mismatch (-want +got):\n%s", diff)
 	}
 
 	// Instantly-expiring cooldown: mark is observable but pruned on next read.
 	expired := NewZoneCooldown(time.Nanosecond)
-	expired.mark("a")
+	expired.mark("t", "a")
 	time.Sleep(time.Millisecond)
-	if diff := cmp.Diff(zones, expired.active(zones)); diff != "" {
+	if diff := cmp.Diff(zones, expired.active("t", zones)); diff != "" {
 		t.Errorf("after expiry active mismatch (-want +got):\n%s", diff)
 	}
 }

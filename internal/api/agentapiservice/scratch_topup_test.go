@@ -61,10 +61,10 @@ func TestScratchTopUp_CountsReadyAndBootingSlots(t *testing.T) {
 	hosts.SeedGuest("h-ready", "g1", time.Now())
 	hosts.SeedGuest("h-ready", "g2", time.Now())
 	// A host still booting, whose 8 slots count already.
-	gce.SeedRunning("us-central1-a", "h-boot", hostLabels(schema.MachineClassStandard, testStandard().InstanceTemplate), "10.0.0.2", time.Now().UTC())
+	gce.SeedRunning("us-central1-a", "h-boot", hostLabels(schema.MachineClassStandard, testStandard().InstanceTemplates[0]), "10.0.0.2", time.Now().UTC())
 	hosts.FailGuests("h-boot", errors.New("connection refused"))
 	// One still unable to report its guests past the boot window counts for nothing.
-	gce.SeedRunning("us-central1-a", "h-dead", hostLabels(schema.MachineClassStandard, testStandard().InstanceTemplate), "10.0.0.3", time.Now().UTC().Add(-5*time.Minute))
+	gce.SeedRunning("us-central1-a", "h-dead", hostLabels(schema.MachineClassStandard, testStandard().InstanceTemplates[0]), "10.0.0.3", time.Now().UTC().Add(-5*time.Minute))
 	hosts.FailGuests("h-dead", errors.New("connection refused"))
 	got, err := ScratchTopUp(context.Background(), ScratchTopUpRequest{}, topUpDeps(gce, hosts, db.NewMemoryScratch(), 16))
 	if err != nil {

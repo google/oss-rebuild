@@ -373,7 +373,7 @@ func TestAdmissible(t *testing.T) {
 func TestRetire_LosesToAConcurrentLabelWrite(t *testing.T) {
 	gce := NewMemoryGCE()
 	now := time.Now().UTC()
-	gce.SeedRunning("z", "h1", hostLabels(schema.MachineClassStandard, testStandard().InstanceTemplate), "10.0.0.1", now)
+	gce.SeedRunning("z", "h1", hostLabels(schema.MachineClassStandard, testStandard().InstanceTemplates[0]), "10.0.0.1", now)
 	host, err := gce.GetInstance(context.Background(), "z", "h1")
 	if err != nil {
 		t.Fatalf("GetInstance: %v", err)
@@ -428,7 +428,7 @@ func TestScratchCreate_DoesNotWaitOnABootingHost(t *testing.T) {
 	gce := NewMemoryGCE()
 	hosts := newFakeHosts()
 	// Minted by another create a moment ago, not answering yet.
-	gce.SeedRunning("us-central1-a", "h-boot", hostLabels(schema.MachineClassStandard, testStandard().InstanceTemplate), "10.0.0.1", time.Now().UTC())
+	gce.SeedRunning("us-central1-a", "h-boot", hostLabels(schema.MachineClassStandard, testStandard().InstanceTemplates[0]), "10.0.0.1", time.Now().UTC())
 	hosts.FailHealthz("h-boot", errors.New("connection refused"))
 	hosts.AutoProvision(8)
 	got, err := ScratchCreate(context.Background(), schema.ScratchCreateRequest{
@@ -450,11 +450,11 @@ func TestScratchCreate_FallsThroughToAColdHost(t *testing.T) {
 	hosts := newFakeHosts()
 	now := time.Now().UTC()
 	// Full, past its cutoff, retired: the create pays for a fresh host.
-	gce.SeedRunning("us-central1-a", "h-full", hostLabels(schema.MachineClassStandard, testStandard().InstanceTemplate), "10.0.0.1", now)
+	gce.SeedRunning("us-central1-a", "h-full", hostLabels(schema.MachineClassStandard, testStandard().InstanceTemplates[0]), "10.0.0.1", now)
 	hosts.AddHost("h-full", 0)
-	gce.SeedRunning("us-central1-a", "h-old", hostLabels(schema.MachineClassStandard, testStandard().InstanceTemplate), "10.0.0.2", now.Add(-24*time.Hour))
+	gce.SeedRunning("us-central1-a", "h-old", hostLabels(schema.MachineClassStandard, testStandard().InstanceTemplates[0]), "10.0.0.2", now.Add(-24*time.Hour))
 	hosts.AddHost("h-old", 6)
-	retired := hostLabels(schema.MachineClassStandard, testStandard().InstanceTemplate)
+	retired := hostLabels(schema.MachineClassStandard, testStandard().InstanceTemplates[0])
 	retired[hostLabelRetiredKey] = "1"
 	gce.SeedRunning("us-central1-a", "h-retired", retired, "10.0.0.3", now)
 	hosts.AddHost("h-retired", 6)
