@@ -7,6 +7,8 @@ import (
 	"archive/zip"
 	"bytes"
 	"context"
+	"debug/elf"
+	"encoding/binary"
 	"errors"
 	"fmt"
 	"io"
@@ -945,5 +947,366 @@ func TestInferBuildRoot(t *testing.T) {
 				t.Errorf("inferBuildRoot() = %q, want %q", got, tt.want)
 			}
 		})
+	}
+}
+
+type testELFOptions struct {
+	hasDebug  bool
+	hasSymtab bool
+}
+
+func createTestELFWithSections(opts testELFOptions) []byte {
+	type section struct {
+		name    string
+		typ     elf.SectionType
+		link    uint32
+		entsize uint64
+		data    []byte
+	}
+	sections := []section{{name: ".shstrtab", typ: elf.SHT_STRTAB}}
+	if opts.hasDebug {
+		sections = append(sections, section{name: ".debug_info", typ: elf.SHT_PROGBITS, data: []byte{1, 2, 3, 4}})
+	}
+	if opts.hasSymtab {
+		strtabIdx := uint32(1 + len(sections))
+		symSize := binary.Size(elf.Sym64{})
+		sections = append(sections,
+			section{name: ".strtab", typ: elf.SHT_STRTAB, data: []byte{0}},
+			section{name: ".symtab", typ: elf.SHT_SYMTAB, link: strtabIdx, entsize: uint64(symSize), data: make([]byte, symSize)},
+		)
+	}
+	nameOffsets := make([]uint32, len(sections))
+	shstrtab := []byte{0}
+	for i, s := range sections {
+		nameOffsets[i] = uint32(len(shstrtab))
+		shstrtab = append(append(shstrtab, s.name...), 0)
+	}
+	sections[0].data = shstrtab
+	headerSize := binary.Size(elf.Header64{})
+	var data []byte
+	headers := []elf.Section64{{}}
+	for i, s := range sections {
+		headers = append(headers, elf.Section64{
+			Name:      nameOffsets[i],
+			Type:      uint32(s.typ),
+			Off:       uint64(headerSize + len(data)),
+			Size:      uint64(len(s.data)),
+			Link:      s.link,
+			Addralign: 1,
+			Entsize:   s.entsize,
+		})
+		data = append(data, s.data...)
+	}
+	header := elf.Header64{
+		Type:      uint16(elf.ET_DYN),
+		Machine:   uint16(elf.EM_X86_64),
+		Version:   uint32(elf.EV_CURRENT),
+		Shoff:     uint64(headerSize + len(data)),
+		Ehsize:    uint16(headerSize),
+		Shentsize: uint16(binary.Size(elf.Section64{})),
+		Shnum:     uint16(len(headers)),
+		Shstrndx:  1,
+	}
+	copy(header.Ident[:], elf.ELFMAG)
+	header.Ident[elf.EI_CLASS] = byte(elf.ELFCLASS64)
+	header.Ident[elf.EI_DATA] = byte(elf.ELFDATA2LSB)
+	header.Ident[elf.EI_VERSION] = byte(elf.EV_CURRENT)
+	out := must(binary.Append(nil, binary.LittleEndian, header))
+	out = append(out, data...)
+	return must(binary.Append(out, binary.LittleEndian, headers))
+}
+
+func TestInferStripMode(t *testing.T) {
+	tests := []struct {
+		name          string
+		files         map[string]string
+		wheel         map[string][]byte
+		extraZipFiles []*zip.File
+		reqs          []string
+		want          StripMode
+	}{
+		{
+			name: "CibuildwheelRepairAuditwheelStrip",
+			files: map[string]string{
+				"pyproject.toml": `[tool.cibuildwheel]
+repair-wheel-command = "auditwheel repair --strip -w {dest_dir} {wheel}"
+`,
+			},
+			wheel: map[string][]byte{
+				"pkg/_ext.cpython-312-x86_64-linux-gnu.so": createTestELFWithSections(testELFOptions{}),
+			},
+			reqs: []string{"setuptools==70.0.0"},
+			want: StripModeAuditwheel,
+		},
+		{
+			name: "CibuildwheelRepairCrossStripFull",
+			files: map[string]string{
+				"pyproject.toml": `[tool.cibuildwheel]
+repair-wheel-command = "x86_64-linux-gnu-strip {wheel} && auditwheel repair -w {dest_dir} {wheel}"
+`,
+			},
+			wheel: map[string][]byte{
+				"pkg/_ext.cpython-312-x86_64-linux-gnu.so": createTestELFWithSections(testELFOptions{}),
+			},
+			reqs: []string{"setuptools==70.0.0"},
+			want: StripModeAuditwheel,
+		},
+		{
+			name: "CibuildwheelEnvironmentLinkerStripAll",
+			files: map[string]string{
+				"pyproject.toml": `[tool.cibuildwheel]
+environment = { LDFLAGS = "-Wl,--strip-all" }
+`,
+			},
+			wheel: map[string][]byte{
+				"pkg/_libs/algos.cpython-312-x86_64-linux-gnu.so": createTestELFWithSections(testELFOptions{}),
+			},
+			reqs: []string{"meson-python==0.17.1"},
+			want: StripModeLinkerAll,
+		},
+		{
+			name: "CibuildwheelEnvironmentLinkerStripDebug",
+			files: map[string]string{
+				"pyproject.toml": `[tool.cibuildwheel]
+environment = { LDFLAGS = "-Wl,-S" }
+`,
+			},
+			wheel: map[string][]byte{
+				"pkg/_ext.cpython-312-x86_64-linux-gnu.so": createTestELFWithSections(testELFOptions{hasSymtab: true}),
+			},
+			reqs: []string{"setuptools==70.0.0"},
+			want: StripModeDebug,
+		},
+		{
+			name: "CibuildwheelOverrideMatchingBuildID",
+			files: map[string]string{
+				"pyproject.toml": `[[tool.cibuildwheel.overrides]]
+select = "cp312-manylinux*"
+environment = { LDFLAGS = "-Wl,--strip-all" }
+`,
+			},
+			wheel: map[string][]byte{
+				"pkg/_ext.cpython-312-x86_64-linux-gnu.so": createTestELFWithSections(testELFOptions{}),
+			},
+			reqs: []string{"setuptools==70.0.0"},
+			want: StripModeLinkerAll,
+		},
+		{
+			name: "CibuildwheelOverrideOtherBuildIDIgnored",
+			files: map[string]string{
+				"pyproject.toml": `[[tool.cibuildwheel.overrides]]
+select = "cp311-*"
+environment = { LDFLAGS = "-Wl,--strip-all" }
+`,
+			},
+			wheel: map[string][]byte{
+				"pkg/_ext.cpython-312-x86_64-linux-gnu.so": createTestELFWithSections(testELFOptions{}),
+			},
+			reqs: []string{"setuptools==70.0.0"},
+			want: StripModeAuditwheel,
+		},
+		{
+			name: "CibuildwheelEnvironmentCFLAGSG0WithSymtab",
+			files: map[string]string{
+				"pyproject.toml": `[tool.cibuildwheel]
+environment = "CFLAGS='-O3 -g0 -pipe' LDFLAGS='-fPIC'"
+`,
+			},
+			wheel: map[string][]byte{
+				"pkg/_core.cpython-312-x86_64-linux-gnu.so": createTestELFWithSections(testELFOptions{hasSymtab: true}),
+			},
+			reqs: []string{"setuptools==70.0.0"},
+			want: StripModeDebug,
+		},
+		{
+			name: "AllExtensionsStrippedFallback",
+			wheel: map[string][]byte{
+				"grpc/_cython/_cygrpc.cpython-310-x86_64-linux-gnu.so": createTestELFWithSections(testELFOptions{}),
+			},
+			reqs: []string{"setuptools==70.0.0"},
+			want: StripModeAuditwheel,
+		},
+		{
+			name: "MixedDWARFMultiExtensionReturnsEmpty",
+			wheel: map[string][]byte{
+				"greenlet/_greenlet.cpython-312-x86_64-linux-gnu.so":       createTestELFWithSections(testELFOptions{hasDebug: true, hasSymtab: true}),
+				"greenlet/tests/_test_extension.cpython-312-x86_64.so":     createTestELFWithSections(testELFOptions{}),
+				"greenlet/tests/_test_extension_cpp.cpython-312-x86_64.so": createTestELFWithSections(testELFOptions{hasDebug: true, hasSymtab: true}),
+			},
+			reqs: []string{"setuptools==70.0.0"},
+			want: "",
+		},
+		{
+			name: "RetainedDWARFReturnsEmpty",
+			wheel: map[string][]byte{
+				"markupsafe/_speedups.cpython-312-x86_64-linux-gnu.so": createTestELFWithSections(testELFOptions{hasDebug: true, hasSymtab: true}),
+			},
+			reqs: []string{"setuptools==70.0.0"},
+			want: "",
+		},
+		{
+			name: "BundledLibsWithSymbolsBlocksAuditwheelStrip",
+			wheel: map[string][]byte{
+				"pkg/_ext.cpython-312-x86_64-linux-gnu.so": createTestELFWithSections(testELFOptions{}),
+				"pkg.libs/libfoo-12345678.so.1.0.0":        createTestELFWithSections(testELFOptions{hasDebug: true, hasSymtab: true}),
+			},
+			reqs: []string{"setuptools==70.0.0"},
+			want: "",
+		},
+		{
+			name: "BundledLibsWithDWARFAllowsLinkerStrip",
+			files: map[string]string{
+				"pyproject.toml": `[tool.cibuildwheel]
+environment = { LDFLAGS = "-Wl,--strip-all" }
+`,
+			},
+			wheel: map[string][]byte{
+				"pkg/_ext.cpython-312-x86_64-linux-gnu.so": createTestELFWithSections(testELFOptions{}),
+				"pkg.libs/libfoo-12345678.so.1.0.0":        createTestELFWithSections(testELFOptions{hasDebug: true, hasSymtab: true}),
+			},
+			reqs: []string{"setuptools==70.0.0"},
+			want: StripModeLinkerAll,
+		},
+		{
+			name: "OversizedExtensionAbstains",
+			wheel: map[string][]byte{
+				"pkg/_small.cpython-312-x86_64-linux-gnu.so": createTestELFWithSections(testELFOptions{}),
+			},
+			extraZipFiles: []*zip.File{{
+				FileHeader: zip.FileHeader{
+					Name:               "pkg/_huge.cpython-312-x86_64-linux-gnu.so",
+					UncompressedSize64: maxELFFileSize + 1,
+				},
+			}},
+			reqs: []string{"setuptools==70.0.0"},
+			want: "",
+		},
+		{
+			name: "DebugAbsentWithSymtabWithoutCIConfigReturnsEmpty",
+			wheel: map[string][]byte{
+				"charset_normalizer/md.cpython-312-x86_64-linux-gnu.so": createTestELFWithSections(testELFOptions{hasSymtab: true}),
+			},
+			reqs: []string{"setuptools==70.0.0"},
+			want: "",
+		},
+		{
+			name: "ScikitBuildCoreSelfStripsReturnsEmpty",
+			wheel: map[string][]byte{
+				"ml_dtypes/_ml_dtypes_ext.cpython-312-x86_64-linux-gnu.so": createTestELFWithSections(testELFOptions{}),
+			},
+			reqs: []string{"scikit-build-core==0.10.7"},
+			want: "",
+		},
+		{
+			name: "SetupPyExplicitStripFlagsReturnsEmpty",
+			files: map[string]string{
+				"setup.py": `from setuptools import Extension, setup
+strip_flags = ["-Wl,--strip-all"]
+setup(name="ujson", ext_modules=[Extension("ujson", ["ujson.c"], extra_link_args=strip_flags)])
+`,
+			},
+			wheel: map[string][]byte{
+				"ujson.cpython-312-x86_64-linux-gnu.so": createTestELFWithSections(testELFOptions{}),
+			},
+			reqs: []string{"setuptools==70.0.0"},
+			want: "",
+		},
+		{
+			name: "MalformedPyprojectTomlIgnored",
+			files: map[string]string{
+				"pyproject.toml": "[tool.cibuildwheel\nenvironment = [unterminated\n",
+			},
+			wheel: map[string][]byte{
+				"pkg/_core.cpython-312-x86_64-linux-gnu.so": createTestELFWithSections(testELFOptions{}),
+			},
+			reqs: []string{"setuptools==70.0.0"},
+			want: StripModeAuditwheel,
+		},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			var repoYAML strings.Builder
+			repoYAML.WriteString("commits:\n  - id: c1\n    files:\n      README.md: |\n        hi\n")
+			for name, body := range tc.files {
+				repoYAML.WriteString("      " + name + ": |\n")
+				for _, line := range strings.Split(strings.TrimRight(body, "\n"), "\n") {
+					repoYAML.WriteString("        " + line + "\n")
+				}
+			}
+			repo := must(gitxtest.CreateRepoFromYAML(repoYAML.String(), nil))
+			commit := must(repo.Repository.CommitObject(git2.Hash(repo.Commits["c1"])))
+			tree := must(commit.Tree())
+			var entries []archive.ZipEntry
+			for name, data := range tc.wheel {
+				entries = append(entries, archive.ZipEntry{
+					FileHeader: &zip.FileHeader{Name: name},
+					Body:       data,
+				})
+			}
+			zr := readWheel(t, entries...)
+			zr.File = append(zr.File, tc.extraZipFiles...)
+			tags := WheelTags{Python: "cp312", ABI: "cp312", Platform: "manylinux_2_17_x86_64"}
+			got, err := inferStripMode(zr, tree, "", tags, platform.Glibc, tc.reqs)
+			if err != nil {
+				t.Fatalf("inferStripMode() unexpected error: %v", err)
+			}
+			if diff := cmp.Diff(tc.want, got); diff != "" {
+				t.Errorf("inferStripMode() diff (-want +got):\n%s", diff)
+			}
+		})
+	}
+}
+
+func TestInferStrategyPlatformWheelStripMode(t *testing.T) {
+	repo := must(gitxtest.CreateRepoFromYAML(`commits:
+  - id: release-commit
+    tag: v2.3.3
+    files:
+      pyproject.toml: |
+        [project]
+        name = "pandas"
+        version = "2.3.3"
+        [build-system]
+        requires = ["meson-python==0.17.1"]
+        [tool.cibuildwheel]
+        environment = { LDFLAGS = "-Wl,--strip-all" }
+`, nil))
+	filename := "pandas-2.3.3-cp312-cp312-manylinux_2_17_x86_64.manylinux2014_x86_64.whl"
+	wheelURL := "https://files.pythonhosted.org/" + filename
+	wheelBuf := must(archivetest.ZipFile([]archive.ZipEntry{
+		{
+			FileHeader: &zip.FileHeader{Name: "pandas-2.3.3.dist-info/WHEEL"},
+			Body:       []byte("Wheel-Version: 1.0\nGenerator: meson (0.17.1)\nRoot-Is-Purelib: false\nTag: cp312-cp312-manylinux_2_17_x86_64\n"),
+		},
+		{
+			FileHeader: &zip.FileHeader{Name: "pandas-2.3.3.dist-info/METADATA"},
+			Body:       []byte("Metadata-Version: 2.1\nName: pandas\nVersion: 2.3.3\n"),
+		},
+		{
+			FileHeader: &zip.FileHeader{Name: "pandas/_libs/algos.cpython-312-x86_64-linux-gnu.so"},
+			Body:       createTestELFWithSections(testELFOptions{}),
+		},
+	}))
+	releaseJSON := fmt.Sprintf(`{"info":{"name":"pandas","version":"2.3.3"},"urls":[{"filename":%q,"url":%q,"size":%d,"upload_time_iso_8601":"2025-09-29T00:00:00Z"}]}`, filename, wheelURL, wheelBuf.Len())
+	mux := rebuild.RegistryMux{PyPI: pypireg.HTTPRegistry{Client: &httpxtest.MockClient{
+		Calls: []httpxtest.Call{
+			{URL: "https://pypi.org/pypi/pandas/2.3.3/json", Response: &http.Response{StatusCode: 200, Body: httpxtest.Body(releaseJSON)}},
+			{URL: "https://pypi.org/pypi/pandas/2.3.3/json", Response: &http.Response{StatusCode: 200, Body: httpxtest.Body(releaseJSON)}},
+			{URL: wheelURL, Response: &http.Response{StatusCode: 200, Body: io.NopCloser(bytes.NewReader(wheelBuf.Bytes()))}},
+		},
+		URLValidator: httpxtest.NewURLValidator(t),
+	}}}
+	rcfg := &rebuild.RepoConfig{Repo: gitx.Repo{Repository: repo.Repository, Storer: repo.Storer}, URI: "https://github.com/pandas-dev/pandas"}
+	target := rebuild.Target{Ecosystem: rebuild.PyPI, Package: "pandas", Version: "2.3.3", Artifact: filename}
+	strat, err := Rebuilder{}.InferStrategy(context.Background(), target, mux, rcfg, nil)
+	if err != nil {
+		t.Fatalf("InferStrategy() unexpected error: %v", err)
+	}
+	got, ok := strat.(*PlatformWheelBuild)
+	if !ok {
+		t.Fatalf("InferStrategy() returned %T, want *PlatformWheelBuild", strat)
+	}
+	if diff := cmp.Diff(StripModeLinkerAll, got.StripMode); diff != "" {
+		t.Errorf("PlatformWheelBuild.StripMode diff (-want +got):\n%s", diff)
 	}
 }

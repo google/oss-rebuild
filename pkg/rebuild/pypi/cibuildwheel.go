@@ -92,26 +92,34 @@ func cibuildwheelSpecs(workflow []byte) []string {
 	return specs
 }
 
+// readCibuildwheelConfig returns the [tool.cibuildwheel] table of the
+// pyproject.toml at pyprojPath. ok is false when the file is missing or has
+// invalid syntax, which rejects the candidate rather than failing inference.
+func readCibuildwheelConfig(tree *git2.Tree, pyprojPath string) (cfg parsing.CibuildwheelConfig, ok bool, err error) {
+	f, err := tree.File(pyprojPath)
+	if errors.Is(err, git2.ErrFileNotFound) {
+		return cfg, false, nil
+	} else if err != nil {
+		return cfg, false, errors.Wrapf(err, "finding %s", pyprojPath)
+	}
+	pyProject, err := parsing.ReadPyProject(f)
+	var decodeErr *toml.DecodeError
+	if errors.As(err, &decodeErr) {
+		return cfg, false, nil
+	} else if err != nil {
+		return cfg, false, errors.Wrapf(err, "reading %s", pyprojPath)
+	}
+	return pyProject.Tool.Cibuildwheel, true, nil
+}
+
 // extractCibuildwheelDependencies extracts system dependencies from
 // [tool.cibuildwheel] hooks and overrides in pyproject.toml under searchDir.
 func extractCibuildwheelDependencies(tree *git2.Tree, searchDir string, tags WheelTags, libc platform.LibcImpl) ([]string, error) {
 	pyprojPath := path.Clean(path.Join(searchDir, "pyproject.toml"))
-	f, err := tree.File(pyprojPath)
-	if errors.Is(err, git2.ErrFileNotFound) {
-		return nil, nil
-	} else if err != nil {
-		return nil, errors.Wrapf(err, "finding %s", pyprojPath)
+	cfg, ok, err := readCibuildwheelConfig(tree, pyprojPath)
+	if err != nil || !ok {
+		return nil, err
 	}
-	pyProject, err := parsing.ReadPyProject(f)
-	if err != nil {
-		// A pyproject.toml that fails TOML decoding is a rejected candidate, not an infrastructure failure.
-		var decodeErr *toml.DecodeError
-		if errors.As(err, &decodeErr) {
-			return nil, nil
-		}
-		return nil, errors.Wrapf(err, "reading %s", pyprojPath)
-	}
-	cfg := pyProject.Tool.Cibuildwheel
 	// NOTE: In cibuildwheel, matching overrides replace base and linux hooks by
 	// default unless inherit is configured. Taking the union across all matching
 	// sections is a conservative over-approximation.
