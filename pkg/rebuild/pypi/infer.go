@@ -43,8 +43,6 @@ var commonRepoLinks = []string{
 	"code",
 }
 
-var distInfoFieldPat = re.MustCompile(`[-_.]+`)
-
 // Published returns when t's artifact was uploaded to the registry.
 func (Rebuilder) Published(ctx context.Context, t rebuild.Target, mux rebuild.RegistryMux) (time.Time, error) {
 	release, err := mux.PyPI.Release(ctx, t.Package, t.Version)
@@ -131,7 +129,7 @@ func repoFromOtherLinks(info pypireg.Info) string {
 func repoNamedAfter(pkg string) func(pypireg.Info) string {
 	return func(info pypireg.Info) string {
 		for _, repo := range otherRepoLinks(info) {
-			if normalizeName(strings.TrimSuffix(path.Base(repo), ".git")) == normalizeName(pkg) {
+			if pypireg.NormalizedName(strings.TrimSuffix(path.Base(repo), ".git")) == pypireg.NormalizedName(pkg) {
 				return repo
 			}
 		}
@@ -277,19 +275,12 @@ func inferRequirements(name, version string, zr *zip.Reader) ([]string, error) {
 	return reqs, nil
 }
 
-// normalizeName applies PyPA name normalization so that equivalent spellings
-// of a distribution name, like "Flit.Core" and "flit_core", compare equal.
-// https://packaging.python.org/en/latest/specifications/name-normalization/
-func normalizeName(name string) string {
-	return strings.ToLower(distInfoFieldPat.ReplaceAllString(name, "-"))
-}
-
 // Wheel dist-info names use escaped distribution/version components:
 // https://packaging.python.org/en/latest/specifications/binary-distribution-format/#escaping-and-unicode
 // Name comparisons use PyPA name normalization:
 // https://packaging.python.org/en/latest/specifications/name-normalization/
 func normalizeDistInfoName(name string) string {
-	return strings.ReplaceAll(normalizeName(name), "-", "_")
+	return strings.ReplaceAll(pypireg.NormalizedName(name), "-", "_")
 }
 
 func normalizeDistInfoVersion(version string) string {
@@ -351,7 +342,7 @@ func requirementName(req string) string {
 	if len(fields) == 0 {
 		return ""
 	}
-	return normalizeName(fields[0])
+	return pypireg.NormalizedName(fields[0])
 }
 
 // urlMarkerSepPat matches the separator before a direct reference's marker.

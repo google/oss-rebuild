@@ -321,3 +321,18 @@ func must[T any](t T, err error) T {
 	}
 	return t
 }
+
+func TestNormalizedName(t *testing.T) {
+	for _, tc := range []struct{ name, in, want string }{
+		{"Dot", "Flit.Core", "flit-core"},
+		{"Underscore", "flit_core", "flit-core"},
+		{"MixedCase", "pyTooling.Sphinx", "pytooling-sphinx"},
+		{"SeparatorRun", "a--_b", "a-b"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			if diff := cmp.Diff(tc.want, NormalizedName(tc.in)); diff != "" {
+				t.Errorf("NormalizedName(%q) returned diff (-want +got):\n%s", tc.in, diff)
+			}
+		})
+	}
+}

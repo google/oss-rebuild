@@ -9,6 +9,7 @@ import (
 	"path/filepath"
 	"strings"
 
+	pypireg "github.com/google/oss-rebuild/pkg/registry/pypi"
 	"github.com/msuozzo/go-git2"
 	"github.com/pelletier/go-toml/v2"
 	"github.com/pkg/errors"
@@ -86,7 +87,7 @@ func verifyPyProjectFile(ctx context.Context, f *git2.File, name, version string
 	}
 
 	if foundName != "" {
-		editDist := minEditDistance(normalizeName(name), normalizeName(foundName))
+		editDist := minEditDistance(pypireg.NormalizedName(name), pypireg.NormalizedName(foundName))
 		verificationResult.levDistance = editDist
 
 		if editDist == 0 {
