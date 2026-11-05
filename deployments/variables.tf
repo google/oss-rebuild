@@ -126,7 +126,7 @@ variable "agent_api_max_instances" {
 }
 variable "scratch_machine_type" {
   type        = string
-  description = "Machine type for scratch hosts. Each host runs a KVM microVM guest per agent session, as many as its class's guest size and overcommit allow, so the type must support nested virtualization (Intel N2, C3 and C4 shapes do; E2 and AMD shapes do not)."
+  description = "Machine type for scratch hosts. Each host runs a KVM microVM guest per agent session, as many as its class's guest size and overcommit allow, so the type must support nested virtualization and take a pd-ssd boot disk (Intel N2, C2 and C3 shapes do; E2 and AMD shapes do not). A standard shape falls back to C2 when every zone is out of its own family."
   default     = "n2-standard-16"
 }
 variable "scratch_jumbo_machine_type" {
