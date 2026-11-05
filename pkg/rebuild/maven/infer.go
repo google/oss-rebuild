@@ -12,6 +12,8 @@ import (
 	"log"
 	"math"
 	"path"
+	"regexp"
+	"strconv"
 	"strings"
 
 	"github.com/go-git/go-git/v5"
@@ -171,96 +173,175 @@ func inferBuildTool(commit *git2.Commit) (string, error) {
 	return "", errors.Errorf("build tool inference failed")
 }
 
-// inferOrFallbackToDefaultJDK tries to infer the JDK version from the artifact's metadata, falling back to a default if necessary.
+// upstreamJar is what the published jar records about its build.
+type upstreamJar struct {
+	JDK   string // from the manifest, else the bytecode
+	Maven string // from Created-By
+	CRLF  bool   // META-INF pom.xml has CRLF endings
+}
+
+var createdByMavenRe = regexp.MustCompile(`^Apache Maven (\d+\.\d+\.\d+)`)
+
+func readUpstreamJar(ctx context.Context, name, version string, mux rebuild.RegistryMux) (upstreamJar, error) {
+	var j upstreamJar
+	releaseFile, err := mux.Maven.ReleaseFile(ctx, name, version, maven.TypeJar)
+	if err != nil {
+		return j, errors.Wrap(err, "fetching jar file")
+	}
+	defer releaseFile.Close()
+	jarBytes, err := io.ReadAll(releaseFile)
+	if err != nil {
+		return j, errors.Wrap(err, "reading jar file")
+	}
+	zr, err := zip.NewReader(bytes.NewReader(jarBytes), int64(len(jarBytes)))
+	if err != nil {
+		return j, errors.Wrap(err, "unzipping jar file")
+	}
+	attrs := manifestAttrs(zr)
+	switch {
+	case attrs["Build-Jdk"] != "":
+		j.JDK = attrs["Build-Jdk"]
+	case attrs["Build-Jdk-Spec"] != "":
+		j.JDK = attrs["Build-Jdk-Spec"]
+	case attrs["Created-By"] != "" && attrs["Created-By"][0] >= '0' && attrs["Created-By"][0] <= '9':
+		// The jar tool writes its own version, e.g. "11.0.4 (Oracle Corporation)".
+		j.JDK, _, _ = strings.Cut(attrs["Created-By"], " ")
+	}
+	if m := createdByMavenRe.FindStringSubmatch(attrs["Created-By"]); m != nil {
+		j.Maven = m[1]
+	}
+	if j.JDK == "" {
+		if j.JDK, err = inferJDKFromBytecode(zr); err != nil {
+			return j, errors.Wrap(err, "inferring JDK from bytecode")
+		}
+	}
+	for _, f := range zr.File {
+		if !strings.HasPrefix(f.Name, "META-INF/maven/") || path.Base(f.Name) != "pom.xml" {
+			continue
+		}
+		r, err := f.Open()
+		if err != nil {
+			return j, errors.Wrapf(err, "opening %s", f.Name)
+		}
+		b, err := io.ReadAll(r)
+		r.Close()
+		if err != nil {
+			return j, errors.Wrapf(err, "reading %s", f.Name)
+		}
+		j.CRLF = bytes.Contains(b, []byte("\r\n"))
+		break
+	}
+	return j, nil
+}
+
+func manifestAttrs(zr *zip.Reader) map[string]string {
+	attrs := map[string]string{}
+	f, err := zr.Open("META-INF/MANIFEST.MF")
+	if err != nil {
+		return attrs
+	}
+	defer f.Close()
+	b, err := io.ReadAll(f)
+	if err != nil {
+		return attrs
+	}
+	for _, line := range strings.Split(string(b), "\n") {
+		line = strings.TrimRight(line, "\r")
+		if line == "" {
+			break // end of the main section
+		}
+		if k, v, ok := strings.Cut(line, ":"); ok && !strings.HasPrefix(line, " ") {
+			attrs[k] = strings.TrimSpace(v)
+		}
+	}
+	return attrs
+}
+
+// inferOrFallbackToDefaultJDK picks the downloadable JDK closest to the one
+// that built the published jar.
 func inferOrFallbackToDefaultJDK(ctx context.Context, name, version string, mux rebuild.RegistryMux) (string, error) {
-	rawJDK, err := inferJDKVersion(ctx, name, version, mux)
+	j, err := readUpstreamJar(ctx, name, version, mux)
 	if err != nil {
 		return "", errors.Wrap(err, "fetching JDK")
 	}
-	if rawJDK == "" {
+	return jdkFor(j.JDK), nil
+}
+
+// jdkFor maps a recorded JDK version to the closest JDKDownloadURLs key: the
+// same release if available, else the nearest update of the same major.
+// Javac output changes between releases, so the exact build matters.
+func jdkFor(raw string) string {
+	v := strings.TrimSpace(raw)
+	if i := strings.IndexAny(v, "+- "); i >= 0 {
+		v = v[:i] // "11.0.4+10", "1.8.0_181-b13"
+	}
+	if v == "" {
 		log.Printf("no JDK version inferred, falling back to JDK %s", fallbackJDK)
-		return fallbackJDK, nil
+		return fallbackJDK
 	}
-	// First, check if the inferred version is directly available for download.
-	if _, ok := JDKDownloadURLs[rawJDK]; ok {
-		log.Printf("Using directly inferred JDK version: %s", rawJDK)
-		return rawJDK, nil
+	if _, ok := JDKDownloadURLs[v]; ok {
+		return v
 	}
-	// If not directly available, try parsing its major version.
-	log.Printf("Inferred JDK \"%s\" is not directly available, attempting to parse major version.", rawJDK)
-	var majorJDK string
-	if strings.HasPrefix(rawJDK, "1.") {
-		// For Java versions < 9 (e.g., "1.8.0_301")
-		parts := strings.Split(rawJDK, ".")
-		if len(parts) > 1 {
-			majorJDK = parts[1] // "1.8.0_301" becomes "8"
-		}
-	} else {
-		// For Java versions >= 9 (e.g., "17.0.1")
-		parts := strings.Split(rawJDK, ".")
-		if len(parts) > 0 {
-			majorJDK = parts[0] // "17.0.1" becomes "17"
-		}
+	major, update := splitJDK(v)
+	if n, err := strconv.Atoi(major); err == nil && n < 8 {
+		// JDK 8 is the oldest available and still compiles 1.5 through 1.7 sources.
+		major, update = "8", -1
 	}
-	// Check if the major version is valid and available.
-	if majorJDK != "" {
-		if _, ok := JDKDownloadURLs[majorJDK]; ok {
-			log.Printf("Successfully used major JDK version %s (from \"%s\")", majorJDK, rawJDK)
-			return majorJDK, nil
+	best, bestDist := "", math.MaxInt
+	if update >= 0 {
+		for k := range JDKDownloadURLs {
+			km, ku := splitJDK(k)
+			if km != major || ku < 0 {
+				continue
+			}
+			d := ku - update
+			if d < 0 {
+				d = -d
+			}
+			// Ties go to the later update, making the choice independent of map order.
+			if d < bestDist || (d == bestDist && ku > update) {
+				best, bestDist = k, d
+			}
 		}
 	}
-	// If all attempts failed, fall back to the default.
-	log.Printf("Could not find a downloadable JDK for \"%s\" or its major version \"%s\", falling back to JDK %s", rawJDK, majorJDK, fallbackJDK)
-	return fallbackJDK, nil
+	if best != "" {
+		log.Printf("Using JDK %s for recorded version %q", best, raw)
+		return best
+	}
+	if _, ok := JDKDownloadURLs[major]; ok {
+		log.Printf("Using JDK %s for recorded version %q", major, raw)
+		return major
+	}
+	log.Printf("Could not find a downloadable JDK for %q, falling back to JDK %s", raw, fallbackJDK)
+	return fallbackJDK
 }
 
-// inferJDKVersion gets the JDK version from the MANIFEST or Java bytecode.
-func inferJDKVersion(ctx context.Context, name, version string, mux rebuild.RegistryMux) (string, error) {
-	releaseFile, err := mux.Maven.ReleaseFile(ctx, name, version, maven.TypeJar)
-	if err != nil {
-		return "", errors.Wrap(err, "fetching jar file")
+// splitJDK splits a JDK version into its major release and update number,
+// the update being -1 when absent: "1.8.0_181" and "8u181" are ("8", 181),
+// "11.0.4" is ("11", 4) and "17" is ("17", -1).
+func splitJDK(v string) (major string, update int) {
+	update = -1
+	if rest, ok := strings.CutPrefix(v, "1."); ok {
+		m, tail, _ := strings.Cut(rest, ".")
+		if _, u, ok := strings.Cut(tail, "_"); ok {
+			if n, err := strconv.Atoi(u); err == nil {
+				update = n
+			}
+		}
+		return m, update
 	}
-	jarBytes, err := io.ReadAll(releaseFile)
-	if err != nil {
-		return "", errors.Wrap(err, "reading jar file")
-	}
-	zipReader, err := zip.NewReader(bytes.NewReader(jarBytes), int64(len(jarBytes)))
-	if err != nil {
-		return "", errors.Wrap(err, "unzipping jar file")
-	}
-	jdk, err := inferJDKFromManifest(zipReader)
-	if err != nil {
-		return "", errors.Wrap(err, "inferring JDK from manifest")
-	}
-	if jdk != "" {
-		return jdk, nil
-	}
-	jdk, err = inferJDKFromBytecode(zipReader)
-	if err != nil {
-		return "", errors.Wrap(err, "inferring JDK from bytecode")
-	}
-	return jdk, nil
-}
-
-// inferJDKFromManifest extracts the JDK version from the MANIFEST.MF file in the JAR.
-func inferJDKFromManifest(zipReader *zip.Reader) (string, error) {
-	manifestFile, err := zipReader.Open("META-INF/MANIFEST.MF")
-	if err != nil {
-		return "", errors.Wrap(err, "opening manifest file")
-	}
-	defer manifestFile.Close()
-
-	manifestReader, err := io.ReadAll(manifestFile)
-	if err != nil {
-		return "", errors.Wrap(err, "reading manifest file")
-	}
-	for _, line := range strings.Split(string(manifestReader), "\n") {
-		if strings.HasPrefix(line, "Build-Jdk:") || strings.HasPrefix(line, "Build-Jdk-Spec:") {
-			_, value, _ := strings.Cut(line, ":")
-			return strings.TrimSpace(value), nil
+	if m, u, ok := strings.Cut(v, "u"); ok {
+		if n, err := strconv.Atoi(u); err == nil {
+			return m, n
 		}
 	}
-	return "", nil
+	parts := strings.Split(v, ".")
+	if len(parts) == 3 && parts[1] == "0" {
+		if n, err := strconv.Atoi(parts[2]); err == nil {
+			update = n
+		}
+	}
+	return parts[0], update
 }
 
 // inferJDKFromBytecode identifies the lowest JDK version that can run the provided JAR's bytecode.

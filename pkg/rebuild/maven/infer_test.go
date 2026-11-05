@@ -10,11 +10,13 @@ import (
 	"io"
 	"testing"
 
+	"github.com/google/go-cmp/cmp"
 	"github.com/google/oss-rebuild/internal/gitx/gitxtest"
 	"github.com/google/oss-rebuild/pkg/archive"
 	"github.com/google/oss-rebuild/pkg/rebuild/rebuild"
 	"github.com/google/oss-rebuild/pkg/registry/maven"
 	"github.com/msuozzo/go-git2"
+	"github.com/pkg/errors"
 )
 
 type artifactCoordinates struct{ PackageName, VersionID, FileType string }
@@ -104,7 +106,27 @@ func TestJDKVersionInference(t *testing.T) {
 					Body:       []byte("Manifest-Version: 1.0\r\nBuild-Jdk-Spec: 1.8.0_121\r\n\r\n"),
 				},
 			},
-			wantVersion: "8",
+			wantVersion: "8u181",
+		},
+		{
+			name: "build-jdk takes precedence over build-jdk-spec",
+			input: []*archive.ZipEntry{
+				{
+					FileHeader: &zip.FileHeader{Name: "META-INF/MANIFEST.MF"},
+					Body:       []byte("Manifest-Version: 1.0\r\nBuild-Jdk-Spec: 1.8\r\nBuild-Jdk: 1.8.0_342\r\n\r\n"),
+				},
+			},
+			wantVersion: "8u342",
+		},
+		{
+			name: "jdk from the jar tool's created-by",
+			input: []*archive.ZipEntry{
+				{
+					FileHeader: &zip.FileHeader{Name: "META-INF/MANIFEST.MF"},
+					Body:       []byte("Manifest-Version: 1.0\r\nCreated-By: 11.0.4 (Oracle Corporation)\r\n\r\n"),
+				},
+			},
+			wantVersion: "11.0.4",
 		},
 	}
 
@@ -136,6 +158,77 @@ func TestJDKVersionInference(t *testing.T) {
 				t.Errorf("JDK version = %v, want %v", got, tc.wantVersion)
 			}
 		})
+	}
+}
+
+func TestReadUpstreamJar(t *testing.T) {
+	var buf bytes.Buffer
+	zw := zip.NewWriter(&buf)
+	for _, e := range []*archive.ZipEntry{
+		{FileHeader: &zip.FileHeader{Name: "META-INF/MANIFEST.MF"}, Body: []byte("Manifest-Version: 1.0\r\nCreated-By: Apache Maven 3.5.4\r\nBuild-Jdk: 1.8.0_181\r\n\r\nName: x\r\nBuild-Jdk: 99\r\n")},
+		{FileHeader: &zip.FileHeader{Name: "META-INF/maven/foo/bar/pom.xml"}, Body: []byte("<project>\r\n</project>\r\n")},
+	} {
+		if err := e.WriteTo(zw); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if err := zw.Close(); err != nil {
+		t.Fatal(err)
+	}
+	mux := rebuild.RegistryMux{Maven: &mockMavenRegistry{artifactCoordinates: map[artifactCoordinates][]byte{{"foo:bar", "1.0", maven.TypeJar}: buf.Bytes()}}}
+	got, err := readUpstreamJar(context.Background(), "foo:bar", "1.0", mux)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if want := (upstreamJar{JDK: "1.8.0_181", Maven: "3.5.4", CRLF: true}); got != want {
+		t.Errorf("readUpstreamJar() = %+v, want %+v", got, want)
+	}
+}
+
+func TestJDKFor(t *testing.T) {
+	for _, tc := range []struct{ name, raw, want string }{
+		{"ExactUpdate", "1.8.0_181", "8u181"},
+		{"NearestUpdate", "1.8.0_251", "8u252"},
+		{"BuildSuffix", "1.8.0_181-b13", "8u181"},
+		{"MajorOnly", "1.8", "8"},
+		{"OlderThanAvailable", "1.7.0_79", "8"},
+		{"ExactModern", "11.0.4", "11.0.4"},
+		{"ModernBuildSuffix", "11.0.4+10-LTS", "11.0.4"},
+		{"NearestModern", "17.0.99", "17.0.18"},
+		{"ModernMajorOnly", "21", "21"},
+		{"Empty", "", fallbackJDK},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			if diff := cmp.Diff(tc.want, jdkFor(tc.raw)); diff != "" {
+				t.Errorf("jdkFor(%q) returned diff (-want +got):\n%s", tc.raw, diff)
+			}
+		})
+	}
+}
+
+func TestReadUpstreamJarCorruptPom(t *testing.T) {
+	var buf bytes.Buffer
+	zw := zip.NewWriter(&buf)
+	m, err := zw.Create("META-INF/MANIFEST.MF")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := m.Write([]byte("Build-Jdk: 11\r\n\r\n")); err != nil {
+		t.Fatal(err)
+	}
+	p, err := zw.CreateRaw(&zip.FileHeader{Name: "META-INF/maven/g/a/pom.xml", CRC32: 1, CompressedSize64: 3, UncompressedSize64: 3})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := p.Write([]byte("pom")); err != nil {
+		t.Fatal(err)
+	}
+	if err := zw.Close(); err != nil {
+		t.Fatal(err)
+	}
+	mux := rebuild.RegistryMux{Maven: &mockMavenRegistry{artifactCoordinates: map[artifactCoordinates][]byte{{"dummy", "dummy", maven.TypeJar}: buf.Bytes()}}}
+	if _, err := readUpstreamJar(context.Background(), "dummy", "dummy", mux); !errors.Is(err, zip.ErrChecksum) {
+		t.Errorf("readUpstreamJar() error = %v, want %v", err, zip.ErrChecksum)
 	}
 }
 
