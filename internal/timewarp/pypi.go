@@ -190,11 +190,12 @@ func timeWarpPyPIProjectRequest(ctx context.Context, client httpx.BasicClient, o
 			return errors.Wrap(err, "creating request")
 		}
 		resp, err := client.Do(req)
-		if err == nil && resp.StatusCode != 200 {
-			err = errors.New(resp.Status)
-		}
 		if err != nil {
 			return errors.Wrap(err, "fetching version")
+		}
+		defer resp.Body.Close()
+		if resp.StatusCode != 200 {
+			return errors.Errorf("fetching version: %s", resp.Status)
 		}
 		versionObj := make(map[string]any)
 		if err := json.NewDecoder(resp.Body).Decode(&versionObj); err != nil {
