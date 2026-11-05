@@ -38,10 +38,10 @@
 //     outside `.libs/`, both the archive filename and `DT_SONAME` are recorded
 //     in `internalLibs` so intra-wheel links are ignored. Every ELF file's
 //     `DT_NEEDED` imports are also collected as candidates.
-//  2. Unbundling and SONAME normalization (`unbundledSoname`): Strips the
-//     `auditwheel` `-<8+ hex>` hash suffix (`auditwheelHashPat`) and collapses
-//     3-component `major.minor.patch` symlink target versions back to the
-//     major application binary interface (ABI) version (`sonameFullVersionPat`,
+//  2. Unbundling and SONAME normalization (`unbundledSoname`): Strips one or
+//     more `auditwheel` `-<8+ hex>` hash suffixes (`auditwheelHashPat`) and
+//     collapses 3-component `major.minor.patch` symlink target versions back to
+//     the major application binary interface (ABI) version (`sonameFullVersionPat`,
 //     turning `libcgraph-17278668.so.6.0.0` into `libcgraph.so.6`).
 //     Two-component versions such as `libssl.so.1.1` are kept intact because
 //     the minor number is part of the ABI SONAME.
@@ -107,7 +107,9 @@ var (
 	sharedLibNamePat = re.MustCompile(`\.so(?:\.\d+)*$`)
 	// auditwheel inserts an 8+ character hex hash right before the first dot in
 	// the grafted shared library filename (e.g. libcgraph-17278668.so.6.0.0 -> libcgraph.so.6.0.0).
-	auditwheelHashPat = re.MustCompile(`^([^.]+)-[0-9a-fA-F]{8,}\.`)
+	// Libraries re-bundled from another repaired wheel carry multiple hash suffixes
+	// (e.g. libgfortran-83c28eba-468e71e5.so.5.0.0 -> libgfortran.so.5.0.0).
+	auditwheelHashPat = re.MustCompile(`^([^.]+?)(?:-[0-9a-fA-F]{8,})+\.`)
 	// auditwheel names grafted files after the resolved symlink target, whereas
 	// package managers index the SONAME, which carries only the major version (e.g. libcgraph.so.6.0.0 -> libcgraph.so.6).
 	sonameFullVersionPat = re.MustCompile(`^(.+\.so\.\d+)\.\d+\.\d+$`)
