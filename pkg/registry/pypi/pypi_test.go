@@ -343,6 +343,29 @@ func must[T any](t T, err error) T {
 	return t
 }
 
+type clientFunc func(*http.Request) (*http.Response, error)
+
+func (f clientFunc) Do(r *http.Request) (*http.Response, error) { return f(r) }
+
+func TestHTTPRegistry_RequestContext(t *testing.T) {
+	type key struct{}
+	ctx := context.WithValue(context.Background(), key{}, true)
+	var requests int
+	client := clientFunc(func(r *http.Request) (*http.Response, error) {
+		requests++
+		if r.Context().Value(key{}) == nil {
+			t.Errorf("request to %s lost the caller's context", r.URL)
+		}
+		return &http.Response{StatusCode: 200, Body: httpxtest.Body(`{"urls": [{"filename": "a.whl", "url": "https://files.pythonhosted.org/a.whl"}]}`)}, nil
+	})
+	if _, err := (HTTPRegistry{Client: client}).Artifact(ctx, "a", "1", "a.whl"); err != nil {
+		t.Fatalf("Artifact() error = %v", err)
+	}
+	if requests != 2 {
+		t.Errorf("requests = %d, want 2", requests)
+	}
+}
+
 func TestNormalizedName(t *testing.T) {
 	for _, tc := range []struct{ name, in, want string }{
 		{"Dot", "Flit.Core", "flit-core"},
