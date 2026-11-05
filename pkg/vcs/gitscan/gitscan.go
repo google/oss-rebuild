@@ -4,6 +4,7 @@
 package gitscan
 
 import (
+	"archive/tar"
 	"archive/zip"
 	"context"
 	"io"
@@ -15,6 +16,7 @@ import (
 	"github.com/go-git/go-git/v5/plumbing/filemode"
 	"github.com/go-git/go-git/v5/plumbing/object"
 	"github.com/google/oss-rebuild/internal/bitmap"
+	"github.com/google/oss-rebuild/internal/iterx"
 	"github.com/pkg/errors"
 )
 
@@ -42,6 +44,25 @@ func BlobHashesFromZip(zr *zip.Reader) (files []plumbing.Hash, err error) {
 			return nil, err
 		}
 		files = append(files, h.Sum())
+	}
+	return files, nil
+}
+
+// BlobHashesFromTar computes the git blob hashes for all regular files in the provided tar archive.
+func BlobHashesFromTar(tr *tar.Reader) ([]plumbing.Hash, error) {
+	var files []plumbing.Hash
+	for h, err := range iterx.ToSeq2(tr, io.EOF) {
+		if err != nil {
+			return nil, err
+		}
+		if !h.FileInfo().Mode().IsRegular() {
+			continue
+		}
+		hasher := plumbing.NewHasher(plumbing.BlobObject, h.Size)
+		if _, err := io.Copy(hasher, tr); err != nil {
+			return nil, err
+		}
+		files = append(files, hasher.Sum())
 	}
 	return files, nil
 }
