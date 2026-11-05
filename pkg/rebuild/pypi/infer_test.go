@@ -1052,6 +1052,24 @@ repair-wheel-command = "x86_64-linux-gnu-strip {wheel} && auditwheel repair -w {
 			want: StripModeAuditwheel,
 		},
 		{
+			name: "WorkflowRepairCommandStripDebug",
+			files: map[string]string{
+				".github/workflows/ci.yml": `jobs:
+  wheels:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: pypa/cibuildwheel@v2.20.0
+        env:
+          CIBW_REPAIR_WHEEL_COMMAND_LINUX: "strip --strip-debug {wheel} && auditwheel repair -w {dest_dir} {wheel}"
+`,
+			},
+			wheel: map[string][]byte{
+				"pkg/_ext.cpython-312-x86_64-linux-gnu.so": createTestELFWithSections(testELFOptions{hasSymtab: true}),
+			},
+			reqs: []string{"setuptools==70.0.0"},
+			want: StripModeDebug,
+		},
+		{
 			name: "CibuildwheelEnvironmentLinkerStripAll",
 			files: map[string]string{
 				"pyproject.toml": `[tool.cibuildwheel]
@@ -1117,6 +1135,42 @@ environment = "CFLAGS='-O3 -g0 -pipe' LDFLAGS='-fPIC'"
 			},
 			reqs: []string{"setuptools==70.0.0"},
 			want: StripModeDebug,
+		},
+		{
+			name: "WorkflowEnvironmentCFLAGSG0WithSymtab",
+			files: map[string]string{
+				".github/workflows/ci.yml": `jobs:
+  wheels:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: pypa/cibuildwheel@v2.20.0
+        env:
+          CIBW_ENVIRONMENT: CFLAGS='-O3 -g0 -pipe' LDFLAGS='-fPIC'
+`,
+			},
+			wheel: map[string][]byte{
+				"pkg/_core.cpython-312-x86_64-linux-gnu.so": createTestELFWithSections(testELFOptions{hasSymtab: true}),
+			},
+			reqs: []string{"setuptools==70.0.0"},
+			want: StripModeDebug,
+		},
+		{
+			name: "WorkflowMacOSOnlyJobIgnored",
+			files: map[string]string{
+				".github/workflows/ci.yml": `jobs:
+  macos:
+    runs-on: macos-latest
+    steps:
+      - uses: pypa/cibuildwheel@v2.20.0
+        env:
+          CIBW_ENVIRONMENT: CFLAGS='-g0'
+`,
+			},
+			wheel: map[string][]byte{
+				"pkg/_core.cpython-312-x86_64-linux-gnu.so": createTestELFWithSections(testELFOptions{hasSymtab: true}),
+			},
+			reqs: []string{"setuptools==70.0.0"},
+			want: "",
 		},
 		{
 			name: "AllExtensionsStrippedFallback",

@@ -34,43 +34,56 @@ var (
 )
 
 // ghaWorkflow holds the parts of a GitHub Actions workflow that can pin the
-// cibuildwheel version.
+// cibuildwheel version or set its environment.
 // https://docs.github.com/en/actions/reference/workflows-and-actions/workflow-syntax
 type ghaWorkflow struct {
+	Env  map[string]any `yaml:"env"`
 	Jobs map[string]struct {
-		Steps []struct {
-			Uses string `yaml:"uses"`
-			Run  string `yaml:"run"`
+		RunsOn any            `yaml:"runs-on"`
+		Env    map[string]any `yaml:"env"`
+		Steps  []struct {
+			Uses string         `yaml:"uses"`
+			Run  string         `yaml:"run"`
+			Env  map[string]any `yaml:"env"`
 		} `yaml:"steps"`
 	} `yaml:"jobs"`
 }
 
-// extractCibuildwheelSpecs returns the cibuildwheel version specs (exact
-// versions, minor series, or commit hashes) found in the GitHub Actions
-// workflows in tree.
-func extractCibuildwheelSpecs(tree *git2.Tree) ([]string, error) {
+// forEachWorkflow calls fn with the contents of each GitHub Actions workflow
+// file in tree.
+func forEachWorkflow(tree *git2.Tree, fn func(workflow []byte)) error {
 	workflows, err := tree.Tree(workflowsDir)
 	if errors.Is(err, git2.ErrDirectoryNotFound) {
-		return nil, nil
+		return nil
 	} else if err != nil {
-		return nil, errors.Wrapf(err, "finding %s", workflowsDir)
+		return errors.Wrapf(err, "finding %s", workflowsDir)
 	}
-	var specs []string
 	for _, entry := range workflows.Entries {
 		if ext := path.Ext(entry.Name); !entry.Mode.IsFile() || (ext != ".yml" && ext != ".yaml") {
 			continue
 		}
 		f, err := workflows.TreeEntryFile(&entry)
 		if err != nil {
-			return nil, errors.Wrapf(err, "finding workflow %s", entry.Name)
+			return errors.Wrapf(err, "finding workflow %s", entry.Name)
 		}
 		contents, err := f.Contents()
 		if err != nil {
-			return nil, errors.Wrapf(err, "reading workflow %s", entry.Name)
+			return errors.Wrapf(err, "reading workflow %s", entry.Name)
 		}
-		specs = append(specs, cibuildwheelSpecs([]byte(contents))...)
+		fn([]byte(contents))
 	}
-	return specs, nil
+	return nil
+}
+
+// extractCibuildwheelSpecs returns the cibuildwheel version specs (exact
+// versions, minor series, or commit hashes) found in the GitHub Actions
+// workflows in tree.
+func extractCibuildwheelSpecs(tree *git2.Tree) ([]string, error) {
+	var specs []string
+	err := forEachWorkflow(tree, func(workflow []byte) {
+		specs = append(specs, cibuildwheelSpecs(workflow)...)
+	})
+	return specs, err
 }
 
 func cibuildwheelSpecs(workflow []byte) []string {

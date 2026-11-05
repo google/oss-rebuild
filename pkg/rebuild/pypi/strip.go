@@ -8,6 +8,7 @@ import (
 	"bytes"
 	"debug/elf"
 	"io"
+	"maps"
 	"path"
 	"slices"
 	"strings"
@@ -18,6 +19,7 @@ import (
 	bash "github.com/msuozzo/bonsai/bonsai-bash"
 	"github.com/msuozzo/go-git2"
 	"github.com/pkg/errors"
+	"gopkg.in/yaml.v3"
 )
 
 type elfStripSummary struct {
@@ -30,7 +32,8 @@ type elfStripSummary struct {
 // inferStripMode selects a wheel-wide ELF strip mode when every non-bundled
 // shared object in zr lacks DWARF sections. Candidates are tried in order:
 //  1. Explicit cibuildwheel "repair-wheel-command" or "environment" flags in
-//     "pyproject.toml", validated against the ELF symbol table state.
+//     "pyproject.toml" or GitHub Actions workflows, validated against the ELF
+//     symbol table state.
 //  2. auditwheel "--strip" when neither extensions nor bundled libraries retain
 //     symbols and the package build does not already strip binaries itself.
 func inferStripMode(zr *zip.Reader, tree *git2.Tree, searchDir string, tags WheelTags, libc platform.LibcImpl, reqs []string) (StripMode, error) {
@@ -136,15 +139,20 @@ func extractCIStripConfig(tree *git2.Tree, searchDir string, tags WheelTags, lib
 		return out, nil
 	}
 	cfg, ok, err := readCibuildwheelConfig(tree, path.Clean(path.Join(searchDir, "pyproject.toml")))
-	if err != nil || !ok {
+	if err != nil {
 		return ciStripConfig{}, err
 	}
-	out.collectOptions(cfg.CibuildwheelOptions)
-	out.collectOptions(cfg.Linux)
-	for _, ov := range cfg.Overrides {
-		if overrideAppliesToTarget(ov.Select, tags, libc) {
-			out.collectOptions(ov.CibuildwheelOptions)
+	if ok {
+		out.collectOptions(cfg.CibuildwheelOptions)
+		out.collectOptions(cfg.Linux)
+		for _, ov := range cfg.Overrides {
+			if overrideAppliesToTarget(ov.Select, tags, libc) {
+				out.collectOptions(ov.CibuildwheelOptions)
+			}
 		}
+	}
+	if err := forEachWorkflow(tree, out.collectWorkflow); err != nil {
+		return ciStripConfig{}, err
 	}
 	return out, nil
 }
@@ -184,6 +192,52 @@ func (c *ciStripConfig) collectEnv(env any) {
 		if s, ok := vars[key].(string); ok && s != "" {
 			c.cflags = append(c.cflags, s)
 		}
+	}
+}
+
+func (c *ciStripConfig) collectWorkflow(workflow []byte) {
+	var wf ghaWorkflow
+	if err := yaml.Unmarshal(workflow, &wf); err != nil {
+		// A workflow file with invalid syntax is a rejected candidate.
+		return
+	}
+	c.collectWorkflowEnv(wf.Env)
+	for _, name := range slices.Sorted(maps.Keys(wf.Jobs)) {
+		job := wf.Jobs[name]
+		if !runsOnCanTargetLinux(job.RunsOn) {
+			continue
+		}
+		c.collectWorkflowEnv(job.Env)
+		for _, step := range job.Steps {
+			c.collectWorkflowEnv(step.Env)
+		}
+	}
+}
+
+// runsOnCanTargetLinux reports whether a GitHub Actions "runs-on" value can
+// select a Linux runner. Non-string values, matrix expressions, and unknown
+// custom labels are treated as Linux-capable so self-hosted Linux jobs are
+// not dropped.
+func runsOnCanTargetLinux(runsOn any) bool {
+	s, ok := runsOn.(string)
+	if !ok || strings.Contains(s, "${{") {
+		return true
+	}
+	lower := strings.ToLower(s)
+	if strings.Contains(lower, "ubuntu") || strings.Contains(lower, "linux") {
+		return true
+	}
+	return !strings.Contains(lower, "macos") && !strings.Contains(lower, "windows")
+}
+
+func (c *ciStripConfig) collectWorkflowEnv(env map[string]any) {
+	for _, key := range []string{"CIBW_REPAIR_WHEEL_COMMAND", "CIBW_REPAIR_WHEEL_COMMAND_LINUX"} {
+		if s, ok := env[key].(string); ok && s != "" {
+			c.repairCmds = append(c.repairCmds, s)
+		}
+	}
+	for _, key := range []string{"CIBW_ENVIRONMENT", "CIBW_ENVIRONMENT_LINUX"} {
+		c.collectEnv(env[key])
 	}
 }
 
