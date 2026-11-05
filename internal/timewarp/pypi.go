@@ -4,6 +4,7 @@
 package timewarp
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"html"
@@ -29,7 +30,10 @@ func (h Handler) handlePyPI(rw http.ResponseWriter, r *http.Request, t *time.Tim
 		http.Redirect(rw, r, r.URL.String(), http.StatusFound)
 		return nil
 	}
-	nr, _ := http.NewRequest(r.Method, r.URL.String(), r.Body)
+	nr, err := http.NewRequestWithContext(r.Context(), r.Method, r.URL.String(), r.Body)
+	if err != nil {
+		return herror{errors.Wrap(err, "creating upstream request"), http.StatusBadRequest}
+	}
 	nr.Header = r.Header.Clone()
 	// Remove the basic auth header set with the timewarp params.
 	nr.Header.Del("Authorization")
@@ -68,7 +72,7 @@ func (h Handler) handlePyPI(rw http.ResponseWriter, r *http.Request, t *time.Tim
 		return herror{errors.Wrap(err, "parsing response"), http.StatusBadGateway}
 	}
 	if obj["releases"] != nil {
-		if err := timeWarpPyPIProjectRequest(h.Client, obj, *t); err != nil {
+		if err := timeWarpPyPIProjectRequest(r.Context(), h.Client, obj, *t); err != nil {
 			return herror{errors.Wrap(err, "warping response"), http.StatusBadGateway}
 		}
 	} else if obj["files"] != nil {
@@ -122,7 +126,7 @@ func simpleHTML(obj map[string]any) string {
 }
 
 // timeWarpPyPIProjectRequest modifies the provided JSON-like map to exclude all content after "at".
-func timeWarpPyPIProjectRequest(client httpx.BasicClient, obj map[string]any, at time.Time) error {
+func timeWarpPyPIProjectRequest(ctx context.Context, client httpx.BasicClient, obj map[string]any, at time.Time) error {
 	var futureVersions []string
 	var latestVersion string
 	var latestVersionTime time.Time
@@ -181,7 +185,7 @@ func timeWarpPyPIProjectRequest(client httpx.BasicClient, obj map[string]any, at
 		// so we need to make sure it's kept up to date.
 		project := obj["info"].(map[string]any)["name"].(string)
 		versionURL := pypiRegistry.JoinPath("pypi", project, latestVersion, "json")
-		req, err := http.NewRequest(http.MethodGet, versionURL.String(), nil)
+		req, err := http.NewRequestWithContext(ctx, http.MethodGet, versionURL.String(), nil)
 		if err != nil {
 			return errors.Wrap(err, "creating request")
 		}

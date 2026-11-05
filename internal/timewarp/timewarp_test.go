@@ -5,10 +5,12 @@ package timewarp
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
 	"io"
 	"net/http"
 	"net/http/httptest"
+	"net/url"
 	"testing"
 
 	"github.com/google/go-cmp/cmp"
@@ -943,6 +945,122 @@ func TestHandler_ServeHTTP(t *testing.T) {
 			// Verify call count
 			if diff := cmp.Diff(len(tt.client.Calls), tt.client.CallCount()); diff != "" {
 				t.Errorf("unexpected number of calls (-want +got):\n%s", diff)
+			}
+		})
+	}
+}
+
+type clientFunc func(*http.Request) (*http.Response, error)
+
+func (f clientFunc) Do(r *http.Request) (*http.Response, error) { return f(r) }
+
+func TestHandler_UpstreamRequestContext(t *testing.T) {
+	type key struct{}
+	for _, tc := range []struct {
+		name         string
+		url          string
+		user, pass   string
+		headers      map[string]string
+		responses    map[string]string // By upstream URL. Any other URL gets a 404.
+		wantRequests int
+	}{
+		{
+			name:         "NPM",
+			url:          "http://localhost:8081/some-package",
+			user:         "npm",
+			pass:         "2022-01-01T00:00:00Z",
+			wantRequests: 1,
+		},
+		{
+			name: "PyPIProject",
+			url:  "http://localhost:8081/pypi/some-package/json",
+			user: "pypi",
+			pass: "2022-01-01T00:00:00Z",
+			responses: map[string]string{
+				"https://pypi.org/pypi/some-package/json":       `{"info": {"name": "some-package"}, "releases": {"1.0.0": [{"upload_time_iso_8601": "2021-06-01T00:00:00Z"}]}}`,
+				"https://pypi.org/pypi/some-package/1.0.0/json": `{"info": {"name": "some-package"}}`,
+			},
+			wantRequests: 2,
+		},
+		{
+			name: "RubyGemsCompactIndex",
+			url:  "http://localhost:8081/info/some-gem",
+			user: "rubygems",
+			pass: "2022-01-01T00:00:00Z",
+			responses: map[string]string{
+				"https://rubygems.org/info/some-gem":                 "---\n1.0.0 |checksum:abc123\n",
+				"https://rubygems.org/api/v1/versions/some-gem.json": `[{"number": "1.0.0", "platform": "ruby", "created_at": "2021-01-01T00:00:00Z"}]`,
+			},
+			wantRequests: 2,
+		},
+		{
+			name:         "RubyGemsProxy",
+			url:          "http://localhost:8081/gems/some-gem-1.0.0.gem",
+			user:         "rubygems",
+			pass:         "2022-01-01T00:00:00Z",
+			wantRequests: 1,
+		},
+		{
+			name:         "CargoGitArchive",
+			url:          "http://localhost:8081/index.git.tar",
+			user:         "cargogitarchive",
+			pass:         "abc1234",
+			headers:      map[string]string{"X-Package-Names": "serde"},
+			wantRequests: 1,
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			var requests int
+			client := clientFunc(func(r *http.Request) (*http.Response, error) {
+				requests++
+				if r.Context().Value(key{}) == nil {
+					t.Errorf("request to %s lost the client's context", r.URL)
+				}
+				if body, ok := tc.responses[r.URL.String()]; ok {
+					return &http.Response{StatusCode: http.StatusOK, Header: http.Header{"Content-Type": {"application/json"}}, Body: httpxtest.Body(body)}, nil
+				}
+				return &http.Response{StatusCode: http.StatusNotFound, Body: http.NoBody}, nil
+			})
+			req := httptest.NewRequest("GET", tc.url, nil).WithContext(context.WithValue(context.Background(), key{}, true))
+			req.SetBasicAuth(tc.user, tc.pass)
+			for k, v := range tc.headers {
+				req.Header.Set(k, v)
+			}
+			Handler{Client: client}.ServeHTTP(httptest.NewRecorder(), req)
+			if diff := cmp.Diff(tc.wantRequests, requests); diff != "" {
+				t.Errorf("unexpected number of requests (-want +got):\n%s", diff)
+			}
+		})
+	}
+}
+
+func TestHandler_ClientDisconnect(t *testing.T) {
+	client := clientFunc(func(r *http.Request) (*http.Response, error) {
+		return nil, &url.Error{Op: "Get", URL: r.URL.String(), Err: context.Canceled}
+	})
+	req := httptest.NewRequest("GET", "http://localhost:8081/some-package", nil)
+	req.SetBasicAuth("npm", "2022-01-01T00:00:00Z")
+	rr := httptest.NewRecorder()
+	Handler{Client: client}.ServeHTTP(rr, req)
+	if rr.Body.Len() != 0 {
+		t.Errorf("wrote %q to a disconnected client", rr.Body)
+	}
+}
+
+func TestHandler_UnparseableUpstreamURL(t *testing.T) {
+	for _, tc := range []struct{ name, url, user string }{
+		{"NPM", "http://localhost:8081/some-package?x#%zz", "npm"},
+		{"PyPI", "http://localhost:8081/pypi/some-package/json?x#%zz", "pypi"},
+		{"RubyGems", "http://localhost:8081/info/some-gem?x#%zz", "rubygems"},
+		{"RubyGemsProxy", "http://localhost:8081/versions?x#%zz", "rubygems"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			req := httptest.NewRequest("GET", tc.url, nil)
+			req.SetBasicAuth(tc.user, "2022-01-01T00:00:00Z")
+			rr := httptest.NewRecorder()
+			Handler{Client: &httpxtest.MockClient{}}.ServeHTTP(rr, req)
+			if rr.Code != http.StatusBadRequest {
+				t.Errorf("status = %d, want %d", rr.Code, http.StatusBadRequest)
 			}
 		})
 	}

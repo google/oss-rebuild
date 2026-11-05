@@ -4,6 +4,7 @@
 package timewarp
 
 import (
+	"context"
 	"encoding/json"
 	"io"
 	"log"
@@ -32,7 +33,10 @@ func (h Handler) handleRubyGems(rw http.ResponseWriter, r *http.Request, t *time
 		// timewarp, which breaks time-filtering.
 		return h.proxyUpstream(rw, r)
 	}
-	nr, _ := http.NewRequest(r.Method, r.URL.String(), r.Body)
+	nr, err := http.NewRequestWithContext(r.Context(), r.Method, r.URL.String(), r.Body)
+	if err != nil {
+		return herror{errors.Wrap(err, "creating upstream request"), http.StatusBadRequest}
+	}
 	nr.Header = r.Header.Clone()
 	// Remove the basic auth header set with the timewarp params.
 	nr.Header.Del("Authorization")
@@ -60,7 +64,7 @@ func (h Handler) handleRubyGems(rw http.ResponseWriter, r *http.Request, t *time
 		return herror{errors.Wrap(err, "reading response"), http.StatusBadGateway}
 	}
 	gemName := parts[len(parts)-1]
-	filtered, err := h.timeWarpRubyGemsCompactIndexRequest(gemName, string(body), *t)
+	filtered, err := h.timeWarpRubyGemsCompactIndexRequest(r.Context(), gemName, string(body), *t)
 	if err != nil {
 		return herror{errors.Wrap(err, "warping response"), http.StatusBadGateway}
 	}
@@ -73,7 +77,10 @@ func (h Handler) handleRubyGems(rw http.ResponseWriter, r *http.Request, t *time
 
 // proxyUpstream forwards a request to the upstream registry without time filtering.
 func (h Handler) proxyUpstream(rw http.ResponseWriter, r *http.Request) error {
-	nr, _ := http.NewRequest(r.Method, r.URL.String(), r.Body)
+	nr, err := http.NewRequestWithContext(r.Context(), r.Method, r.URL.String(), r.Body)
+	if err != nil {
+		return herror{errors.Wrap(err, "creating upstream request"), http.StatusBadRequest}
+	}
 	nr.Header = r.Header.Clone()
 	// Remove the basic auth header set with the timewarp params.
 	nr.Header.Del("Authorization")
@@ -100,10 +107,10 @@ func (h Handler) proxyUpstream(rw http.ResponseWriter, r *http.Request) error {
 // exclude versions published after "at". The compact index format has one line per
 // version: "VERSION DEPS|checksum:SHA,ruby:CONSTRAINT". Since the compact index
 // doesn't include timestamps, we fetch them from the versions API.
-func (h Handler) timeWarpRubyGemsCompactIndexRequest(gemName, body string, at time.Time) (string, error) {
+func (h Handler) timeWarpRubyGemsCompactIndexRequest(ctx context.Context, gemName, body string, at time.Time) (string, error) {
 	// Fetch version timestamps from the versions API.
 	versionsURL := rubygemsRegistry.JoinPath("api/v1/versions", gemName+".json")
-	req, err := http.NewRequest(http.MethodGet, versionsURL.String(), nil)
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, versionsURL.String(), nil)
 	if err != nil {
 		return "", errors.Wrap(err, "creating versions request")
 	}

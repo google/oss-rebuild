@@ -13,6 +13,7 @@
 package timewarp
 
 import (
+	"context"
 	"log"
 	"net/http"
 	"net/url"
@@ -64,9 +65,9 @@ type herror struct {
 	status int
 }
 
-// isClientDisconnect checks if the error is due to client disconnecting (broken pipe or connection reset)
+// isClientDisconnect reports whether the error comes from the client hanging up, which also cancels the request's context.
 func isClientDisconnect(err error) bool {
-	return errors.Is(err, syscall.EPIPE) || errors.Is(err, syscall.ECONNRESET)
+	return errors.Is(err, syscall.EPIPE) || errors.Is(err, syscall.ECONNRESET) || errors.Is(err, context.Canceled)
 }
 
 func (h Handler) ServeHTTP(rw http.ResponseWriter, r *http.Request) {
