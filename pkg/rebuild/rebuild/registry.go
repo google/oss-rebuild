@@ -27,7 +27,7 @@ type RegistryMux struct {
 }
 
 // RegistryMuxWithCache returns a new RegistryMux with the provided cache wrapping each registry.
-func RegistryMuxWithCache(registry RegistryMux, c cacheinternal.Cache) (RegistryMux, error) {
+func RegistryMuxWithCache(registry RegistryMux, c cacheinternal.Cache[string, []byte]) (RegistryMux, error) {
 	var newmux RegistryMux
 	if httpreg, ok := registry.NPM.(npm.HTTPRegistry); ok {
 		newmux.NPM = npm.HTTPRegistry{Client: httpx.NewCachedClient(httpreg.Client, c)}

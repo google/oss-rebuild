@@ -91,7 +91,7 @@ func analyzeRebuild(ctx context.Context, t rebuild.Target, timeout time.Duration
 		return nil, errors.Wrap(err, "extracting strategy from attestation")
 	}
 	ctx = context.WithValue(ctx, rebuild.HTTPBasicClientID, deps.HTTPClient)
-	mux := meta.NewRegistryMux(httpx.NewCachedClient(deps.HTTPClient, &cache.CoalescingMemoryCache{}))
+	mux := meta.NewRegistryMux(httpx.NewCachedClient(deps.HTTPClient, &cache.CoalescingMemoryCache[string, []byte]{}))
 	id, err := executeSystemTraceRebuild(ctx, deps, t, strategy, rebuildAttestation, timeout)
 	if err != nil {
 		return nil, errors.Wrap(err, "system trace rebuild failed")

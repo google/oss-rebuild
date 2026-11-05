@@ -37,11 +37,11 @@ func (c *WithUserAgent) Do(req *http.Request) (*http.Response, error) {
 // CachedClient is a BasicClient that caches responses.
 type CachedClient struct {
 	BasicClient
-	ch cache.Cache
+	ch cache.Cache[string, []byte]
 }
 
 // NewCachedClient returns a new CachedClient.
-func NewCachedClient(client BasicClient, c cache.Cache) *CachedClient {
+func NewCachedClient(client BasicClient, c cache.Cache[string, []byte]) *CachedClient {
 	return &CachedClient{client, c}
 }
 
@@ -62,13 +62,13 @@ func (cc *CachedClient) Do(req *http.Request) (*http.Response, error) {
 			return nil, err
 		}
 		if isServer := (resp.StatusCode >= 500 && resp.StatusCode <= 599); !isServer {
-			cc.ch.Set(req.URL.String(), func() (any, error) { return foo.Bytes(), nil })
+			cc.ch.Set(req.URL.String(), func() ([]byte, error) { return foo.Bytes(), nil })
 		}
 		respBytes = foo.Bytes()
 	} else if err != nil {
 		return nil, err
 	}
-	return http.ReadResponse(bufio.NewReader(bytes.NewReader(respBytes.([]byte))), req)
+	return http.ReadResponse(bufio.NewReader(bytes.NewReader(respBytes)), req)
 }
 
 var _ BasicClient = &CachedClient{}

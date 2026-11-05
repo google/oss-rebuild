@@ -118,7 +118,7 @@ func Infer(ctx context.Context, req schema.InferenceRequest, deps *InferDeps) (*
 		ctx = context.WithValue(ctx, rebuild.CratesRegistryStubID, deps.CratesRegistryStub)
 	}
 	// Cache this request's registry responses for repo and strategy inference.
-	mux := meta.NewRegistryMux(httpx.NewCachedClient(deps.HTTPClient, &cache.CoalescingMemoryCache{}))
+	mux := meta.NewRegistryMux(httpx.NewCachedClient(deps.HTTPClient, &cache.CoalescingMemoryCache[string, []byte]{}))
 	if deps.CratesCache != nil {
 		mux.CratesIO = deps.CratesCache.BackedBy(mux.CratesIO)
 	}
