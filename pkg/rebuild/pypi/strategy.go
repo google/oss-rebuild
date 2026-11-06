@@ -146,6 +146,9 @@ type PlatformWheelBuild struct {
 	BaseImage string `json:"base_image,omitempty" yaml:"base_image,omitempty"`
 	// BuildRoot is the absolute path the build is run from, when set.
 	BuildRoot string `json:"build_root,omitempty" yaml:"build_root,omitempty"`
+	// RustVersion is the pinned rustc release (such as "1.97.1") to install when
+	// the wheel compiles Rust extensions. Empty means no Rust toolchain is installed.
+	RustVersion string `json:"rust_version,omitempty" yaml:"rust_version,omitempty"`
 }
 
 var _ rebuild.Strategy = &PlatformWheelBuild{}
@@ -202,6 +205,37 @@ func (b *PlatformWheelBuild) ToWorkflow() (*rebuild.WorkflowStrategy, error) {
 	if !slices.IsSorted(strings.Split(b.PlatformTag, ".")) {
 		nonCanonicalName = "1"
 	}
+	depsSteps := []flow.Step{{
+		Uses: "pypi/deps/platform-wheel",
+		With: map[string]string{
+			"registryTime": registryTime,
+			"requirements": flow.MustToJSON(b.Requirements),
+			"pythonTag":    b.PythonTag,
+			"abiTag":       b.ABITag,
+			"venv":         "/deps",
+			"wheelCli":     "/deps/wheel-cli",
+		},
+	}}
+	var rustHostTriple string
+	if b.RustVersion != "" {
+		if !validRustVersionPat.MatchString(b.RustVersion) {
+			return nil, errors.Errorf("invalid rust version %q", b.RustVersion)
+		}
+		host, err := rustHostForPlatform(b.PlatformTag)
+		if err != nil {
+			return nil, errors.Wrap(err, "selecting rust toolchain host")
+		}
+		rustHostTriple = host.triple
+		depsSteps = append(depsSteps, flow.Step{
+			Uses: "pypi/install-rust",
+			With: map[string]string{
+				"version":       b.RustVersion,
+				"host":          host.triple,
+				"rustupVersion": rustupVersion,
+				"rustupSHA256":  host.rustupSHA256,
+			},
+		})
+	}
 	return &rebuild.WorkflowStrategy{
 		Location: b.Location,
 		Requires: rebuild.RequiredEnv{
@@ -211,17 +245,7 @@ func (b *PlatformWheelBuild) ToWorkflow() (*rebuild.WorkflowStrategy, error) {
 		Source: []flow.Step{{
 			Uses: "git-checkout",
 		}},
-		Deps: []flow.Step{{
-			Uses: "pypi/deps/platform-wheel",
-			With: map[string]string{
-				"registryTime": registryTime,
-				"requirements": flow.MustToJSON(b.Requirements),
-				"pythonTag":    b.PythonTag,
-				"abiTag":       b.ABITag,
-				"venv":         "/deps",
-				"wheelCli":     "/deps/wheel-cli",
-			},
-		}},
+		Deps: depsSteps,
 		Build: []flow.Step{{
 			Uses: "pypi/build/platform-wheel",
 			With: map[string]string{
@@ -236,6 +260,8 @@ func (b *PlatformWheelBuild) ToWorkflow() (*rebuild.WorkflowStrategy, error) {
 				"highestPlatformTag": platform.HighestLibcTagString(b.PlatformTag),
 				"targetPlatformTag":  b.PlatformTag,
 				"nonCanonicalName":   nonCanonicalName,
+				"rustVersion":        b.RustVersion,
+				"rustHost":           rustHostTriple,
 			},
 		}},
 		OutputDir: distDir,
@@ -300,6 +326,21 @@ var toolkit = []*flow.Tool{
 			Runs: textwrap.Dedent(`
 				{{range $i, $req := .With.requirements | fromJSON}}{{if $i}}
 				{{end}}{{$.With.locator}}pip install '{{regexReplace $req "'" "'\\''"}}'{{end}}`)[1:],
+		}},
+	},
+	{
+		Name: "pypi/install-rust",
+		Steps: []flow.Step{{
+			// NOTE: CARGO_HOME and RUSTUP_HOME must match pypi/build/platform-wheel.
+			// Installing under /root/.cargo and /root/.rustup makes crate registry
+			// source paths embedded in .rodata match upstream PyPA container builds.
+			Runs: textwrap.Dedent(`
+				wget -O rustup-init https://static.rust-lang.org/rustup/archive/{{.With.rustupVersion}}/{{.With.host}}/rustup-init
+				echo '{{.With.rustupSHA256}}  rustup-init' | sha256sum -c -
+				chmod +x rustup-init
+				CARGO_HOME=/root/.cargo RUSTUP_HOME=/root/.rustup ./rustup-init -y --profile minimal --default-toolchain {{.With.version}} --no-modify-path
+				rm -f rustup-init`)[1:],
+			Needs: []string{"wget"},
 		}},
 	},
 
@@ -398,6 +439,10 @@ var toolkit = []*flow.Tool{
 		Name: "pypi/build/platform-wheel",
 		Steps: []flow.Step{{
 			Runs: textwrap.Dedent(`
+				{{- if .With.rustVersion -}}
+				{{- /* NOTE: CARGO_HOME, RUSTUP_HOME, and PATH must match pypi/install-rust. */ -}}
+				export CARGO_HOME=/root/.cargo RUSTUP_HOME=/root/.rustup RUSTUP_TOOLCHAIN={{.With.rustVersion}} PATH=/root/.rustup/toolchains/{{.With.rustVersion}}-{{.With.rustHost}}/bin:/root/.cargo/bin:$PATH
+				{{end -}}
 				{{if .With.buildRoot -}}
 				{{- /* NOTE: No -p on the root so the copy can't merge into an existing directory. */ -}}
 				mkdir -p $(dirname {{.With.buildRoot}})

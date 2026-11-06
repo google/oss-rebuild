@@ -204,6 +204,7 @@ func formatLibraryDeps(soname string, libc platform.LibcImpl) []string {
 // manager.
 func inferELFSystemDeps(zr *zip.Reader, libc platform.LibcImpl) ([]string, error) {
 	var rawCandidates []string
+	var needsSystemLLD bool
 	internalLibs := make(map[string]bool)
 	for _, f := range zr.File {
 		if f.FileInfo().IsDir() || f.UncompressedSize64 > maxELFFileSize {
@@ -235,6 +236,9 @@ func inferELFSystemDeps(zr *zip.Reader, libc platform.LibcImpl) ([]string, error
 		} else {
 			internalLibs[unbundledSoname(baseName)] = true
 			internalLibs[unbundledSoname(cand)] = true
+			if libc == platform.Musl && hasSystemLLDComment(ef) {
+				needsSystemLLD = true
+			}
 		}
 		if imported, err := ef.ImportedLibraries(); err == nil {
 			rawCandidates = append(rawCandidates, imported...)
@@ -248,7 +252,59 @@ func inferELFSystemDeps(zr *zip.Reader, libc platform.LibcImpl) ([]string, error
 		}
 		deps = appendUnique(deps, formatLibraryDeps(soname, libc)...)
 	}
+	if needsSystemLLD {
+		deps = appendUnique(deps, "lld")
+	}
 	return deps, nil
+}
+
+// hasSystemLLDComment reports whether an ELF file's .comment section records
+// a system LLD linker rather than rustup's bundled rust-lld.
+// NOTE: rustup's bundled rust-lld is built from Rust CI and stamps
+// "Linker: LLD 21.1.8 (/checkout/src/llvm-project/llvm <sha>)", whereas a
+// distro lld stamps "Linker: LLD 20.1.8" without that source checkout path.
+// Only musllinux is handled at the call site because rustc on
+// x86_64-unknown-linux-musl invokes ld.lld for cdylib targets, while manylinux
+// targets link with the container's default gcc toolchain.
+func hasSystemLLDComment(ef *elf.File) bool {
+	sec := ef.Section(".comment")
+	if sec == nil {
+		return false
+	}
+	comment, err := sec.Data()
+	if err != nil {
+		return false
+	}
+	for _, entry := range bytes.Split(comment, []byte{0}) {
+		s := strings.TrimSpace(string(entry))
+		if strings.HasPrefix(s, "Linker: LLD") && !strings.Contains(s, "/checkout/src/llvm-project") {
+			return true
+		}
+	}
+	return false
+}
+
+// mergeSystemDeps appends ELF-inferred dependencies whose package name is not
+// already specified in dst. On Alpine, apk keys world constraints by package
+// name, so a trailing unpinned package from ELF inspection would overwrite an
+// earlier version pin from a cibuildwheel hook.
+func mergeSystemDeps(dst, elfDeps []string) []string {
+	for _, dep := range elfDeps {
+		name := packageSpecName(dep)
+		if !slices.ContainsFunc(dst, func(existing string) bool {
+			return packageSpecName(existing) == name
+		}) {
+			dst = append(dst, dep)
+		}
+	}
+	return dst
+}
+
+func packageSpecName(spec string) string {
+	if m := packageSpecPat.FindStringSubmatch(spec); m != nil {
+		return m[1]
+	}
+	return spec
 }
 
 func appendUnique(dst []string, src ...string) []string {
