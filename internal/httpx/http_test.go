@@ -162,7 +162,7 @@ func TestCachedClient(t *testing.T) {
 				Calls:             tc.callsToBaseClient,
 				SkipURLValidation: true,
 			}
-			cached := NewCachedClient(basic, &cache.CoalescingMemoryCache{})
+			cached := NewCachedClient(basic, &cache.CoalescingMemoryCache[string, []byte]{})
 			for i, call := range tc.callsToCache {
 				resp, err := cached.Do(call.Request())
 				if (err != nil) != (call.Error != nil) {
