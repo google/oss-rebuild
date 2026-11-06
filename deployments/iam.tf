@@ -248,6 +248,15 @@ resource "google_cloud_run_v2_job_iam_member" "cron-runs-snapshot-rollup" {
   role     = "roles/run.invoker"
   member   = google_service_account.cron.member
 }
+# Scratch-mode agent sessions infer on the inference services.
+resource "google_cloud_run_v2_service_iam_member" "agent-calls-inference" {
+  for_each = google_cloud_run_v2_service.inference
+  location = each.value.location
+  project  = each.value.project
+  name     = each.value.name
+  role     = "roles/run.invoker"
+  member   = google_service_account.agent-job.member
+}
 resource "google_cloud_run_v2_service_iam_member" "orchestrator-calls-inference" {
   for_each = google_cloud_run_v2_service.inference
   location = each.value.location

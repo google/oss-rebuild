@@ -38,6 +38,8 @@ type AgentCreateDeps struct {
 	GitCacheURL         string
 	CratesRegistryURL   string // Forwarded to agent jobs so inference can resolve crates.io index commits.
 	AgentMaxRepoBytes   int64  // Forwarded to agent jobs as their git-cache fetch budget. 0 sets no limit.
+	InferenceURL        string // Forwarded to scratch-mode agent jobs. Empty infers in the job.
+	JumboInferenceURL   string // Forwarded to scratch-mode agent jobs.
 	AgentTimeoutSeconds int
 	SessionsBucket      string
 	MetadataBucket      string
@@ -193,6 +195,7 @@ func AgentCreate(ctx context.Context, req schema.AgentCreateRequest, deps *Agent
 			args = append(args, "--seed="+string(b))
 		}
 		if executionMode == schema.AgentExecutionModeScratch {
+			args = append(args, inferenceArgs(req.MachineClass, deps)...)
 			args = append(args,
 				"--execution-mode="+string(schema.AgentExecutionModeScratch),
 				"--freeform",
@@ -243,4 +246,19 @@ func AgentCreate(ctx context.Context, req schema.AgentCreateRequest, deps *Agent
 		ExeuctionName: session.ExecutionName,
 		ScratchID:     session.ScratchID,
 	}, nil
+}
+
+func inferenceArgs(class schema.MachineClass, deps *AgentCreateDeps) []string {
+	if deps.InferenceURL == "" {
+		return nil
+	}
+	args := []string{"--inference-url=" + deps.InferenceURL}
+	if deps.JumboInferenceURL == "" {
+		return args
+	}
+	args = append(args, "--jumbo-inference-url="+deps.JumboInferenceURL)
+	if class == schema.MachineClassJumbo {
+		args = append(args, "--jumbo")
+	}
+	return args
 }
