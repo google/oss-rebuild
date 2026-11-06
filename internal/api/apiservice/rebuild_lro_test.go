@@ -15,6 +15,7 @@ import (
 	"time"
 
 	"github.com/go-git/go-billy/v5/memfs"
+	"github.com/google/go-cmp/cmp"
 	"github.com/google/oss-rebuild/internal/db"
 	"github.com/google/oss-rebuild/internal/httpx/httpxtest"
 	"github.com/google/oss-rebuild/pkg/archive"
@@ -25,6 +26,7 @@ import (
 	"github.com/google/oss-rebuild/pkg/rebuild/pypi"
 	"github.com/google/oss-rebuild/pkg/rebuild/rebuild"
 	"github.com/google/oss-rebuild/pkg/rebuild/schema"
+	"github.com/pkg/errors"
 	"github.com/secure-systems-lab/go-securesystemslib/dsse"
 	"google.golang.org/api/cloudbuild/v1"
 	"google.golang.org/api/run/v2"
@@ -100,6 +102,59 @@ func TestCreateAndGetRebuildOp(t *testing.T) {
 	}
 	if got.Result == nil || got.Result.Message != "success" {
 		t.Errorf("expected success result, got %+v", got.Result)
+	}
+}
+
+func TestCreateRebuildOpEnqueues(t *testing.T) {
+	ctx := context.Background()
+	req := schema.RebuildPackageRequest{
+		Ecosystem:     rebuild.CratesIO,
+		Package:       "serde",
+		ID:            "run-id",
+		Version:       "1.0.150",
+		Artifact:      "serde-1.0.150.crate",
+		ExecutionHint: schema.ExtendedExecution,
+	}
+	cfg := schema.RebuildDepsConfig{Host: "test", AssetBucket: "assets"}
+	for _, tc := range []struct {
+		name       string
+		enqueueErr error
+		wantStatus schema.RebuildStatus
+	}{
+		{name: "Queued", wantStatus: schema.RebuildStatusRunning},
+		{name: "QueueFailure", enqueueErr: errors.New("unavailable"), wantStatus: schema.RebuildStatusError},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			attempts := db.NewMemoryAttempts()
+			var got []BuildTask
+			deps := &CreateRebuildOpDeps{
+				Attempts:   attempts,
+				DepsConfig: cfg,
+				RunJob: func(context.Context, string, *run.GoogleCloudRunV2RunJobRequest) (*run.GoogleLongrunningOperation, error) {
+					t.Fatal("rebuild job launched despite a build queue")
+					return nil, nil
+				},
+				Enqueue: func(_ context.Context, task BuildTask) error {
+					got = append(got, task)
+					return tc.enqueueErr
+				},
+			}
+			_, err := CreateRebuildOp(ctx, req, deps)
+			if (err != nil) != (tc.enqueueErr != nil) {
+				t.Fatalf("CreateRebuildOp() error = %v, want error %v", err, tc.enqueueErr != nil)
+			}
+			want := []BuildTask{{OpID: "cratesio/serde/1.0.150/serde-1.0.150.crate/run-id", Request: req, Deps: cfg}}
+			if diff := cmp.Diff(want, got); diff != "" {
+				t.Errorf("queued tasks diff (-want +got):\n%s", diff)
+			}
+			attempt, err := attempts.Get(ctx, db.AttemptKey{Target: rebuild.Target{Ecosystem: req.Ecosystem, Package: req.Package, Version: req.Version, Artifact: req.Artifact}, RunID: req.ID})
+			if err != nil {
+				t.Fatal(err)
+			}
+			if attempt.Status != tc.wantStatus {
+				t.Errorf("attempt status = %s, want %s", attempt.Status, tc.wantStatus)
+			}
+		})
 	}
 }
 

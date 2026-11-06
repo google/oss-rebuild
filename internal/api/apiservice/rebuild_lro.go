@@ -92,6 +92,7 @@ type CreateRebuildOpDeps struct {
 	JobName    string
 	DepsConfig schema.RebuildDepsConfig
 	DepsFunc   func(context.Context, *schema.RebuildDepsConfig) (*RebuildPackageDeps, error)
+	Enqueue    func(context.Context, BuildTask) error // nil runs one job execution per rebuild
 }
 
 // BuildTask is an extended rebuild queued for a build worker: what a rebuild
@@ -142,10 +143,16 @@ func CreateRebuildOp(
 			return nil, err
 		}
 
-		if err := launchRebuildJob(ctx, deps.RunJob, deps.DepsConfig, opID, req, deps.Project, deps.Location, deps.JobName); err != nil {
+		var err error
+		if deps.Enqueue != nil {
+			err = errors.Wrap(deps.Enqueue(ctx, BuildTask{OpID: opID, Request: req, Deps: deps.DepsConfig}), "queueing rebuild")
+		} else {
+			err = errors.Wrap(launchRebuildJob(ctx, deps.RunJob, deps.DepsConfig, opID, req, deps.Project, deps.Location, deps.JobName), "launching rebuild job")
+		}
+		if err != nil {
 			// Best-effort mark the attempt as failed.
 			attempt.Status = schema.RebuildStatusError
-			attempt.Message = "failed to launch rebuild job: " + err.Error()
+			attempt.Message = "failed to start rebuild: " + err.Error()
 			attempt.Updated = time.Now().UTC()
 			_ = deps.Attempts.Update(ctx, attempt)
 			return nil, err
