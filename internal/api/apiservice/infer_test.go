@@ -8,6 +8,7 @@ import (
 	"errors"
 	"slices"
 	"testing"
+	"time"
 
 	"github.com/google/oss-rebuild/pkg/act/api"
 	"github.com/google/oss-rebuild/pkg/rebuild/rebuild"
@@ -119,5 +120,41 @@ func TestGetStrategyRecordsInferringServiceVersion(t *testing.T) {
 				t.Errorf("version asks = %v, want %v", asks, tc.wantAsks)
 			}
 		})
+	}
+}
+
+func TestInferJumboWaitsForRoom(t *testing.T) {
+	orig := jumboRetryDelay
+	jumboRetryDelay = time.Millisecond
+	defer func() { jumboRetryDelay = orig }()
+	var calls int
+	jumboStub := func(context.Context, schema.InferenceRequest) (*schema.StrategyOneOf, error) {
+		calls++
+		switch calls {
+		case 1:
+			return nil, api.ErrExhausted
+		case 2:
+			return nil, errors.New("fetching version: " + api.ErrExhausted.Error())
+		case 3:
+			return nil, errors.New("non-OK response: 500 Internal Server Error: The request was aborted because there was no available instance.")
+		}
+		return &schema.StrategyOneOf{}, nil
+	}
+	if _, err := infer(context.Background(), nil, jumboStub, schema.InferenceRequest{Package: "p", Version: "1"}, schema.JumboSize); err != nil {
+		t.Fatalf("infer() = %v", err)
+	}
+	if calls != 4 {
+		t.Errorf("jumbo calls = %d, want 4 (three turned away for room)", calls)
+	}
+}
+
+func TestInferJumboStopsWaitingWithContext(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+	jumboStub := func(context.Context, schema.InferenceRequest) (*schema.StrategyOneOf, error) {
+		return nil, api.ErrExhausted
+	}
+	if _, err := infer(ctx, nil, jumboStub, schema.InferenceRequest{Package: "p", Version: "1"}, schema.JumboSize); !errors.Is(err, context.Canceled) {
+		t.Fatalf("infer() = %v, want context.Canceled", err)
 	}
 }

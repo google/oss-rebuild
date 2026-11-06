@@ -209,7 +209,7 @@ locals {
       memory_gib     = 32
       max_repo_gib   = 7
       timeout_s      = 30 * 60
-      instances      = 20
+      instances      = 40
       concurrency    = 1  // takes what standard refuses for size
       gomemlimit_gib = 24 // collect before the instance runs out
     }
