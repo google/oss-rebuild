@@ -708,10 +708,7 @@ var scikitBuildCorePat = re.MustCompile(`^Generator: scikit-build-core \(?([\d\.
 // Generator line. bdist_wheel names the wheel packaging tool, not setuptools,
 // whose version is instead bounded by the metadata era.
 func getGenerator(wheel, metadata []byte) (reqs []string, err error) {
-	var eol int
-	for i := 0; i < len(wheel); i = eol + 1 {
-		eol = bytes.IndexRune(wheel[i:], '\n')
-		line := wheel[i : i+eol+1]
+	for line := range bytes.Lines(wheel) {
 		sep := bytes.IndexRune(line, ':')
 		if sep == -1 {
 			// Each line in a WHEEL file has a `key: value` format.

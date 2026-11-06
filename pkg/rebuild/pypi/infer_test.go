@@ -676,6 +676,26 @@ func TestBackendRequirements(t *testing.T) {
 	}
 }
 
+func TestGetGenerator(t *testing.T) {
+	for _, tc := range []struct {
+		wheel   string
+		want    []string
+		wantErr bool
+	}{
+		{wheel: "Wheel-Version: 1.0\nGenerator: hatchling 1.21.1\nRoot-Is-Purelib: true\n", want: []string{"hatchling==1.21.1"}},
+		// The Generator line need not come first or second.
+		{wheel: "Wheel-Version: 1.0\nRoot-Is-Purelib: true\nTag: py3-none-any\nGenerator: hatchling 1.21.1\n", want: []string{"hatchling==1.21.1"}},
+		// The last line need not end in a newline.
+		{wheel: "Wheel-Version: 1.0\nGenerator: hatchling 1.21.1", want: []string{"hatchling==1.21.1"}},
+		{wheel: "Wheel-Version: 1.0\nRoot-Is-Purelib: true\nTag: py3-none-any\n", wantErr: true},
+	} {
+		got, err := getGenerator([]byte(tc.wheel), nil)
+		if (err != nil) != tc.wantErr || !cmp.Equal(got, tc.want) {
+			t.Errorf("getGenerator(%q) = %v, %v, want %v (error %t)", tc.wheel, got, err, tc.want, tc.wantErr)
+		}
+	}
+}
+
 // testPins is a cibuildwheel pin table with the shapes that inference has to
 // handle: a pin whose tag expired before its digest was recorded, and a
 // maintenance release of an older major version published after a newer one.
