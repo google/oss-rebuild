@@ -829,6 +829,7 @@ func TestNeedsVenvOnPath(t *testing.T) {
 		{"UVBuild", []string{"uv-build==0.10.0"}, "1"},
 		{"MesonPython", []string{"meson-python>=0.15.0"}, "1"},
 		{"ScikitBuildCore", []string{"scikit-build-core==0.10.7"}, "1"},
+		{"Maturin", []string{"maturin==1.13.1"}, "1"},
 		{"SetuptoolsOnly", []string{"setuptools>=61", "wheel"}, ""},
 	} {
 		t.Run(tc.name, func(t *testing.T) {

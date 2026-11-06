@@ -703,6 +703,7 @@ var pdmBackendPat = re.MustCompile(`^Generator: pdm-backend \(([\d\.]+)\)`)
 var uvBuildPat = re.MustCompile(`^Generator: uv ([\d\.]+)`)
 var mesonPat = re.MustCompile(`^Generator: meson(?: \(?([\d\.]+)\)?)?\s*$`)
 var scikitBuildCorePat = re.MustCompile(`^Generator: scikit-build-core \(?([\d\.]+)\)?`)
+var maturinPat = re.MustCompile(`^Generator: maturin \(([\d\.]+)\)`)
 
 // getGenerator returns the pins identifying the wheel's build backend from its
 // Generator line. bdist_wheel names the wheel packaging tool, not setuptools,
@@ -742,6 +743,8 @@ func getGenerator(wheel, metadata []byte) (reqs []string, err error) {
 				return []string{}, nil
 			} else if matches := scikitBuildCorePat.FindSubmatch(line); matches != nil {
 				return []string{"scikit-build-core==" + string(matches[1])}, nil
+			} else if matches := maturinPat.FindSubmatch(line); matches != nil {
+				return []string{"maturin==" + string(matches[1])}, nil
 			} else {
 				return nil, errors.Errorf("unsupported generator: %s", value)
 			}
