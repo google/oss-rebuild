@@ -372,6 +372,25 @@ resource "google_pubsub_topic" "attestation-topic" {
   name = "oss-rebuild-attestation-topic"
 }
 
+# Extended rebuilds the API queues for the build workers.
+resource "google_pubsub_topic" "build-tasks" {
+  name = "build-tasks"
+}
+
+# A worker extends a task's lease through its rebuild, then acks it.
+resource "google_pubsub_subscription" "build-workers" {
+  name                 = "build-workers"
+  topic                = google_pubsub_topic.build-tasks.id
+  ack_deadline_seconds = 60
+  expiration_policy {
+    ttl = "" # never expire
+  }
+  retry_policy {
+    minimum_backoff = "10s"
+    maximum_backoff = "600s"
+  }
+}
+
 resource "google_storage_notification" "attestation-notification" {
   bucket         = google_storage_bucket.attestations.name
   payload_format = "JSON_API_V1"
