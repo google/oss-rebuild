@@ -186,3 +186,28 @@ func HighestLibcTagString(platformTags string) string {
 	}
 	return highest.Raw
 }
+
+// Policy returns the PEP 600/656 or legacy policy name without the architecture suffix
+// (e.g. "manylinux_2_17_x86_64" -> "manylinux_2_17", "manylinux2014_x86_64" -> "manylinux2014").
+func (t Tag) Policy() string {
+	if t.Arch != "" {
+		return strings.TrimSuffix(t.Raw, "_"+t.Arch)
+	}
+	return t.Raw
+}
+
+// HighestPolicy parses raw platform tags and returns the policy name (without architecture suffix)
+// of the tag with the highest associated libc version. This format is required by tools like
+// `maturin build --compatibility`, which accept policy names like `manylinux_2_17` or `musllinux_1_2`
+// rather than full architecture-suffixed tags.
+func HighestPolicy(platformTags string) (string, error) {
+	tags, err := ParsePlatformTags(platformTags)
+	if err != nil {
+		return "", err
+	}
+	highest, err := HighestLibcVersionTag(tags)
+	if err != nil {
+		return "", err
+	}
+	return highest.Policy(), nil
+}
