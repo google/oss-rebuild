@@ -25,6 +25,7 @@ type ProjectMetadata struct {
 type CibuildwheelHooks struct {
 	BeforeAll   any `toml:"before-all"`
 	BeforeBuild any `toml:"before-build"`
+	Environment any `toml:"environment"`
 }
 
 // CibuildwheelOverride represents an entry in [[tool.cibuildwheel.overrides]].
@@ -44,7 +45,8 @@ type CibuildwheelConfig struct {
 type PyProject struct {
 	Project     ProjectMetadata `toml:"project"`
 	BuildSystem struct {
-		Requires []string `toml:"requires"`
+		Requires    []string `toml:"requires"`
+		BackendPath any      `toml:"backend-path"`
 	} `toml:"build-system"`
 	Tool struct {
 		Poetry       ProjectMetadata    `toml:"poetry"`
