@@ -548,11 +548,11 @@ func inferBuild(ctx context.Context, t rebuild.Target, mux rebuild.RegistryMux, 
 		} else {
 			sysDeps = appendUnique(sysDeps, elfDeps...)
 		}
-		cibwSpecs, err := extractCibuildwheelSpecs(tree)
+		cibwSpecs, usesCibw, err := extractCibuildwheelSpecs(tree)
 		if err != nil {
 			return nil, errors.Wrap(err, "extracting cibuildwheel specs")
 		}
-		buildRoot, err := inferBuildRoot(zr, tree)
+		buildRoot, err := inferBuildRoot(zr, tree, usesCibw)
 		if err != nil {
 			return nil, errors.Wrap(err, "inferring build root")
 		}
@@ -625,11 +625,11 @@ func inferBaseImage(pins platform.CibuildwheelPinTable, platformTag string, uplo
 }
 
 // inferBuildRoot returns the absolute path that upstream built the repository
-// at, as recorded in the wheel's extension modules, from DWARF debug info if
-// present or .rodata source paths if stripped. It returns an empty string,
-// which builds in the checkout, if the wheel records no usable root or the
-// checkout itself.
-func inferBuildRoot(zr *zip.Reader, tree *git2.Tree) (string, error) {
+// at, or "" to build in the checkout. In order of precedence:
+//  1. The root recorded in DWARF debug info.
+//  2. The root recorded in .rodata source paths.
+//  3. cibuildwheel's project directory, if the project's CI runs cibuildwheel.
+func inferBuildRoot(zr *zip.Reader, tree *git2.Tree, usesCibuildwheel bool) (string, error) {
 	files, err := repoFiles(tree)
 	if err != nil {
 		return "", errors.Wrap(err, "listing repository files")
@@ -642,15 +642,18 @@ func inferBuildRoot(zr *zip.Reader, tree *git2.Tree) (string, error) {
 	if root == "" {
 		root, source = mostCommonRoot(rodataRoots), ".rodata"
 	}
-	switch root {
-	case "":
-		return "", nil
-	case checkoutDir:
+	switch {
+	case root == checkoutDir:
 		log.Printf("Upstream built in %s (from %s), which is the checkout, so no build root is needed", root, source)
 		return "", nil
-	default:
+	case root != "":
 		log.Printf("Using build root %s from %s", root, source)
 		return root, nil
+	case usesCibuildwheel:
+		log.Printf("No build root in the wheel, using %s, where cibuildwheel copies the project", cibuildwheelProjectDir)
+		return cibuildwheelProjectDir, nil
+	default:
+		return "", nil
 	}
 }
 
