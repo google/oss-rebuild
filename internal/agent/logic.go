@@ -26,6 +26,7 @@ import (
 	"github.com/google/oss-rebuild/internal/buildpolicy"
 	"github.com/google/oss-rebuild/internal/gitx"
 	"github.com/google/oss-rebuild/internal/shell"
+	"github.com/google/oss-rebuild/internal/uri"
 	"github.com/google/oss-rebuild/pkg/act/api"
 	"github.com/google/oss-rebuild/pkg/build/scratch"
 	"github.com/google/oss-rebuild/pkg/gcb"
@@ -570,6 +571,10 @@ func (a *defaultAgent) proposeInferenceWithAIAssist(ctx context.Context, initial
 		return nil, errors.Wrap(initialErr, "AI could not find a repository hint")
 	}
 	log.Printf("AI suggested repo hint: %s", repoURL)
+	// Hinting the repository already searched would only repeat the search.
+	if d, ok := api.DetailOf[rebuild.InferenceErrorDetail](initialErr); ok && sameRepo(d.Location.Repo, repoURL) {
+		return nil, initialErr
+	}
 	req := schema.InferenceRequest{
 		Ecosystem: a.t.Ecosystem,
 		Package:   a.t.Package,
@@ -680,17 +685,20 @@ func (a *defaultAgent) proposeHeuristicInference(ctx context.Context) (*schema.S
 			},
 		},
 	)
-	d, _ := api.DetailOf[rebuild.InferenceErrorDetail](err)
-	if d.Kind == rebuild.FailureOversize {
+	detail, _ := api.DetailOf[rebuild.InferenceErrorDetail](err)
+	if detail.Kind == rebuild.FailureOversize {
 		// The repository was located, so a model repository hint cannot help.
 		return nil, err
 	}
-	// A failure that resolved the source has its repository, so a model
-	// repository hint cannot help it.
-	if err != nil && !d.Located() {
-		wt, str = memfs.New(), gitx.NewInMemoryStorer()
-		if s, err = a.proposeInferenceWithAIAssist(ctx, err, wt, str); err == nil {
+	// A located repo missing the version's commit may be the wrong repo, so a
+	// repo hint can still help.
+	if err != nil && (!detail.Located() || detail.Kind == rebuild.FailureNoRef) {
+		aiStr := gitx.NewInMemoryStorer()
+		if aiS, aiErr := a.proposeInferenceWithAIAssist(ctx, err, memfs.New(), aiStr); aiErr == nil {
 			log.Println("AI-assisted inference succeeded.")
+			s, str, err = aiS, aiStr, nil
+		} else if !keepBestGuess(detail, aiErr) {
+			str, err = aiStr, aiErr
 		}
 	}
 	if err != nil {
@@ -719,11 +727,15 @@ func (a *defaultAgent) proposeServiceInference(ctx context.Context) (*schema.Str
 		Version:   a.t.Version,
 		Artifact:  a.t.Artifact,
 	}, a.deps.Size)
-	// A failure that resolved the source, or refused it for its size, has its
-	// repository, so a model repository hint cannot help it.
-	if d, ok := api.DetailOf[rebuild.InferenceErrorDetail](err); err != nil && (!ok || !d.Located()) && !inferenceservice.RefusedForSize(err) {
-		if s, err = a.proposeInferenceWithAIAssist(ctx, err, nil, nil); err == nil {
+	// A located repo missing the version's commit may be the wrong repo, so a
+	// repo hint can still help. A size refusal already has its repo.
+	detail, _ := api.DetailOf[rebuild.InferenceErrorDetail](err)
+	if err != nil && (!detail.Located() || detail.Kind == rebuild.FailureNoRef) && !inferenceservice.RefusedForSize(err) {
+		if aiS, aiErr := a.proposeInferenceWithAIAssist(ctx, err, nil, nil); aiErr == nil {
 			log.Println("AI-assisted inference succeeded.")
+			s, err = aiS, nil
+		} else if !keepBestGuess(detail, aiErr) {
+			err = aiErr
 		}
 	}
 	if err != nil {
@@ -752,6 +764,23 @@ func (a *defaultAgent) inferenceTimeout() time.Duration {
 		return jumboInferenceTimeout
 	}
 	return inferenceTimeout
+}
+
+// keepBestGuess reports whether a failed repo-hint retry should leave the
+// initial best guess in place: the initial located a repo and the retry
+// located no other.
+func keepBestGuess(initial rebuild.InferenceErrorDetail, retryErr error) bool {
+	d, _ := api.DetailOf[rebuild.InferenceErrorDetail](retryErr)
+	return initial.Located() && (!d.Located() || sameRepo(d.Location.Repo, initial.Location.Repo))
+}
+
+func sameRepo(a, b string) bool {
+	ca, err := uri.CanonicalizeRepoURI(a)
+	if err != nil {
+		return false
+	}
+	cb, err := uri.CanonicalizeRepoURI(b)
+	return err == nil && ca == cb
 }
 
 func (a *defaultAgent) genericPrompt() []string {
