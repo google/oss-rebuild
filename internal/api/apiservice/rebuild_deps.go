@@ -123,15 +123,27 @@ func MakeRebuildPackageDeps(ctx context.Context, cfg *schema.RebuildDepsConfig) 
 	d.RemoteMetadataStoreBuilder = func(ctx context.Context, uuid string) (rebuild.LocatableAssetStore, error) {
 		return rebuild.NewGCSStore(context.WithValue(ctx, rebuild.RunID, uuid), "gs://"+cfg.AssetBucket)
 	}
-	u, err := url.Parse(cfg.InferenceURL)
-	if err != nil {
-		return nil, errors.Wrap(err, "parsing inference URL")
+	if d.InferStub, d.InferVersionStub, err = InferStubs(ctx, cfg.InferenceURL); err != nil {
+		return nil, err
 	}
-	runclient, err := idtoken.NewClient(ctx, cfg.InferenceURL)
-	if err != nil {
-		return nil, errors.Wrap(err, "initializing inference client")
+	if cfg.JumboInferenceURL != "" {
+		if d.JumboInferStub, d.JumboInferVersionStub, err = InferStubs(ctx, cfg.JumboInferenceURL); err != nil {
+			return nil, err
+		}
 	}
-	d.InferStub = api.StubFromHandler(runclient, u.JoinPath("infer"), inferenceservice.Infer)
-	d.InferVersionStub = api.StubFromHandler(runclient, u.JoinPath("version"), inferenceservice.Version)
 	return &d, nil
+}
+
+// InferStubs returns the infer and version stubs for the inference service at
+// rawURL.
+func InferStubs(ctx context.Context, rawURL string) (api.StubFn[schema.InferenceRequest, schema.StrategyOneOf], api.StubFn[schema.VersionRequest, schema.VersionResponse], error) {
+	u, err := url.Parse(rawURL)
+	if err != nil {
+		return nil, nil, errors.Wrap(err, "parsing inference URL")
+	}
+	client, err := idtoken.NewClient(ctx, rawURL)
+	if err != nil {
+		return nil, nil, errors.Wrap(err, "initializing inference client")
+	}
+	return api.StubFromHandler(client, u.JoinPath("infer"), inferenceservice.Infer), api.StubFromHandler(client, u.JoinPath("version"), inferenceservice.Version), nil
 }

@@ -51,6 +51,7 @@ var (
 	aiLocation            = flag.String("ai-location", "global", "Vertex AI location for agent model calls (Gemini 3.x models only serve from 'global')")
 	buildRemoteIdentity   = flag.String("build-remote-identity", "", "Identity from which to run remote rebuilds")
 	inferenceURL          = flag.String("inference-url", "", "URL of the inference service")
+	jumboInferenceURL     = flag.String("jumbo-inference-url", "", "URL of the inference service for large repositories, if configured")
 	signingKeyVersion     = flag.String("signing-key-version", "", "Resource name of the signing CryptoKeyVersion")
 	metadataBucket        = flag.String("metadata-bucket", "", "GCS bucket for rebuild artifacts")
 	attestationBucket     = flag.String("attestation-bucket", "", "GCS bucket to which to publish rebuild attestation")
@@ -201,16 +202,14 @@ func RebuildPackageInit(ctx context.Context) (*apiservice.RebuildPackageDeps, er
 		return rebuild.NewGCSStore(context.WithValue(ctx, rebuild.RunID, uuid), "gs://"+*metadataBucket)
 	}
 	d.OverwriteAttestations = *overwriteAttestations
-	u, err := url.Parse(*inferenceURL)
-	if err != nil {
-		return nil, errors.Wrap(err, "parsing inference URL")
+	if d.InferStub, d.InferVersionStub, err = apiservice.InferStubs(ctx, *inferenceURL); err != nil {
+		return nil, err
 	}
-	runclient, err := idtoken.NewClient(ctx, *inferenceURL)
-	if err != nil {
-		return nil, errors.Wrap(err, "initializing inference client")
+	if *jumboInferenceURL != "" {
+		if d.JumboInferStub, d.JumboInferVersionStub, err = apiservice.InferStubs(ctx, *jumboInferenceURL); err != nil {
+			return nil, err
+		}
 	}
-	d.InferStub = api.StubFromHandler(runclient, u.JoinPath("infer"), inferenceservice.Infer)
-	d.InferVersionStub = api.StubFromHandler(runclient, u.JoinPath("version"), inferenceservice.Version)
 	return &d, nil
 }
 
@@ -252,6 +251,7 @@ func CreateRebuildOpInit(ctx context.Context) (*apiservice.CreateRebuildOpDeps, 
 		BuildProject:               *project,
 		FirestoreProject:           *project,
 		InferenceURL:               *inferenceURL,
+		JumboInferenceURL:          *jumboInferenceURL,
 		SigningKeyVersion:          *signingKeyVersion,
 		PublishForLocalServiceRepo: !*blockLocalRepoPublish,
 		OverwriteAttestations:      *overwriteAttestations,
