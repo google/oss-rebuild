@@ -215,15 +215,15 @@ func RebuildPackageInit(ctx context.Context) (*apiservice.RebuildPackageDeps, er
 
 func InferInit(ctx context.Context) (*apiservice.InferDeps, error) {
 	var d apiservice.InferDeps
-	u, err := url.Parse(*inferenceURL)
-	if err != nil {
-		return nil, errors.Wrap(err, "parsing inference URL")
+	var err error
+	if d.Router.Standard, _, err = apiservice.InferStubs(ctx, *inferenceURL); err != nil {
+		return nil, err
 	}
-	runclient, err := idtoken.NewClient(ctx, *inferenceURL)
-	if err != nil {
-		return nil, errors.Wrap(err, "initializing inference client")
+	if *jumboInferenceURL != "" {
+		if d.Router.Jumbo, _, err = apiservice.InferStubs(ctx, *jumboInferenceURL); err != nil {
+			return nil, err
+		}
 	}
-	d.InferStub = api.StubFromHandler(runclient, u.JoinPath("infer"), inferenceservice.Infer)
 	return &d, nil
 }
 

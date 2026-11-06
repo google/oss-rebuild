@@ -17,6 +17,7 @@ import (
 
 	"github.com/go-git/go-git/v5"
 	"github.com/go-git/go-git/v5/plumbing"
+	"github.com/google/oss-rebuild/internal/api/inferenceservice"
 	"github.com/google/oss-rebuild/internal/cache"
 	"github.com/google/oss-rebuild/internal/db"
 	"github.com/google/oss-rebuild/internal/gitx"
@@ -31,7 +32,6 @@ import (
 	"github.com/google/oss-rebuild/pkg/rebuild/rebuild"
 	"github.com/google/oss-rebuild/pkg/rebuild/schema"
 	"github.com/google/oss-rebuild/pkg/rebuild/stability"
-	"github.com/google/oss-rebuild/pkg/scheduler"
 	"github.com/google/oss-rebuild/pkg/stabilize"
 	"github.com/google/uuid"
 	"github.com/pkg/errors"
@@ -157,10 +157,12 @@ func getStrategy(ctx context.Context, deps *RebuildPackageDeps, t rebuild.Target
 	var inferTime time.Duration
 	if strategy == nil {
 		var version string
-		standardStub := withVersion(deps.InferStub, deps.InferVersionStub, &version)
-		jumboStub := withVersion(deps.JumboInferStub, deps.JumboInferVersionStub, &version)
+		router := inferenceservice.Router{
+			Standard: withVersion(deps.InferStub, deps.InferVersionStub, &version),
+			Jumbo:    withVersion(deps.JumboInferStub, deps.JumboInferVersionStub, &version),
+		}
 		inferStart := time.Now()
-		s, err := infer(ctx, standardStub, jumboStub, ireq, hint)
+		s, err := router.Infer(ctx, ireq, hint)
 		if err != nil {
 			// TODO: Surface better error than Internal.
 			return nil, errors.Wrap(err, "fetching inference")
@@ -189,51 +191,6 @@ func withVersion(infer api.StubFn[schema.InferenceRequest, schema.StrategyOneOf]
 		*version = vr.Version
 		return infer(ctx, req)
 	}
-}
-
-// infer sends a JUMBO-hinted inference to the jumbo service. Others go to the
-// standard service, and to jumbo if refused for size. A nil jumboStub sends
-// everything to the standard service.
-func infer(ctx context.Context, standardStub, jumboStub api.StubFn[schema.InferenceRequest, schema.StrategyOneOf], req schema.InferenceRequest, hint schema.SizeHint) (*schema.StrategyOneOf, error) {
-	if jumboStub == nil {
-		return standardStub(ctx, req)
-	}
-	if hint == schema.JumboSize {
-		return inferJumbo(ctx, jumboStub, req)
-	}
-	s, err := standardStub(ctx, req)
-	if err != nil && refusedForSize(err) {
-		log.Printf("inferring %s@%s on the jumbo service: %v", req.Package, req.Version, err)
-		return inferJumbo(ctx, jumboStub, req)
-	}
-	return s, err
-}
-
-// jumboRetryDelay paces asks of a full jumbo service. Room takes a new
-// instance's cold start or a running inference's finish, so asking sooner only
-// adds rejections.
-var jumboRetryDelay = 20 * time.Second
-
-// inferJumbo retries while the jumbo service is full. Each instance takes one
-// request, so a burst of large repositories can exceed them.
-func inferJumbo(ctx context.Context, jumboStub api.StubFn[schema.InferenceRequest, schema.StrategyOneOf], req schema.InferenceRequest) (*schema.StrategyOneOf, error) {
-	for {
-		s, err := jumboStub(ctx, req)
-		if err == nil || !scheduler.IsCapacityRejection(err.Error()) {
-			return s, err
-		}
-		select {
-		case <-ctx.Done():
-			return nil, errors.Wrapf(context.Cause(ctx), "waiting for room on the jumbo service: %v", err)
-		case <-time.After(jumboRetryDelay):
-		}
-	}
-}
-
-// refusedForSize reports a refusal of a repository over the fetch budget.
-func refusedForSize(err error) bool {
-	d, ok := api.DetailOf[rebuild.InferenceErrorDetail](err)
-	return ok && d.Kind == rebuild.FailureOversize
 }
 
 func buildAndAttest(ctx context.Context, deps *RebuildPackageDeps, mux rebuild.RegistryMux, a verifier.Attestor, t rebuild.Target, strategy rebuild.Strategy, entry *repoEntry, sizeHint schema.SizeHint, useProxy bool, useSyscallMonitor bool, timeout time.Duration, mode schema.OverwriteMode) (timings *rebuild.BuildTimings, err error) {
