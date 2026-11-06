@@ -25,6 +25,7 @@ import (
 	"github.com/google/oss-rebuild/internal/api/inferenceservice"
 	"github.com/google/oss-rebuild/internal/buildpolicy"
 	"github.com/google/oss-rebuild/internal/gitx"
+	"github.com/google/oss-rebuild/internal/shell"
 	"github.com/google/oss-rebuild/pkg/act/api"
 	"github.com/google/oss-rebuild/pkg/build/scratch"
 	"github.com/google/oss-rebuild/pkg/gcb"
@@ -485,8 +486,8 @@ func dockerExecInContainerScript(command string) string {
 	return `c=$(docker ps -aq --filter name=^rb- | head -1); ` +
 		`[ -n "$c" ] || { echo 'no build container found; run a build first' >&2; exit 125; }; ` +
 		`docker start "$c" >/dev/null; ` +
-		`docker exec "$c" /bin/sh -c ` + posixSingleQuote(serveTimewarp) + `; ` +
-		`exec docker exec -w /src "$c" /bin/sh -c ` + posixSingleQuote(command)
+		`docker exec "$c" /bin/sh -c ` + shell.SingleQuote(serveTimewarp) + `; ` +
+		`exec docker exec -w /src "$c" /bin/sh -c ` + shell.SingleQuote(command)
 }
 
 // serveTimewarp starts the build's timewarp if it is not serving. The
@@ -495,12 +496,6 @@ func dockerExecInContainerScript(command string) string {
 const serveTimewarp = `[ -x /timewarp ] && command -v nc >/dev/null || exit 0; nc -z localhost 8080 2>/dev/null && exit 0; ` +
 	`/timewarp -port 8080 >/dev/null 2>&1 & ` +
 	`i=0; while ! nc -z localhost 8080 2>/dev/null && [ $i -lt 20 ]; do sleep 0.5; i=$((i+1)); done; exit 0`
-
-// posixSingleQuote renders s as a single-quoted POSIX sh word, escaping any
-// embedded single quotes.
-func posixSingleQuote(s string) string {
-	return `'` + strings.ReplaceAll(s, `'`, `'\''`) + `'`
-}
 
 func (a *defaultAgent) proposeInferenceWithAIAssist(ctx context.Context, initialErr error, wt billy.Filesystem, str storage.Storer) (*schema.StrategyOneOf, error) {
 	prompt := []string{

@@ -31,33 +31,6 @@ import (
 	"google.golang.org/genai"
 )
 
-// TestPosixSingleQuote round-trips tricky commands through a real /bin/sh: the
-// quoted word must reproduce the input verbatim, with no expansion of $(...),
-// backticks, or embedded quotes. run_in_container relies on this to pass the
-// LLM's command into `docker exec ... /bin/sh -c <quoted>` without the outer
-// shell interpreting it.
-func TestPosixSingleQuote(t *testing.T) {
-	for _, in := range []string{
-		`echo hi`,
-		`echo 'single quoted'`,
-		`python3 -c "import sys; print('ok')"`,
-		`a'b'c`,
-		`$(touch pwned)`,
-		"`whoami`",
-		`back\slash and "double"`,
-		"tab\tand space",
-	} {
-		script := "printf %s " + posixSingleQuote(in)
-		out, err := exec.Command("/bin/sh", "-c", script).Output()
-		if err != nil {
-			t.Fatalf("sh -c %q: %v", script, err)
-		}
-		if string(out) != in {
-			t.Errorf("round-trip mismatch: got %q want %q", out, in)
-		}
-	}
-}
-
 // TestDockerExecInContainerScript pins the wrapper's structure: resolve the
 // single retained rb-* container, guard against no build having run, start it
 // idempotently, and exec the (safely quoted) command inside it.
