@@ -193,14 +193,37 @@ resource "google_cloud_run_v2_service" "git-cache" {
   }
   depends_on = [google_project_service.run]
 }
+locals {
+  inference_services = {
+    standard = {
+      name           = "inference"
+      memory_gib     = 32
+      max_repo_gib   = 4 // under the 4.7 GiB a 16G instance has held
+      timeout_s      = 14 * 60
+      instances      = 60
+      concurrency    = 8 // requests wait mostly on registries and the cache
+      gomemlimit_gib = null
+    }
+    jumbo = {
+      name           = "inference-jumbo"
+      memory_gib     = 32
+      max_repo_gib   = 7
+      timeout_s      = 30 * 60
+      instances      = 20
+      concurrency    = 1  // takes what standard refuses for size
+      gomemlimit_gib = 24 // collect before the instance runs out
+    }
+  }
+}
 resource "google_cloud_run_v2_service" "inference" {
-  name                = "inference"
+  for_each            = local.inference_services
+  name                = each.value.name
   location            = "us-central1"
   ingress             = local.cloud_run_ingress
   deletion_protection = false
   template {
     service_account = google_service_account.inference.email
-    timeout         = "${14 * 60}s" // 14 minutes
+    timeout         = "${each.value.timeout_s}s"
     containers {
       image = data.google_artifact_registry_docker_image.inference.self_link
       args = [
@@ -209,12 +232,19 @@ resource "google_cloud_run_v2_service" "inference" {
         "--host=${var.host}",
         "--git-cache-url=${google_cloud_run_v2_service.git-cache.uri}",
         "--crates-registry-service-url=${google_cloud_run_v2_service.crates-registry.uri}",
-        "--max-repo-bytes=${4 * 1024 * 1024 * 1024}", // 4 GiB, under the 4.7 GiB a 16G instance has held
+        "--max-repo-bytes=${each.value.max_repo_gib * 1024 * 1024 * 1024}",
       ]
       resources {
         limits = {
           cpu    = "8000m"
-          memory = "32G"
+          memory = "${each.value.memory_gib}Gi"
+        }
+      }
+      dynamic "env" {
+        for_each = each.value.gomemlimit_gib == null ? [] : [each.value.gomemlimit_gib]
+        content {
+          name  = "GOMEMLIMIT"
+          value = "${env.value}GiB"
         }
       }
       # /readyz fails open after 60s, inside this probe's 180s budget.
@@ -237,8 +267,8 @@ resource "google_cloud_run_v2_service" "inference" {
         egress = "ALL_TRAFFIC"
       }
     }
-    scaling { max_instance_count = 60 }
-    max_instance_request_concurrency = 8
+    scaling { max_instance_count = each.value.instances }
+    max_instance_request_concurrency = each.value.concurrency
   }
   depends_on = [google_project_service.run]
 }
@@ -321,7 +351,8 @@ resource "google_cloud_run_v2_service" "orchestrator" {
         "--project=${var.project}",
         "--location=us-central1",
         "--build-remote-identity=${google_service_account.builder-remote.name}",
-        "--inference-url=${google_cloud_run_v2_service.inference.uri}",
+        "--inference-url=${google_cloud_run_v2_service.inference["standard"].uri}",
+        "--jumbo-inference-url=${google_cloud_run_v2_service.inference["jumbo"].uri}",
         "--prebuild-bucket=${google_storage_bucket.bootstrap-tools.name}",
         "--prebuild-version=${var.prebuild_version}",
         "--prebuild-auth=${var.public ? "false" : "true"}",
