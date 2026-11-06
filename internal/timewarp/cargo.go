@@ -6,6 +6,7 @@ package timewarp
 import (
 	"archive/tar"
 	"bytes"
+	"context"
 	"fmt"
 	"io"
 	"log"
@@ -49,7 +50,7 @@ func (h Handler) handleCargoGitArchive(rw http.ResponseWriter, r *http.Request, 
 		return herror{errors.New("invalid commit hash format"), http.StatusBadRequest}
 	}
 	// Create git archive with index files for requested packages
-	archiveData, err := h.createCargoIndexArchive(indexCommit, packageNames)
+	archiveData, err := h.createCargoIndexArchive(r.Context(), indexCommit, packageNames)
 	if err != nil {
 		return herror{errors.Wrap(err, "creating cargo index archive"), http.StatusInternalServerError}
 	}
@@ -87,7 +88,7 @@ func (h Handler) handleCargoSparse(rw http.ResponseWriter, r *http.Request, ts s
 }
 
 // createCargoIndexArchive creates a tar archive containing a git repository with index files for the specified packages.
-func (h Handler) createCargoIndexArchive(indexCommit string, packageNames []string) ([]byte, error) {
+func (h Handler) createCargoIndexArchive(ctx context.Context, indexCommit string, packageNames []string) ([]byte, error) {
 	wfs := memfs.New()
 	configFile, err := wfs.Create("config.json")
 	if err != nil {
@@ -101,7 +102,7 @@ func (h Handler) createCargoIndexArchive(indexCommit string, packageNames []stri
 	}
 	// Fetch and add index files for each package
 	for _, packageName := range packageNames {
-		if err := h.addPackageToIndex(wfs, indexCommit, packageName); err != nil {
+		if err := h.addPackageToIndex(ctx, wfs, indexCommit, packageName); err != nil {
 			return nil, errors.Wrapf(err, "adding package %s to index", packageName)
 		}
 	}
@@ -124,10 +125,10 @@ func (h Handler) createCargoIndexArchive(indexCommit string, packageNames []stri
 }
 
 // addPackageToIndex fetches the index file for a package and adds it to the filesystem.
-func (h Handler) addPackageToIndex(fs billy.Filesystem, indexCommit, packageName string) error {
+func (h Handler) addPackageToIndex(ctx context.Context, fs billy.Filesystem, indexCommit, packageName string) error {
 	indexPath := index.EntryPath(packageName)
 	indexURL := cratesIndexURL.JoinPath(indexCommit, indexPath).String()
-	req, err := http.NewRequest(http.MethodGet, indexURL, nil)
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, indexURL, nil)
 	if err != nil {
 		return errors.Wrap(err, "creating request")
 	}

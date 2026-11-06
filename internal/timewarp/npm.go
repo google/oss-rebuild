@@ -27,7 +27,10 @@ func (h Handler) handleNPM(rw http.ResponseWriter, r *http.Request, t *time.Time
 		http.Redirect(rw, r, r.URL.String(), http.StatusFound)
 		return nil
 	}
-	nr, _ := http.NewRequest(r.Method, r.URL.String(), r.Body)
+	nr, err := http.NewRequestWithContext(r.Context(), r.Method, r.URL.String(), r.Body)
+	if err != nil {
+		return herror{errors.Wrap(err, "creating upstream request"), http.StatusBadRequest}
+	}
 	nr.Header = r.Header.Clone()
 	// Remove the basic auth header set with the timewarp params.
 	nr.Header.Del("Authorization")
