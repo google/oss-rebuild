@@ -31,6 +31,8 @@ var (
 	// packageSpecPat matches a package name with an optional version pin, such
 	// as "graphviz-dev=14.1.5-r0" or "cairo-dev>=1.18".
 	packageSpecPat = re.MustCompile(`^(?P<pkg>[\w.+:()-]+)(?:(?P<op>[<>~=]=?|=~)[\w.+:-]+)?$`)
+	// cibuildwheelRunners names Python commands that install or run cibuildwheel as an argument.
+	cibuildwheelRunners = []string{"pip", "pip3", "pipx", "uv", "uvx", "poetry", "pdm", "hatch"}
 )
 
 // ghaWorkflow holds the parts of a GitHub Actions workflow that can pin the
@@ -49,26 +51,13 @@ type ghaWorkflow struct {
 // versions, minor series, or commit hashes) found in the GitHub Actions
 // workflows in tree.
 func extractCibuildwheelSpecs(tree *git2.Tree) ([]string, error) {
-	workflows, err := tree.Tree(workflowsDir)
-	if errors.Is(err, git2.ErrDirectoryNotFound) {
-		return nil, nil
-	} else if err != nil {
-		return nil, errors.Wrapf(err, "finding %s", workflowsDir)
-	}
 	var specs []string
-	for _, entry := range workflows.Entries {
-		if ext := path.Ext(entry.Name); !entry.Mode.IsFile() || (ext != ".yml" && ext != ".yaml") {
-			continue
-		}
-		f, err := workflows.TreeEntryFile(&entry)
-		if err != nil {
-			return nil, errors.Wrapf(err, "finding workflow %s", entry.Name)
-		}
-		contents, err := f.Contents()
-		if err != nil {
-			return nil, errors.Wrapf(err, "reading workflow %s", entry.Name)
-		}
-		specs = append(specs, cibuildwheelSpecs([]byte(contents))...)
+	err := forEachWorkflow(tree, func(contents []byte) bool {
+		specs = append(specs, cibuildwheelSpecs(contents)...)
+		return true
+	})
+	if err != nil {
+		return nil, err
 	}
 	return specs, nil
 }
@@ -92,6 +81,139 @@ func cibuildwheelSpecs(workflow []byte) []string {
 	return specs
 }
 
+// usesCibuildwheel reports whether tree configures or invokes cibuildwheel,
+// checking pyproject.toml, standalone cibuildwheel.toml, and GitHub Actions
+// workflows regardless of whether a version is pinned.
+func usesCibuildwheel(tree *git2.Tree, searchDir string) (bool, error) {
+	if tree == nil {
+		return false, nil
+	}
+	if hasCfg, err := hasCibuildwheelConfig(tree, searchDir); err != nil || hasCfg {
+		return hasCfg, err
+	}
+	var found bool
+	err := forEachWorkflow(tree, func(contents []byte) bool {
+		found = workflowUsesCibuildwheel(contents)
+		return !found
+	})
+	return found, err
+}
+
+func hasCibuildwheelConfig(tree *git2.Tree, searchDir string) (bool, error) {
+	var dirs []string
+	if cleanDir := path.Clean(searchDir); cleanDir != "." {
+		dirs = append(dirs, cleanDir)
+	}
+	dirs = append(dirs, "")
+	for _, d := range dirs {
+		for _, name := range []string{"cibuildwheel.toml", ".cibuildwheel.toml"} {
+			p := path.Join(d, name)
+			_, err := tree.File(p)
+			if err == nil {
+				return true, nil
+			}
+			if !errors.Is(err, git2.ErrFileNotFound) {
+				return false, errors.Wrapf(err, "finding %s", p)
+			}
+		}
+		pyprojPath := path.Join(d, "pyproject.toml")
+		if f, err := tree.File(pyprojPath); err == nil {
+			pyProject, err := parsing.ReadPyProject(f)
+			if err != nil {
+				// NOTE: Malformed syntax rejects this candidate rather than aborting inference.
+				var decodeErr *toml.DecodeError
+				if !errors.As(err, &decodeErr) {
+					return false, errors.Wrapf(err, "reading %s", pyprojPath)
+				}
+			} else if pyProject.Tool.Cibuildwheel != nil {
+				return true, nil
+			}
+		} else if !errors.Is(err, git2.ErrFileNotFound) {
+			return false, errors.Wrapf(err, "finding %s", pyprojPath)
+		}
+	}
+	return false, nil
+}
+
+// forEachWorkflow calls yield with the contents of each GitHub Actions
+// workflow in tree and stops early when yield returns false.
+func forEachWorkflow(tree *git2.Tree, yield func(contents []byte) bool) error {
+	if tree == nil {
+		return nil
+	}
+	workflows, err := tree.Tree(workflowsDir)
+	if errors.Is(err, git2.ErrDirectoryNotFound) {
+		return nil
+	} else if err != nil {
+		return errors.Wrapf(err, "finding %s", workflowsDir)
+	}
+	for _, entry := range workflows.Entries {
+		if ext := path.Ext(entry.Name); !entry.Mode.IsFile() || (ext != ".yml" && ext != ".yaml") {
+			continue
+		}
+		f, err := workflows.TreeEntryFile(&entry)
+		if err != nil {
+			return errors.Wrapf(err, "finding workflow %s", entry.Name)
+		}
+		contents, err := f.Contents()
+		if err != nil {
+			return errors.Wrapf(err, "reading workflow %s", entry.Name)
+		}
+		if !yield([]byte(contents)) {
+			return nil
+		}
+	}
+	return nil
+}
+
+func workflowUsesCibuildwheel(workflow []byte) bool {
+	var wf ghaWorkflow
+	if err := yaml.Unmarshal(workflow, &wf); err != nil {
+		return false
+	}
+	for _, job := range wf.Jobs {
+		for _, step := range job.Steps {
+			if strings.HasPrefix(strings.TrimSpace(step.Uses), "pypa/cibuildwheel@") || runScriptUsesCibuildwheel(step.Run) {
+				return true
+			}
+		}
+	}
+	return false
+}
+
+func runScriptUsesCibuildwheel(script string) bool {
+	if !strings.Contains(strings.ToLower(script), "cibuildwheel") {
+		return false
+	}
+	src := []byte(script)
+	root, err := bash.NewParser().Parse(src)
+	if err != nil {
+		return false
+	}
+	trailing := trailingArgs(root, src)
+	for cmd := range root.Find(bash.KindCommand) {
+		argv := append(commandArgv(cmd, src), trailing[cmd]...)
+		i := commandIndex(argv)
+		if i >= len(argv) {
+			continue
+		}
+		cmdName := path.Base(argv[i])
+		if !strings.Contains(argv[i], "://") && cmdName == "cibuildwheel" {
+			return true
+		}
+		isPy := cmdName == "python" || cmdName == "python3" || strings.HasPrefix(cmdName, "python3.")
+		if !isPy && !slices.Contains(cibuildwheelRunners, cmdName) {
+			continue
+		}
+		if slices.ContainsFunc(argv[i+1:], func(arg string) bool {
+			return requirementName(strings.TrimSpace(arg)) == "cibuildwheel"
+		}) {
+			return true
+		}
+	}
+	return false
+}
+
 // extractCibuildwheelDependencies extracts system dependencies from
 // [tool.cibuildwheel] hooks and overrides in pyproject.toml under searchDir.
 func extractCibuildwheelDependencies(tree *git2.Tree, searchDir string, tags WheelTags, libc platform.LibcImpl) ([]string, error) {
@@ -112,6 +234,9 @@ func extractCibuildwheelDependencies(tree *git2.Tree, searchDir string, tags Whe
 		return nil, errors.Wrapf(err, "reading %s", pyprojPath)
 	}
 	cfg := pyProject.Tool.Cibuildwheel
+	if cfg == nil {
+		return nil, nil
+	}
 	// NOTE: In cibuildwheel, matching overrides replace base and linux hooks by
 	// default unless inherit is configured. Taking the union across all matching
 	// sections is a conservative over-approximation.
@@ -290,18 +415,7 @@ func parsePackageManagerCommands(script string, libc platform.LibcImpl) ([]strin
 	var deps []string
 	for cmd := range root.Find(bash.KindCommand) {
 		argv := append(commandArgv(cmd, src), trailing[cmd]...)
-		i := 0
-		for i < len(argv) {
-			valueFlags, ok := commandWrappers[path.Base(argv[i])]
-			if !ok {
-				break
-			}
-			for i++; i < len(argv) && (strings.HasPrefix(argv[i], "-") || strings.Contains(argv[i], "=")); i++ {
-				if slices.Contains(valueFlags, argv[i]) {
-					i++
-				}
-			}
-		}
+		i := commandIndex(argv)
 		if i >= len(argv) {
 			continue
 		}
@@ -328,6 +442,23 @@ func parsePackageManagerCommands(script string, libc platform.LibcImpl) ([]strin
 		}
 	}
 	return deps, nil
+}
+
+// commandIndex returns the index of the command that argv runs after skipping commandWrappers.
+func commandIndex(argv []string) int {
+	i := 0
+	for i < len(argv) {
+		valueFlags, ok := commandWrappers[path.Base(argv[i])]
+		if !ok {
+			break
+		}
+		for i++; i < len(argv) && (strings.HasPrefix(argv[i], "-") || strings.Contains(argv[i], "=")); i++ {
+			if slices.Contains(valueFlags, argv[i]) {
+				i++
+			}
+		}
+	}
+	return i
 }
 
 // commandArgv returns the name and arguments of a command node, with "" for

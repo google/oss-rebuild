@@ -546,11 +546,28 @@ func inferBuild(ctx context.Context, t rebuild.Target, mux rebuild.RegistryMux, 
 		if elfDeps, err := inferELFSystemDeps(zr, highest.LibcImpl); err != nil {
 			log.Println(errors.Wrap(err, "extracting ELF system deps from wheel"))
 		} else {
-			sysDeps = appendUnique(sysDeps, elfDeps...)
+			sysDeps = mergeSystemDeps(sysDeps, elfDeps)
+		}
+		var rustVersion string
+		needsRust, err := usesRust(reqs, tree, dir)
+		if err != nil {
+			return nil, errors.Wrap(err, "detecting rust build")
+		}
+		if needsRust {
+			rustVersion, err = inferRustVersion(zr, tree, dir, a.UploadTime)
+			if err != nil {
+				return nil, errors.Wrap(err, "inferring rust toolchain version")
+			}
 		}
 		cibwSpecs, err := extractCibuildwheelSpecs(tree)
 		if err != nil {
 			return nil, errors.Wrap(err, "extracting cibuildwheel specs")
+		}
+		var maturin *MaturinOptions
+		if usesMaturin(reqs) {
+			if maturin, err = inferMaturinOptions(tree, dir, tags); err != nil {
+				return nil, err
+			}
 		}
 		return &PlatformWheelBuild{
 			Location: rebuild.Location{
@@ -567,6 +584,8 @@ func inferBuild(ctx context.Context, t rebuild.Target, mux rebuild.RegistryMux, 
 			RegistryTime: a.UploadTime,
 			BaseImage:    inferBaseImage(platform.CibuildwheelPins, tags.Platform, a.UploadTime, cibwSpecs...),
 			BuildRoot:    inferBuildRoot(zr, tree),
+			RustVersion:  rustVersion,
+			Maturin:      maturin,
 		}, nil
 	} else {
 		return &PureWheelBuild{
@@ -703,6 +722,7 @@ var pdmBackendPat = re.MustCompile(`^Generator: pdm-backend \(([\d\.]+)\)`)
 var uvBuildPat = re.MustCompile(`^Generator: uv ([\d\.]+)`)
 var mesonPat = re.MustCompile(`^Generator: meson(?: \(?([\d\.]+)\)?)?\s*$`)
 var scikitBuildCorePat = re.MustCompile(`^Generator: scikit-build-core \(?([\d\.]+)\)?`)
+var maturinPat = re.MustCompile(`^Generator: maturin \(([\d\.]+)\)`)
 
 // getGenerator returns the pins identifying the wheel's build backend from its
 // Generator line. bdist_wheel names the wheel packaging tool, not setuptools,
@@ -742,6 +762,8 @@ func getGenerator(wheel, metadata []byte) (reqs []string, err error) {
 				return []string{}, nil
 			} else if matches := scikitBuildCorePat.FindSubmatch(line); matches != nil {
 				return []string{"scikit-build-core==" + string(matches[1])}, nil
+			} else if matches := maturinPat.FindSubmatch(line); matches != nil {
+				return []string{"maturin==" + string(matches[1])}, nil
 			} else {
 				return nil, errors.Errorf("unsupported generator: %s", value)
 			}

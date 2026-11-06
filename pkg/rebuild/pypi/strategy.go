@@ -71,9 +71,9 @@ func (b *PureWheelBuild) GenerateFor(t rebuild.Target, be rebuild.BuildEnv) (reb
 }
 
 // needsVenvOnPath flags backends that find their binary on PATH rather than
-// beside the interpreter, such as uv_build, meson, and ninja/cmake.
+// beside the interpreter, such as uv_build, meson, ninja/cmake, and maturin.
 func needsVenvOnPath(reqs []string) string {
-	if hasRequirement(reqs, "uv-build", "meson-python", "scikit-build-core") {
+	if hasRequirement(reqs, "uv-build", "meson-python", "scikit-build-core", "maturin") {
 		return "1"
 	}
 	return ""
@@ -130,6 +130,13 @@ func (b *SdistBuild) GenerateFor(t rebuild.Target, be rebuild.BuildEnv) (rebuild
 	return b.ToWorkflow().GenerateFor(t, be)
 }
 
+// MaturinOptions configures a direct "maturin build" wheel build.
+type MaturinOptions struct {
+	// Features lists Cargo features passed via "--features" to "maturin build",
+	// such as "abi3" when Cargo.toml gates "pyo3/abi3-*" behind a non-default feature.
+	Features []string `json:"features,omitempty" yaml:"features,omitempty"`
+}
+
 // PlatformWheelBuild aggregates the options controlling a platform-specific wheel build.
 type PlatformWheelBuild struct {
 	rebuild.Location
@@ -146,6 +153,12 @@ type PlatformWheelBuild struct {
 	BaseImage string `json:"base_image,omitempty" yaml:"base_image,omitempty"`
 	// BuildRoot is the absolute path the build is run from, when set.
 	BuildRoot string `json:"build_root,omitempty" yaml:"build_root,omitempty"`
+	// RustVersion is the pinned rustc release (such as "1.97.1") to install when
+	// the wheel compiles Rust extensions. Empty means no Rust toolchain is installed.
+	RustVersion string `json:"rust_version,omitempty" yaml:"rust_version,omitempty"`
+	// Maturin runs "maturin build --release --compatibility <policy>" directly
+	// instead of PEP 517 plus "auditwheel repair" when non-nil.
+	Maturin *MaturinOptions `json:"maturin,omitempty" yaml:"maturin,omitempty"`
 }
 
 var _ rebuild.Strategy = &PlatformWheelBuild{}
@@ -189,6 +202,16 @@ func (b *PlatformWheelBuild) ToWorkflow() (*rebuild.WorkflowStrategy, error) {
 	if err := validateBuildRoot(b.BuildRoot); err != nil {
 		return nil, errors.Wrap(err, "validating build root")
 	}
+	if b.Maturin != nil {
+		if b.RustVersion == "" {
+			return nil, errors.New("maturin build requires rust version")
+		}
+		for _, feat := range b.Maturin.Features {
+			if !validMaturinFeaturePat.MatchString(feat) {
+				return nil, errors.Errorf("invalid maturin feature %q", feat)
+			}
+		}
+	}
 	var registryTime string
 	if !b.RegistryTime.IsZero() {
 		registryTime = b.RegistryTime.Format(time.RFC3339)
@@ -202,27 +225,45 @@ func (b *PlatformWheelBuild) ToWorkflow() (*rebuild.WorkflowStrategy, error) {
 	if !slices.IsSorted(strings.Split(b.PlatformTag, ".")) {
 		nonCanonicalName = "1"
 	}
-	return &rebuild.WorkflowStrategy{
-		Location: b.Location,
-		Requires: rebuild.RequiredEnv{
-			BaseImage:  baseImage,
-			SystemDeps: b.SystemDeps,
+	depsSteps := []flow.Step{{
+		Uses: "pypi/deps/platform-wheel",
+		With: map[string]string{
+			"registryTime": registryTime,
+			"requirements": flow.MustToJSON(b.Requirements),
+			"pythonTag":    b.PythonTag,
+			"abiTag":       b.ABITag,
+			"venv":         "/deps",
+			"wheelCli":     "/deps/wheel-cli",
 		},
-		Source: []flow.Step{{
-			Uses: "git-checkout",
-		}},
-		Deps: []flow.Step{{
-			Uses: "pypi/deps/platform-wheel",
+	}}
+	var rustHostTriple string
+	if b.RustVersion != "" {
+		if !validRustVersionPat.MatchString(b.RustVersion) {
+			return nil, errors.Errorf("invalid rust version %q", b.RustVersion)
+		}
+		host, err := rustHostForPlatform(b.PlatformTag)
+		if err != nil {
+			return nil, errors.Wrap(err, "selecting rust toolchain host")
+		}
+		rustHostTriple = host.triple
+		depsSteps = append(depsSteps, flow.Step{
+			Uses: "pypi/install-rust",
 			With: map[string]string{
-				"registryTime": registryTime,
-				"requirements": flow.MustToJSON(b.Requirements),
-				"pythonTag":    b.PythonTag,
-				"abiTag":       b.ABITag,
-				"venv":         "/deps",
-				"wheelCli":     "/deps/wheel-cli",
+				"version":       b.RustVersion,
+				"host":          host.triple,
+				"rustupVersion": rustupVersion,
+				"rustupSHA256":  host.rustupSHA256,
 			},
-		}},
-		Build: []flow.Step{{
+		})
+	}
+	var buildStep flow.Step
+	if b.Maturin != nil {
+		buildStep, err = b.maturinBuildStep(*b.Maturin, distDir, nonCanonicalName, rustHostTriple)
+		if err != nil {
+			return nil, err
+		}
+	} else {
+		buildStep = flow.Step{
 			Uses: "pypi/build/platform-wheel",
 			With: map[string]string{
 				"dir":        b.Location.Dir,
@@ -236,9 +277,52 @@ func (b *PlatformWheelBuild) ToWorkflow() (*rebuild.WorkflowStrategy, error) {
 				"highestPlatformTag": platform.HighestLibcTagString(b.PlatformTag),
 				"targetPlatformTag":  b.PlatformTag,
 				"nonCanonicalName":   nonCanonicalName,
+				"rustVersion":        b.RustVersion,
+				"rustHost":           rustHostTriple,
 			},
+		}
+	}
+	return &rebuild.WorkflowStrategy{
+		Location: b.Location,
+		Requires: rebuild.RequiredEnv{
+			BaseImage:  baseImage,
+			SystemDeps: b.SystemDeps,
+		},
+		Source: []flow.Step{{
+			Uses: "git-checkout",
 		}},
+		Deps:      depsSteps,
+		Build:     []flow.Step{buildStep},
 		OutputDir: distDir,
+	}, nil
+}
+
+func (b *PlatformWheelBuild) maturinBuildStep(opts MaturinOptions, distDir, nonCanonicalName, rustHostTriple string) (flow.Step, error) {
+	compatibilityPolicy, err := platform.HighestPolicy(b.PlatformTag)
+	if err != nil {
+		return flow.Step{}, errors.Wrap(err, "selecting maturin compatibility policy")
+	}
+	var retagABI string
+	if strings.Contains(b.ABITag, ".") {
+		retagABI = b.ABITag
+	}
+	return flow.Step{
+		Uses: "pypi/build/maturin-wheel",
+		With: map[string]string{
+			"dir":                 b.Location.Dir,
+			"distDir":             distDir,
+			"buildRoot":           b.BuildRoot,
+			"locator":             "/deps/bin/",
+			"pythonBin":           "/deps/bin/python3",
+			"wheelCli":            "/deps/wheel-cli",
+			"compatibilityPolicy": compatibilityPolicy,
+			"targetPlatformTag":   b.PlatformTag,
+			"retagABI":            retagABI,
+			"nonCanonicalName":    nonCanonicalName,
+			"rustVersion":         b.RustVersion,
+			"rustHost":            rustHostTriple,
+			"maturinFeatures":     strings.Join(opts.Features, ","),
+		},
 	}, nil
 }
 
@@ -300,6 +384,22 @@ var toolkit = []*flow.Tool{
 			Runs: textwrap.Dedent(`
 				{{range $i, $req := .With.requirements | fromJSON}}{{if $i}}
 				{{end}}{{$.With.locator}}pip install '{{regexReplace $req "'" "'\\''"}}'{{end}}`)[1:],
+		}},
+	},
+	{
+		Name: "pypi/install-rust",
+		Steps: []flow.Step{{
+			// NOTE: CARGO_HOME and RUSTUP_HOME must match pypi/build/platform-wheel and
+			// pypi/build/maturin-wheel. Installing under /root/.cargo and /root/.rustup
+			// makes crate registry source paths embedded in .rodata match upstream PyPA
+			// container builds.
+			Runs: textwrap.Dedent(`
+				wget -O rustup-init https://static.rust-lang.org/rustup/archive/{{.With.rustupVersion}}/{{.With.host}}/rustup-init
+				echo '{{.With.rustupSHA256}}  rustup-init' | sha256sum -c -
+				chmod +x rustup-init
+				CARGO_HOME=/root/.cargo RUSTUP_HOME=/root/.rustup ./rustup-init -y --profile minimal --default-toolchain {{.With.version}} --no-modify-path
+				rm -f rustup-init`)[1:],
+			Needs: []string{"wget"},
 		}},
 	},
 
@@ -398,6 +498,10 @@ var toolkit = []*flow.Tool{
 		Name: "pypi/build/platform-wheel",
 		Steps: []flow.Step{{
 			Runs: textwrap.Dedent(`
+				{{- if .With.rustVersion -}}
+				{{- /* NOTE: CARGO_HOME, RUSTUP_HOME, and PATH must match pypi/install-rust. */ -}}
+				export CARGO_HOME=/root/.cargo RUSTUP_HOME=/root/.rustup RUSTUP_TOOLCHAIN={{.With.rustVersion}} PATH=/root/.rustup/toolchains/{{.With.rustVersion}}-{{.With.rustHost}}/bin:/root/.cargo/bin:$PATH
+				{{end -}}
 				{{if .With.buildRoot -}}
 				{{- /* NOTE: No -p on the root so the copy can't merge into an existing directory. */ -}}
 				mkdir -p $(dirname {{.With.buildRoot}})
@@ -423,6 +527,37 @@ var toolkit = []*flow.Tool{
 				{{- end -}}
 				{{- if .With.nonCanonicalName}}
 				mv {{.With.distDir}}/*.whl {{.With.distDir}}/{{.Target.Artifact}}
+				{{- end -}}`)[1:],
+		}},
+	},
+	{
+		Name: "pypi/build/maturin-wheel",
+		Steps: []flow.Step{{
+			// NOTE: For single application binary interface (ABI) tags, "maturin build
+			// --compatibility <policy>" emits the target wheel filename and archive layout
+			// directly. Retagging runs only when retagABI is set for compound dot-separated
+			// ABI tags such as "abi3.abi3t".
+			Runs: textwrap.Dedent(`
+				{{- if .With.rustVersion -}}
+				{{- /* NOTE: CARGO_HOME, RUSTUP_HOME, and PATH must match pypi/install-rust. */ -}}
+				export CARGO_HOME=/root/.cargo RUSTUP_HOME=/root/.rustup RUSTUP_TOOLCHAIN={{.With.rustVersion}} PATH=/root/.rustup/toolchains/{{.With.rustVersion}}-{{.With.rustHost}}/bin:/root/.cargo/bin:$PATH
+				{{end -}}
+				{{- if .With.buildRoot -}}
+				{{- /* NOTE: No -p on the root so the copy can't merge into an existing directory. */ -}}
+				mkdir -p $(dirname {{.With.buildRoot}})
+				mkdir {{.With.buildRoot}}
+				cp -a . {{.With.buildRoot}}
+				cd {{.With.buildRoot}}
+				{{end -}}
+				{{- if and (ne .With.dir ".") (ne .With.dir "") -}}
+				cd {{.With.dir}}
+				{{end -}}
+				{{.With.locator}}maturin build --release --out {{if .With.buildRoot}}/src/{{.With.distDir}}{{else}}dist{{end}} -i {{.With.pythonBin}}{{if .With.compatibilityPolicy}} --compatibility {{.With.compatibilityPolicy}}{{end}}{{if .With.maturinFeatures}} --features {{.With.maturinFeatures}}{{end}}
+				{{- if .With.retagABI}}
+				PYTHONPATH={{.With.wheelCli}} {{.With.locator}}python3 -m wheel tags --remove --abi-tag {{.With.retagABI}} --platform-tag {{.With.targetPlatformTag}} {{if .With.buildRoot}}/src/{{.With.distDir}}{{else}}dist{{end}}/*.whl
+				{{- if .With.nonCanonicalName}}
+				mv {{if .With.buildRoot}}/src/{{.With.distDir}}{{else}}dist{{end}}/*.whl {{if .With.buildRoot}}/src/{{.With.distDir}}{{else}}dist{{end}}/{{.Target.Artifact}}
+				{{- end -}}
 				{{- end -}}`)[1:],
 		}},
 	},
