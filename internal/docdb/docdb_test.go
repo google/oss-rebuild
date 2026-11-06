@@ -259,6 +259,18 @@ func TestApplySegmentRejectsUnknownOp(t *testing.T) {
 	}
 }
 
+// filesExceptWAL lists the cache directory without the write-ahead log
+// and its index, which WAL mode keeps beside the copy.
+func filesExceptWAL(c *Cache) []string {
+	var names []string
+	for _, e := range must(os.ReadDir(c.dir)) {
+		if name := e.Name(); !strings.HasSuffix(name, "-wal") && !strings.HasSuffix(name, "-shm") {
+			names = append(names, name)
+		}
+	}
+	return names
+}
+
 // probeWatermark reads the watermark a probe base records in its own
 // provenance table, standing in for an artifact's meta reader.
 func probeWatermark(db *sqlite3.Conn) (time.Time, error) {
@@ -277,11 +289,18 @@ func probeWatermark(db *sqlite3.Conn) (time.Time, error) {
 // and schema era to dest under object.
 func buildBase(t *testing.T, dest billy.Basic, object string, docs []json.RawMessage, watermark time.Time, version int) {
 	t.Helper()
+	buildBaseOf(t, probeTable, dest, object, docs, watermark, version)
+}
+
+// buildBaseOf is buildBase for a database built from td.
+func buildBaseOf(t *testing.T, td TableDef, dest billy.Basic, object string, docs []json.RawMessage, watermark time.Time, version int) {
+	t.Helper()
 	path := filepath.Join(t.TempDir(), "base.db")
 	db := must(sqlite3.Open(path))
-	must1(StoreDocs(db, probeTable, docs))
+	must1(StoreDocs(db, td, docs))
 	must1(db.Exec("CREATE TABLE probe_meta (watermark TEXT); INSERT INTO probe_meta VALUES ('" + sqlitex.TimeColumn(watermark) + "')"))
 	must1(sqlitex.SetVersion(db, version))
+	must1(stamp(db, []TableDef{td}))
 	must1(db.Close())
 	must1(sqlitex.Publish(dest, object, path))
 }
@@ -345,8 +364,8 @@ func TestCache(t *testing.T) {
 	if got := count("SELECT count(*) FROM gen_probe"); got != "3" {
 		t.Errorf("after refusal = %s, want the previous copy's 3", got)
 	}
-	if entries := must(os.ReadDir(c.dir)); len(entries) != 1 {
-		t.Errorf("cache dir holds %d files, want only the live base", len(entries))
+	if names := filesExceptWAL(c); len(names) != 1 {
+		t.Errorf("cache dir holds %v, want only the live base", names)
 	}
 	// Any other era is refused at open, too: newer, and older or unstamped.
 	for _, era := range []int{2, 0} {
@@ -543,7 +562,7 @@ func TestCacheFailedRehydrate(t *testing.T) {
 	if got, err := count(); err != nil || got != "40" {
 		t.Errorf("after recovery = (%s, %v), want 40", got, err)
 	}
-	if names := files(); len(names) != 1 || names[0] != "base.db" {
+	if names := filesExceptWAL(c); len(names) != 1 || names[0] != "base.db" {
 		t.Errorf("cache dir after recovery = %v, want only base.db", names)
 	}
 }
@@ -712,4 +731,109 @@ func TestScopedDerive(t *testing.T) {
 			t.Errorf("%s: expected validation error", name)
 		}
 	}
+}
+
+// TestCachePool checks what the read pool gives: a query runs through a
+// sync's apply rather than waiting on it, and a rehydration waits for the
+// queries in flight before it takes the copy away.
+func TestCachePool(t *testing.T) {
+	ctx := context.Background()
+	dest := testDest(t)
+	up := Upstream{FS: dest, Object: "probe.db.gz", Deltas: "deltas", Defs: []TableDef{probeTable}, Schema: 1, Watermark: probeWatermark}
+	now := dt(0)
+	buildBase(t, dest, up.Object, []json.RawMessage{probe("k1", "hello", now)}, now, 1)
+	c := must(OpenCache(ctx, up, time.Hour))
+	defer c.Close()
+	// A query holds a read connection across a sync.
+	held, release, done := make(chan struct{}), make(chan struct{}), make(chan struct{})
+	defer func() {
+		select {
+		case <-release:
+		default:
+			close(release)
+		}
+		<-done
+	}()
+	go func() {
+		defer close(done)
+		c.Query(func(db *sqlite3.Conn) error {
+			queryText(t, db, "SELECT count(*) FROM gen_probe")
+			close(held)
+			<-release
+			return nil
+		})
+	}()
+	<-held
+	segTime := now.Add(5 * time.Minute)
+	must(WriteSegment(dest, up.Deltas, segTime, up.Defs, map[string][]json.RawMessage{
+		probeTable.Name: {probe("k2", "fresh", segTime)},
+	}))
+	synced := make(chan error, 1)
+	go func() { synced <- c.sync() }()
+	select {
+	case err := <-synced:
+		must1(err)
+	case <-time.After(10 * time.Second):
+		t.Fatal("sync waited on a query holding a read connection")
+	}
+	if !c.Freshness().Equal(segTime) {
+		t.Errorf("freshness = %v, want %v", c.Freshness(), segTime)
+	}
+	// A rehydration waits for the held query, then serves the new base.
+	later := now.Add(10 * time.Minute)
+	buildBase(t, dest, up.Object, []json.RawMessage{probe("k3", "rolled", later)}, later, 1)
+	go func() { synced <- c.sync() }()
+	select {
+	case err := <-synced:
+		t.Fatalf("hydrate did not wait for the query in flight: %v", err)
+	case <-time.After(200 * time.Millisecond):
+	}
+	close(release)
+	must1(<-synced)
+	var got string
+	must1(c.Query(func(db *sqlite3.Conn) error {
+		got = queryText(t, db, "SELECT count(*) FROM gen_probe")
+		return nil
+	}))
+	if got != "1" {
+		t.Errorf("after rehydrate = %s rows, want the new base's 1", got)
+	}
+	if mode := must(pragmaText(c.writer, "journal_mode")); mode != "wal" {
+		t.Errorf("journal_mode = %s, want wal", mode)
+	}
+}
+
+// TestCacheServesForeignCopyUntilMatchingBase opens a base built from earlier
+// table definitions, one index short of its reader's: the copy serves without
+// segments until a base built from the reader's definitions replaces it.
+func TestCacheServesForeignCopyUntilMatchingBase(t *testing.T) {
+	ctx := context.Background()
+	dest := testDest(t)
+	indexed := probeTable
+	indexed.Indexes = append([][]string{{"when_at"}}, probeTable.Indexes...)
+	up := Upstream{FS: dest, Object: "probe.db.gz", Deltas: "deltas", Defs: []TableDef{indexed}, Schema: 1, Watermark: probeWatermark}
+	now := dt(0)
+	buildBase(t, dest, up.Object, []json.RawMessage{probe("k1", "hello", now)}, now, 1)
+	c := must(OpenCache(ctx, up, time.Hour))
+	defer c.Close()
+	segTime := now.Add(5 * time.Minute)
+	must(WriteSegment(dest, up.Deltas, segTime, up.Defs, map[string][]json.RawMessage{indexed.Name: {probe("k2", "fresh", segTime)}}))
+	check := func(rows string, fresh time.Time) {
+		t.Helper()
+		must1(c.Query(func(db *sqlite3.Conn) error {
+			if n := queryText(t, db, "SELECT count(*) FROM gen_probe"); n != rows {
+				t.Errorf("rows = %s, want %s", n, rows)
+			}
+			return nil
+		}))
+		if got := c.Freshness(); !got.Equal(fresh) {
+			t.Errorf("Freshness = %v, want %v", got, fresh)
+		}
+	}
+	must1(c.sync())
+	check("1", now)
+	// A base from the reader's definitions replaces the copy and takes the segment.
+	buildBaseOf(t, indexed, dest, up.Object, []json.RawMessage{probe("k1", "hello", now)}, now, 1)
+	must1(c.sync())
+	check("2", segTime)
 }
