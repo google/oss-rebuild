@@ -19,6 +19,8 @@ import (
 	"github.com/go-git/go-git/v5/plumbing/cache"
 	"github.com/go-git/go-git/v5/plumbing/object"
 	"github.com/go-git/go-git/v5/storage/filesystem"
+	"github.com/google/go-cmp/cmp"
+	"github.com/google/oss-rebuild/internal/gitx"
 	"github.com/google/oss-rebuild/internal/gitx/gitxtest"
 	"github.com/google/oss-rebuild/pkg/archive"
 	"github.com/google/oss-rebuild/pkg/rebuild/rebuild"
@@ -628,4 +630,40 @@ func addArtifacts(mavenRegistry *mockMavenRegistry, entries map[string][]*archiv
 		mavenRegistry.artifactCoordinates[key] = buf.Bytes()
 	}
 	return nil
+}
+
+func TestInferStrategyFallsBackToLastCommitByPublish(t *testing.T) {
+	for _, tc := range []struct {
+		name      string
+		buildFile string
+		content   func(version string) string
+	}{
+		{"Maven", "pom.xml", func(v string) string {
+			return `<project><groupId>foo</groupId><artifactId>bar</artifactId><version>` + v + `</version></project>`
+		}},
+		{"Gradle", "build.gradle", func(v string) string { return "version = '" + v + "'\n" }},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			repo := must(gitxtest.CreateRepo([]gitxtest.Commit{
+				{ID: "old", Time: time.Date(2023, 1, 1, 0, 0, 0, 0, time.UTC), Files: gitxtest.FileContent{tc.buildFile: tc.content("0.9.0")}},
+				{ID: "later", Parent: "old", Time: time.Date(2024, 1, 1, 0, 0, 0, 0, time.UTC), Files: gitxtest.FileContent{tc.buildFile: tc.content("1.1.0")}},
+			}, nil))
+			published := time.Date(2023, 6, 1, 0, 0, 0, 0, time.UTC)
+			mux := rebuild.RegistryMux{Maven: &mockMavenRegistry{artifactCoordinates: map[artifactCoordinates][]byte{}, published: published}}
+			rcfg := &rebuild.RepoConfig{Repo: gitx.Repo{Repository: repo.Repository, Storer: repo.Storer}, URI: "https://github.com/foo/bar"}
+			target := rebuild.Target{Ecosystem: rebuild.Maven, Package: "foo:bar", Version: "1.0.0"}
+			_, err := Rebuilder{}.InferStrategy(context.Background(), target, mux, rcfg, nil)
+			var located *rebuild.InferenceError
+			if !errors.As(err, &located) {
+				t.Fatalf("InferStrategy() error = %v, want a located error", err)
+			}
+			want := rebuild.InferenceErrorDetail{Location: rebuild.Location{Repo: rcfg.URI, Ref: repo.Commits["old"].String()}, Published: published, Kind: rebuild.FailureNoRef}
+			if diff := cmp.Diff(want, located.Detail); diff != "" {
+				t.Errorf("detail mismatch (-want +got):\n%s", diff)
+			}
+			if !errors.Is(err, rebuild.ErrNoRef) {
+				t.Errorf("InferStrategy() error = %v, want an ErrNoRef", err)
+			}
+		})
+	}
 }

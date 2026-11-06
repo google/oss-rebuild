@@ -41,7 +41,7 @@ func GradleInfer(ctx context.Context, t rebuild.Target, mux rebuild.RegistryMux,
 		}
 	}
 	if ref == "" {
-		return nil, errors.Errorf("no git ref")
+		return nil, rebuild.ErrNoRef
 	}
 	commitObject, err := repoConfig.Repository.CommitObject(git2.NewHash(ref))
 	if err != nil {

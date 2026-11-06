@@ -149,6 +149,7 @@ func (e *InferenceError) Unwrap() error { return e.Err }
 type FailureKind string
 
 const (
+	FailureNoRef    FailureKind = "NO_REF"   // no commit found for the version
 	FailureOversize FailureKind = "OVERSIZE" // repository over the size limit
 )
 

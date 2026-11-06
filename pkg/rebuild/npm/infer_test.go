@@ -254,7 +254,8 @@ func TestInferStrategy_NPM(t *testing.T) {
 		wantCommitID    string
 		wantStrategyFn  func(commitID string) rebuild.Strategy
 		wantErr         bool
-		wantLocated     bool // the error carries the resolved location
+		wantLocated     bool   // the error carries the resolved location
+		wantNoRef       string // commit a NO_REF error is located at
 	}{
 		{
 			name:    "NPMPackBuild - ref from gitHead",
@@ -467,6 +468,7 @@ func TestInferStrategy_NPM(t *testing.T) {
 			versionMetadata: `{"name":"test-package","version":"1.0.0","_npmVersion":"8.0.0","dist":{"tarball":"url6"},"gitHead":"INSERT_COMMIT_ID"}`,
 			packageMetadata: `{"name":"test-package","time":{"1.0.0":"2023-01-01T12:00:00.000Z"}}`,
 			wantErr:         true,
+			wantNoRef:       "version-bump",
 		},
 		{
 			name:    "Error - missing upload time for custom build",
@@ -604,10 +606,15 @@ func TestInferStrategy_NPM(t *testing.T) {
 					t.Errorf("InferStrategy expected error, got %v", s)
 				}
 				var located *rebuild.InferenceError
-				if errors.As(err, &located) != tc.wantLocated {
-					t.Errorf("located error = %v, want %v: %v", !tc.wantLocated, tc.wantLocated, err)
-				} else if tc.wantLocated && located.Detail.Location.Ref != targetCommitID {
-					t.Errorf("located ref = %q, want %q", located.Detail.Location.Ref, targetCommitID)
+				wantLocated := tc.wantLocated || tc.wantNoRef != ""
+				if errors.As(err, &located) != wantLocated {
+					t.Errorf("located error = %v, want %v: %v", !wantLocated, wantLocated, err)
+				} else if tc.wantNoRef != "" {
+					if want := repo.Commits[tc.wantNoRef].String(); located.Detail.Kind != rebuild.FailureNoRef || located.Detail.Location.Ref != want {
+						t.Errorf("kind %q at %q, want %q at %q", located.Detail.Kind, located.Detail.Location.Ref, rebuild.FailureNoRef, want)
+					}
+				} else if tc.wantLocated && (located.Detail.Kind != "" || located.Detail.Location.Ref != targetCommitID) {
+					t.Errorf("located ref = %q (kind %q), want %q", located.Detail.Location.Ref, located.Detail.Kind, targetCommitID)
 				}
 			} else if err != nil {
 				t.Fatalf("InferStrategy failed: %v", err)

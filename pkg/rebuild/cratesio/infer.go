@@ -195,9 +195,9 @@ func inferRefAndDir(t rebuild.Target, vmeta *reg.CrateVersion, crateBytes []byte
 		fallthrough
 	default:
 		if cargoVCSGuess == "" && tagGuess == "" && cargoTOMLGuess == "" {
-			return "", "", errors.Errorf("no git ref")
+			return "", "", rebuild.ErrNoRef
 		}
-		return "", "", errors.Errorf("no valid git ref")
+		return "", "", rebuild.ErrNoValidRef
 	}
 }
 
@@ -231,7 +231,7 @@ func (Rebuilder) InferStrategy(ctx context.Context, t rebuild.Target, mux rebuil
 	} else {
 		ref, dir, err = inferRefAndDir(t, vmeta, b, rcfg)
 		if err != nil {
-			return nil, err
+			return nil, rebuild.ErrorWithFallbackRef(err, rcfg.Repository, rebuild.Location{Repo: rcfg.URI, Dir: rcfg.Dir}, vmeta.Created)
 		}
 	}
 	var submodules []rebuild.Submodule
