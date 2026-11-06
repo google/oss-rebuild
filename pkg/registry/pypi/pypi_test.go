@@ -234,6 +234,27 @@ func TestHTTPRegistry_Artifact(t *testing.T) {
 			expectedReadCloser: httpxtest.Body("This is the artifact content"),
 		},
 		{
+			name:     "UnparsableArtifactURL",
+			pkg:      "requests",
+			version:  "2.31.0",
+			filename: "requests-2.31.0-py3-none-any.whl",
+			calls: []httpxtest.Call{
+				{
+					URL: "https://pypi.org/pypi/requests/2.31.0/json",
+					Response: &http.Response{
+						StatusCode: 200,
+						Body: httpxtest.Body(`{
+                            "info": {"name": "requests", "version": "2.31.0"},
+                            "urls": [
+                                {"filename": "requests-2.31.0-py3-none-any.whl", "url": "https://files.pythonhosted.org/%zz"}
+                            ]
+                        }`),
+					},
+				},
+			},
+			expectedErr: errors.New(`building artifact request: parse "https://files.pythonhosted.org/%zz": invalid URL escape "%zz"`),
+		},
+		{
 			name:     "Release Fetch Error",
 			pkg:      "requests",
 			version:  "2.31.0",

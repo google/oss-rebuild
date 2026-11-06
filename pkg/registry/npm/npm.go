@@ -171,7 +171,10 @@ func (r HTTPRegistry) Artifact(ctx context.Context, pkg, version string) (io.Rea
 	if err != nil {
 		return nil, err
 	}
-	req, _ := http.NewRequestWithContext(ctx, http.MethodGet, v.Dist.URL, nil)
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, v.Dist.URL, nil)
+	if err != nil {
+		return nil, errors.Wrap(err, "building artifact request")
+	}
 	resp, err := r.Client.Do(req)
 	if err != nil {
 		return nil, err

@@ -41,7 +41,10 @@ func SummarizeArtifacts(ctx context.Context, metadata rebuild.LocatableAssetStor
 		return rb, up, errors.Wrap(err, "fingerprinting rebuild")
 	}
 	// Fetch and process upstream.
-	req, _ := http.NewRequest(http.MethodGet, up.URI, nil)
+	req, err := http.NewRequest(http.MethodGet, up.URI, nil)
+	if err != nil {
+		return rb, up, errors.Wrap(err, "building upstream request")
+	}
 	resp, err := rebuild.DoContext(ctx, req)
 	if err != nil {
 		return rb, up, errors.Wrap(err, "fetching upstream artifact")

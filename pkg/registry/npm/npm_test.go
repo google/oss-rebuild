@@ -297,6 +297,21 @@ func TestHTTPRegistry_Artifact(t *testing.T) {
 			},
 			expectedErr: errors.New("fetching artifact: Internal Server Error"),
 		},
+		{
+			name:    "UnparsableTarballURL",
+			pkg:     "express",
+			version: "4.18.2",
+			calls: []httpxtest.Call{
+				{
+					URL: "https://registry.npmjs.org/express/4.18.2",
+					Response: &http.Response{
+						StatusCode: 200,
+						Body:       httpxtest.Body(`{"name":"express","dist-tags":{"latest":"4.18.2"},"dist":{"tarball":"https://registry.npmjs.org/%zz"}}`),
+					},
+				},
+			},
+			expectedErr: errors.New(`building artifact request: parse "https://registry.npmjs.org/%zz": invalid URL escape "%zz"`),
+		},
 	}
 
 	for _, tc := range testCases {

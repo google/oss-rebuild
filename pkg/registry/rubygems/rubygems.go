@@ -105,7 +105,10 @@ func (r HTTPRegistry) Gem(ctx context.Context, name string) (*Gem, error) {
 // Version provides detailed metadata for a specific version of a gem.
 func (r HTTPRegistry) Version(ctx context.Context, name, version string) (*VersionDetail, error) {
 	u := fmt.Sprintf("%s/api/v2/rubygems/%s/versions/%s.json", registryURL.String(), name, version)
-	req, _ := http.NewRequestWithContext(ctx, http.MethodGet, u, nil)
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, u, nil)
+	if err != nil {
+		return nil, errors.Wrap(err, "building version request")
+	}
 	resp, err := r.Client.Do(req)
 	if err != nil {
 		return nil, err
@@ -146,7 +149,10 @@ func (r HTTPRegistry) Versions(ctx context.Context, name string) ([]VersionInfo,
 // Artifact provides the gem file for a specific version.
 func (r HTTPRegistry) Artifact(ctx context.Context, name, version string) (io.ReadCloser, error) {
 	artifactURL := fmt.Sprintf("%s/gems/%s-%s.gem", registryURL.String(), name, version)
-	req, _ := http.NewRequestWithContext(ctx, http.MethodGet, artifactURL, nil)
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, artifactURL, nil)
+	if err != nil {
+		return nil, errors.Wrap(err, "building artifact request")
+	}
 	resp, err := r.Client.Do(req)
 	if err != nil {
 		return nil, err
