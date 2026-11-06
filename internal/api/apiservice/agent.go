@@ -4,6 +4,7 @@
 package apiservice
 
 import (
+	"cmp"
 	"context"
 	"encoding/json"
 	"fmt"
@@ -121,7 +122,7 @@ func AgentCreate(ctx context.Context, req schema.AgentCreateRequest, deps *Agent
 		// against. AgentComplete (or the idle reaper as backstop) tears it down.
 		scratch, err := deps.ScratchCreateStub(ctx, schema.ScratchCreateRequest{
 			BuildID:      sessionID,
-			MachineClass: schema.MachineClassStandard,
+			MachineClass: cmp.Or(req.MachineClass, schema.MachineClassStandard),
 		})
 		if err != nil {
 			// The session doc already exists. Without a terminal update it

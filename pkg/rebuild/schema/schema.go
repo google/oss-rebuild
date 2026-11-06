@@ -516,6 +516,7 @@ type AgentCreateRequest struct {
 	ExecutionMode          AgentExecutionMode `form:""` // Empty means AgentExecutionModeGCB
 	ExternalAgent          bool               `form:""` // Skip the hosted agent job launch: the caller runs the agent binary
 	Model                  string             `form:""` // Gemini model id for the session. Empty selects the agent's default.
+	MachineClass           MachineClass       `form:""` // session size, empty for standard
 }
 
 var _ api.Input = AgentCreateRequest{}
@@ -531,6 +532,11 @@ func (r AgentCreateRequest) Validate() error {
 	case "", AgentExecutionModeGCB, AgentExecutionModeScratch:
 	default:
 		return errors.Errorf("invalid execution_mode %q", r.ExecutionMode)
+	}
+	switch r.MachineClass {
+	case "", MachineClassStandard, MachineClassJumbo:
+	default:
+		return errors.Errorf("invalid machine_class %q", r.MachineClass)
 	}
 	return nil
 }
