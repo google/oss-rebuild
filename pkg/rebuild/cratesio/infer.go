@@ -45,9 +45,7 @@ func getCargoTOML(tree *git2.Tree, path string) (ct reg.CargoTOML, err error) {
 	if err != nil {
 		return ct, err
 	}
-	// Cargo tolerates a UTF-8 byte order mark in manifests; go-toml does not.
-	p = strings.TrimPrefix(p, "\uFEFF")
-	return ct, toml.Unmarshal([]byte(p), &ct)
+	return reg.ParseCargoTOML(p)
 }
 
 // Published returns when t's version was published to the registry.
