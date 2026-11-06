@@ -4,6 +4,9 @@
 package docdb
 
 import (
+	"fmt"
+	"hash/fnv"
+	"io"
 	"strings"
 
 	"github.com/ncruces/go-sqlite3"
@@ -74,7 +77,7 @@ func touchSQL(td TableDef) string {
 
 // Derive drops and rematerializes every derived table among defs from the
 // doc rows in db, in definition order so a derived table may build on an
-// earlier one, returning the row counts.
+// earlier one, returning the row counts. It stamps db as built from defs.
 func Derive(db *sqlite3.Conn, defs []TableDef) (map[string]int, error) {
 	counts := make(map[string]int)
 	for _, td := range defs {
@@ -87,7 +90,30 @@ func Derive(db *sqlite3.Conn, defs []TableDef) (map[string]int, error) {
 		}
 		counts[td.Name] = n
 	}
-	return counts, nil
+	return counts, stamp(db, defs)
+}
+
+// fingerprint identifies the shape defs give a database: each table's CREATE
+// statement or query and its indexes.
+func fingerprint(defs []TableDef) int32 {
+	h := fnv.New32a()
+	for _, td := range defs {
+		def := createTableSQL(td)
+		if td.Query != "" {
+			def = td.Name + " AS " + td.Query
+		}
+		io.WriteString(h, def+"\n")
+		for _, idx := range td.Indexes {
+			io.WriteString(h, createIndexSQL(td.Name, idx)+"\n")
+		}
+	}
+	return int32(h.Sum32())
+}
+
+// stamp records defs' fingerprint as db's application_id, so a reader can
+// tell whether db was built from the table definitions it holds.
+func stamp(db *sqlite3.Conn, defs []TableDef) error {
+	return errors.Wrap(db.Exec(fmt.Sprintf("PRAGMA application_id = %d", fingerprint(defs))), "stamping table definitions")
 }
 
 func rederive(db *sqlite3.Conn, td TableDef) (int, error) {
