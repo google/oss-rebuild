@@ -146,21 +146,26 @@ func Infer(ctx context.Context, req schema.InferenceRequest, deps *InferDeps) (*
 	}
 	if err != nil {
 		log.Printf("No inference for [pkg=%s, version=%v]: %v\n", req.Package, req.Version, err)
-		err = errors.Wrap(err, "failed to infer strategy")
-		var tooLarge *gitx.RepoTooLargeError
-		if errors.As(err, &tooLarge) {
-			return nil, api.AsStatus(codes.FailedPrecondition, err)
-		}
-		if errors.Is(err, context.DeadlineExceeded) {
-			// A request that found no memory in time can retry.
-			return nil, api.AsStatus(codes.DeadlineExceeded, err)
-		}
-		var located *rebuild.InferenceError
-		if errors.As(err, &located) {
-			// The caller can still check out the source the inference reached.
-			return nil, api.AsStatus(codes.Internal, err, api.AsDetail(located.Detail))
-		}
-		return nil, api.AsStatus(codes.Internal, err)
+		return nil, failureStatus(errors.Wrap(err, "failed to infer strategy"))
 	}
 	return new(schema.NewStrategyOneOf(s)), nil
+}
+
+// failureStatus maps an inference failure to its status. A repository over the
+// fetch budget is FailedPrecondition with the kind that names it.
+func failureStatus(err error) error {
+	var tooLarge *gitx.RepoTooLargeError
+	if errors.As(err, &tooLarge) {
+		return api.AsStatus(codes.FailedPrecondition, err, api.AsDetail(rebuild.InferenceErrorDetail{Kind: rebuild.FailureOversize}))
+	}
+	if errors.Is(err, context.DeadlineExceeded) {
+		// A request that found no memory in time can retry.
+		return api.AsStatus(codes.DeadlineExceeded, err)
+	}
+	var located *rebuild.InferenceError
+	if errors.As(err, &located) {
+		// The caller can still check out the source the inference reached.
+		return api.AsStatus(codes.Internal, err, api.AsDetail(located.Detail))
+	}
+	return api.AsStatus(codes.Internal, err)
 }

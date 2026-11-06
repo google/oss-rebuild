@@ -599,8 +599,8 @@ func toolchainStrategy(eco rebuild.Ecosystem, loc rebuild.Location, published ti
 // a toolchain-only first attempt, which leaves a container and logs for the
 // model to diagnose. Any other failure is returned as is.
 func (a *defaultAgent) toolchainFallback(err error) (*schema.StrategyOneOf, error) {
-	detail, ok := api.DetailOf[rebuild.InferenceErrorDetail](err)
-	if !ok {
+	detail, _ := api.DetailOf[rebuild.InferenceErrorDetail](err)
+	if !detail.Located() {
 		return nil, err
 	}
 	log.Printf("Inference stopped short of a build: %v", err)
@@ -632,14 +632,14 @@ func (a *defaultAgent) proposeHeuristicInference(ctx context.Context) (*schema.S
 			},
 		},
 	)
-	var tooLarge *gitx.RepoTooLargeError
-	if errors.As(err, &tooLarge) {
+	d, _ := api.DetailOf[rebuild.InferenceErrorDetail](err)
+	if d.Kind == rebuild.FailureOversize {
 		// The repository was located, so a model repository hint cannot help.
 		return nil, err
 	}
 	// A failure that resolved the source has its repository, so a model
 	// repository hint cannot help it.
-	if _, located := api.DetailOf[rebuild.InferenceErrorDetail](err); err != nil && !located {
+	if err != nil && !d.Located() {
 		wt, str = memfs.New(), gitx.NewInMemoryStorer()
 		if s, err = a.proposeInferenceWithAIAssist(ctx, err, wt, str); err == nil {
 			log.Println("AI-assisted inference succeeded.")

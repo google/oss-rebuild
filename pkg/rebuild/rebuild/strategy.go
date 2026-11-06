@@ -145,13 +145,24 @@ type InferenceError struct {
 func (e *InferenceError) Error() string { return e.Err.Error() }
 func (e *InferenceError) Unwrap() error { return e.Err }
 
-// InferenceErrorDetail is what an InferenceError knew about the source when
-// the build inference behind it failed. It crosses the wire as an api.Detail,
-// so its fields are the wire format.
+// FailureKind is why inference fails for a target in a way a retry would repeat.
+type FailureKind string
+
+const (
+	FailureOversize FailureKind = "OVERSIZE" // repository over the size limit
+)
+
+// InferenceErrorDetail is what a failed inference knew about its cause and the
+// source it reached. It crosses the wire as an api.Detail, so its fields are
+// the wire format.
 type InferenceErrorDetail struct {
-	Location  Location  `form:"location"`
-	Published time.Time `form:"published"` // publish time of the version, for a timewarp registry pin
+	Location  Location    `form:"location"`  // the source inference reached, if any
+	Published time.Time   `form:"published"` // publish time of the version, for a timewarp registry pin
+	Kind      FailureKind `form:"kind"`      // the named cause, if any
 }
+
+// Located reports whether inference reached a source.
+func (d InferenceErrorDetail) Located() bool { return d.Location.Repo != "" }
 
 // Reason implements api.Detail.
 func (InferenceErrorDetail) Reason() string { return "BUILD_NOT_INFERRED" }

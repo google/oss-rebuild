@@ -12,7 +12,11 @@ import (
 	"github.com/google/oss-rebuild/internal/db"
 	"github.com/google/oss-rebuild/internal/gitx"
 	"github.com/google/oss-rebuild/internal/gitx/gitxtest"
+	"github.com/google/oss-rebuild/pkg/act/api"
 	"github.com/google/oss-rebuild/pkg/rebuild/rebuild"
+	"github.com/pkg/errors"
+	"google.golang.org/grpc/codes"
+	"google.golang.org/grpc/status"
 )
 
 const twoCommitRepo = `
@@ -90,5 +94,30 @@ func TestRecordRepoMetricsNilRepository(t *testing.T) {
 	store := db.NewMemoryRepoMetrics()
 	if err := recordRepoMetrics(context.Background(), store, rebuild.RepoConfig{URI: "https://github.com/org/repo"}); err == nil {
 		t.Error("recordRepoMetrics(nil repository) = nil error; want error")
+	}
+}
+
+func TestFailureStatus(t *testing.T) {
+	for _, tc := range []struct {
+		name string
+		err  error
+		code codes.Code
+		kind rebuild.FailureKind
+	}{
+		{name: "Deadline", err: errors.Wrap(context.DeadlineExceeded, "walking history"), code: codes.DeadlineExceeded},
+		{name: "TooLarge", err: errors.Wrap(&gitx.RepoTooLargeError{URL: "https://github.com/org/big", Limit: 4 << 30}, "clone failed [repo=https://github.com/org/big]"), code: codes.FailedPrecondition, kind: rebuild.FailureOversize},
+		{name: "Unclassified", err: errors.New("object not found"), code: codes.Internal},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			got := failureStatus(tc.err)
+			s := status.Convert(got)
+			if s.Code() != tc.code || s.Message() != tc.err.Error() {
+				t.Errorf("failureStatus() = %v %q, want %v %q", s.Code(), s.Message(), tc.code, tc.err.Error())
+			}
+			d, ok := api.DetailOf[rebuild.InferenceErrorDetail](got)
+			if d.Kind != tc.kind || ok != (tc.kind != "") {
+				t.Errorf("kind = %q (present %t), want %q", d.Kind, ok, tc.kind)
+			}
+		})
 	}
 }

@@ -12,10 +12,12 @@ import (
 
 	"github.com/google/go-cmp/cmp"
 	"github.com/google/oss-rebuild/internal/gitx"
+	"github.com/google/oss-rebuild/pkg/act/api"
 	"github.com/google/oss-rebuild/pkg/llm"
 	"github.com/google/oss-rebuild/pkg/rebuild/rebuild"
 	"github.com/google/oss-rebuild/pkg/rebuild/schema"
 	"github.com/pkg/errors"
+	"google.golang.org/grpc/codes"
 )
 
 func TestToolchainStrategy(t *testing.T) {
@@ -55,6 +57,25 @@ func TestToolchainStrategy(t *testing.T) {
 	target := rebuild.Target{Ecosystem: rebuild.NPM, Package: "pkg", Version: "1.0.0", Artifact: "pkg-1.0.0.tgz"}
 	if inst, err := toolchainStrategy(rebuild.NPM, loc, time.Time{}).GenerateFor(target, env); err != nil || inst.Build != "" {
 		t.Errorf("without a publish time: build = %q, err = %v, want no build", inst.Build, err)
+	}
+}
+
+func TestToolchainFallbackNeedsALocation(t *testing.T) {
+	for _, tc := range []struct {
+		name   string
+		detail rebuild.InferenceErrorDetail
+		want   bool
+	}{
+		{"Located", rebuild.InferenceErrorDetail{Location: rebuild.Location{Repo: "https://github.com/example/pkg", Ref: "abc123"}}, true},
+		{"KindOnly", rebuild.InferenceErrorDetail{Kind: rebuild.FailureOversize}, false},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			a := &defaultAgent{deps: &AgentDeps{}}
+			s, err := a.toolchainFallback(api.AsStatus(codes.Internal, errors.New("no build inferred"), api.AsDetail(tc.detail)))
+			if got := s != nil && err == nil; got != tc.want {
+				t.Errorf("toolchainFallback() = %v, %v, want a strategy: %t", s, err, tc.want)
+			}
+		})
 	}
 }
 
