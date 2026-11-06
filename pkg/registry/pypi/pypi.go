@@ -111,7 +111,7 @@ func (r HTTPRegistry) Release(ctx context.Context, pkg, version string) (*Releas
 	if err != nil {
 		return nil, err
 	}
-	req, _ := http.NewRequest(http.MethodGet, registryURL.ResolveReference(pathURL).String(), nil)
+	req, _ := http.NewRequestWithContext(ctx, http.MethodGet, registryURL.ResolveReference(pathURL).String(), nil)
 	resp, err := r.Client.Do(req)
 	if err != nil {
 		return nil, err
@@ -134,7 +134,7 @@ func (r HTTPRegistry) Artifact(ctx context.Context, pkg, version, filename strin
 	}
 	for _, artifact := range release.Artifacts {
 		if artifact.Filename == filename {
-			req, err := http.NewRequest(http.MethodGet, artifact.URL, nil)
+			req, err := http.NewRequestWithContext(ctx, http.MethodGet, artifact.URL, nil)
 			if err != nil {
 				return nil, errors.Wrap(err, "building artifact request")
 			}
