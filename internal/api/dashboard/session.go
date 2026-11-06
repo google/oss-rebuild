@@ -238,6 +238,7 @@ const (
 	execToolContainer                   // run_in_container
 	execToolCheck                       // check_artifact
 	execToolHost                        // run_on_host
+	execToolGit                         // git on the guest checkout for a repo tool or set_source_ref
 	execBuildMachinery                  // a build's executor or comparison dispatch
 )
 
@@ -260,7 +261,7 @@ var buildSteps = map[schema.ScratchLabel]bool{
 }
 
 // sessionExecs are the labels of the dispatches outside any build.
-var sessionExecs = map[schema.ScratchLabel]bool{schema.ScratchLabelPrepareCompare: true, schema.ScratchLabelRestore: true, schema.ScratchLabelReadback: true, schema.ScratchLabelCtl: true}
+var sessionExecs = map[schema.ScratchLabel]bool{schema.ScratchLabelPrepareCompare: true, schema.ScratchLabelRestore: true, schema.ScratchLabelReadback: true, schema.ScratchLabelCtl: true, schema.ScratchLabelSeed: true}
 
 // buildsDirPattern finds a script's build directory. The last match wins
 // because the comparison script's fetch URLs come first and may hold builds/.
@@ -287,11 +288,13 @@ func classifyExec(e schema.ScratchExec) (classifiedExec, bool) {
 		}
 		return c, true
 	}
-	switch {
-	case e.Label == schema.ScratchLabelKeepAlive:
+	switch e.Label {
+	case schema.ScratchLabelKeepAlive:
 		c.class = execKeepAlive
-	case !sessionExecs[e.Label]:
-		return c, false
+	case schema.ScratchLabelGit:
+		c.class = execToolGit
+	default:
+		return c, sessionExecs[e.Label]
 	}
 	return c, true
 }
@@ -400,8 +403,8 @@ func composeTrajectory(data *SessionData, groups map[int]*IterationGroup, groupF
 			}
 			a.Steps = append(a.Steps, BuildStep{Label: cls.label, Script: cls.script, State: v.State, ExitCode: v.ExitCode, Duration: v.Duration, OutPath: v.OutPath, Started: v.StartedAt, Finished: v.FinishedAt})
 			continue
-		case execToolContainer, execToolCheck, execToolHost:
-			// The transcript shows these as calls.
+		case execToolContainer, execToolCheck, execToolHost, execToolGit:
+			// The transcript shows these as calls, or the calls they served.
 			if hasTranscript {
 				continue
 			}

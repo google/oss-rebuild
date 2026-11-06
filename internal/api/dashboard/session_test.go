@@ -524,9 +524,19 @@ func TestClassifyExec(t *testing.T) {
 		exec: schema.ScratchExec{Cmd: []string{"ls"}, Label: schema.ToolLabel("run_elsewhere")},
 		want: classifiedExec{class: execOther, label: "tool/run_elsewhere", script: "ls"},
 	}, {
-		name: "unknown label",
-		exec: schema.ScratchExec{Cmd: []string{"/bin/sh", "-c", "wget seed.tar"}, Label: "seed"},
+		name: "seed",
+		exec: schema.ScratchExec{Cmd: []string{"/bin/sh", "-c", "wget seed.tar"}, Label: schema.ScratchLabelSeed},
 		want: classifiedExec{class: execOther, label: "seed", script: "wget seed.tar"},
+		ok:   true,
+	}, {
+		name: "git for a tool",
+		exec: schema.ScratchExec{Cmd: []string{"/bin/sh", "-c", "g rev-parse v1"}, Label: schema.ScratchLabelGit},
+		want: classifiedExec{class: execToolGit, label: "git", script: "g rev-parse v1"},
+		ok:   true,
+	}, {
+		name: "unknown label",
+		exec: schema.ScratchExec{Cmd: []string{"/bin/sh", "-c", "wget x.tar"}, Label: "warmup"},
+		want: classifiedExec{class: execOther, label: "warmup", script: "wget x.tar"},
 	}, {
 		name: "no label",
 		exec: schema.ScratchExec{Cmd: []string{"/bin/true"}},
@@ -600,11 +610,12 @@ func TestComposeTrajectory(t *testing.T) {
 		// The transcript shows the tool execs as calls, so none renders.
 		{ID: "3-host", Label: schema.ToolLabel("run_on_host"), Cmd: sh(detached("ls builds")), CreatedAt: at(11 * time.Minute)},
 		{ID: "3-container", Label: schema.ToolLabel("run_in_container"), Cmd: sh("c=$(docker ps -aq --filter name=^rb- | head -1); exec docker exec \"$c\" /bin/sh -c 'ls'"), CreatedAt: at(12 * time.Minute)},
+		{ID: "3-git", Label: schema.ScratchLabelGit, Cmd: sh("c=$(docker ps -aq --filter name=^rb- | head -1); exec docker exec \"$c\" /bin/sh -c 'g ls-tree v1'"), CreatedAt: at(12*time.Minute + 30*time.Second)},
 		{ID: "3-stray", Label: schema.ToolLabel("run_on_host"), Cmd: sh(detached("cat notes")), CreatedAt: at(13 * time.Minute)},
 		// A dispatch outside any build renders as an exec, as does one with
 		// a label the page does not know.
 		{ID: "3-restore", Label: schema.ScratchLabelRestore, Cmd: sh("exec docker exec c /bin/sh -c 'git checkout --force v1'"), CreatedAt: at(14 * time.Minute)},
-		{ID: "3-seed", Label: "seed", Cmd: sh("wget -O - https://example/seed.tar | tar -x"), CreatedAt: at(15 * time.Minute)},
+		{ID: "3-warmup", Label: "warmup", Cmd: sh("wget -O - https://example/x.tar | tar -x"), CreatedAt: at(15 * time.Minute)},
 		{ID: "3c-prepare", Label: schema.ScratchLabelPrepare, Cmd: sh("set -eu\nmkdir -p \"/home/builder/builds/iter-3-canon/out\""), CreatedAt: at(20 * time.Minute)},
 		{ID: "3c-artifact", Label: schema.ScratchLabelArtifact, Cmd: sh("set -eu\n[ -f \"/home/builder/builds/iter-3-canon/out/x.tgz\" ] || exit 44"), CreatedAt: at(21 * time.Minute)},
 		// Unlabeled: reported, and shown as is.
@@ -618,7 +629,7 @@ func TestComposeTrajectory(t *testing.T) {
 	for _, v := range data.Execs {
 		iters = append(iters, v.Iter)
 	}
-	if want := []int{1, 1, 1, 1, 1, 1, 0, 3, 3, 3, 3, 3, 3, 3, 3}; !slices.Equal(iters, want) {
+	if want := []int{1, 1, 1, 1, 1, 1, 0, 3, 3, 3, 3, 3, 3, 3, 3, 3}; !slices.Equal(iters, want) {
 		t.Errorf("exec iterations = %v; want %v", iters, want)
 	}
 	titles := map[int][]string{}
@@ -630,12 +641,12 @@ func TestComposeTrajectory(t *testing.T) {
 	}
 	want := map[int][]string{
 		1: {"inference proposal", "build iter-1 · mismatch"},
-		3: {"prompt", "run_on_host", "exec · restore · completed · exit 0 · N/A", "exec · seed · completed · exit 0 · N/A", "exec · completed · exit 0 · N/A", "build iter-3-canon · succeeded"},
+		3: {"prompt", "run_on_host", "exec · restore · completed · exit 0 · N/A", "exec · warmup · completed · exit 0 · N/A", "exec · completed · exit 0 · N/A", "build iter-3-canon · succeeded"},
 	}
 	if diff := cmp.Diff(want, titles); diff != "" {
 		t.Errorf("event titles (-want +got):\n%s", diff)
 	}
-	if diff := cmp.Diff([]string{"1 exec without a label", `unknown exec label "seed"`}, data.Warnings); diff != "" {
+	if diff := cmp.Diff([]string{"1 exec without a label", `unknown exec label "warmup"`}, data.Warnings); diff != "" {
 		t.Errorf("warnings (-want +got):\n%s", diff)
 	}
 	var labels []string
