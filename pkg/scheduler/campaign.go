@@ -78,6 +78,7 @@ type Campaign struct {
 	LastRunID    string `firestore:"last_run_id,omitempty"`
 	LastSession  string `firestore:"last_session,omitempty"`
 	TriageReason string `firestore:"triage_reason,omitempty"`
+	Jumbo        bool   `firestore:"jumbo,omitempty"` // stages get room for a large repo
 
 	Score     float64   `firestore:"score,omitempty"`      // the version's priority, copied at enqueue
 	Published time.Time `firestore:"published,omitempty"`  // DispatchOrder derives recency from this at read time, so the boost decays while the campaign waits

@@ -6,13 +6,11 @@ package scheduler
 import "time"
 
 // Tick advances a campaign given the outcome of its last attempt. Attested
-// finishes it. Transient re-queues the same stage. Failure escalates to the
-// next stage, or to NeedsTriage when none is left. Oversize goes straight to
-// NeedsTriage: the later stages hold less, not more. GaveUp goes to
-// NeedsTriage with the agent's closest build. A stage that has absorbed
-// maxRetries transient outcomes also goes to NeedsTriage, since it is
-// indistinguishable from one that is wedged. maxRetries <= 0 disables that
-// bound.
+// finishes it. Transient re-queues the same stage, and goes to NeedsTriage
+// after maxRetries (unbounded when <= 0) since a wedged stage looks the same.
+// Failure escalates to the next stage, or to NeedsTriage when none is left.
+// Oversize re-queues as Jumbo, or goes to NeedsTriage when already Jumbo.
+// GaveUp goes to NeedsTriage with the agent's closest build.
 func Tick(c Campaign, outcome Outcome, maxRetries int, now time.Time) Campaign {
 	c.Outcome = outcome
 	c.Updated = now
@@ -37,6 +35,11 @@ func Tick(c Campaign, outcome Outcome, maxRetries int, now time.Time) Campaign {
 			c.TriageReason = "agent stage exhausted"
 		}
 	case OutcomeOversize:
+		if !c.Jumbo {
+			c.Jumbo = true
+			c.State = StateQueued
+			return c
+		}
 		c.State = StateNeedsTriage
 		c.TriageReason = "repository exceeds size limit"
 	case OutcomeGaveUp:

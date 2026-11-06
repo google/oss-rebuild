@@ -158,16 +158,18 @@ func (r Request) Config() (Config, error) {
 // Dispatcher holds one pass's dependencies. Per-campaign failures are
 // reported to Err.
 type Dispatcher struct {
-	Err        io.Writer
-	Campaigns  db.Campaigns
-	Budgets    db.Budgets
-	Attempts   db.Attempts
-	Sessions   db.Sessions
-	Iterations db.Iterations // seeds agents from sibling versions
-	Create     api.StubFn[schema.RebuildPackageRequest, longrunning.Operation[schema.Verdict]]
-	Agent      api.StubFn[schema.AgentCreateRequest, schema.AgentCreateResponse]
-	Config     Config
-	Now        time.Time
+	Err            io.Writer
+	Campaigns      db.Campaigns
+	Budgets        db.Budgets
+	Attempts       db.Attempts
+	Sessions       db.Sessions
+	Iterations     db.Iterations  // seeds agents from sibling versions
+	RepoMetrics    db.RepoMetrics // jumbo at JumboRepoBytes or more
+	JumboRepoBytes int64
+	Create         api.StubFn[schema.RebuildPackageRequest, longrunning.Operation[schema.Verdict]]
+	Agent          api.StubFn[schema.AgentCreateRequest, schema.AgentCreateResponse]
+	Config         Config
+	Now            time.Time
 
 	agents    int        // agent launches this run, counted across refills so EvalModels rotate evenly
 	mu        sync.Mutex // guards state the pass's workers share
@@ -523,8 +525,8 @@ func spent(cap time.Duration, seconds int64) bool {
 // charge it. A dispatch with no result past the in-flight timeout counts as
 // transient, since a lost job looks like a slow one.
 func (d *Dispatcher) observe(ctx context.Context, c scheduler.Campaign, budget *scheduler.Budget) (scheduler.Campaign, bool) {
-	outcome, spend, capacity, ok := d.outcome(ctx, c)
-	if capacity && c.Stage != scheduler.StageAgent {
+	r, ok := d.outcome(ctx, c)
+	if r.capacity && c.Stage != scheduler.StageAgent {
 		d.mu.Lock()
 		d.buildHeld = true
 		d.mu.Unlock()
@@ -533,38 +535,68 @@ func (d *Dispatcher) observe(ctx context.Context, c scheduler.Campaign, budget *
 		if d.Config.InflightTimeout <= 0 || c.DispatchedAt.IsZero() || d.Now.Sub(c.DispatchedAt) <= d.Config.InflightTimeout {
 			return c, false
 		}
-		outcome = scheduler.OutcomeTransient
+		r.outcome = scheduler.OutcomeTransient
 	}
+	jumbo := !c.Jumbo && d.needsJumbo(ctx, r.repo)
 	next, err := d.transition(ctx, c, scheduler.StateInFlight, func(cur *scheduler.Campaign) {
-		*cur = scheduler.Tick(*cur, outcome, d.Config.MaxRetries, d.Now)
+		*cur = scheduler.Tick(*cur, r.outcome, d.Config.MaxRetries, d.Now)
+		cur.Jumbo = cur.Jumbo || jumbo
 	})
 	if err != nil {
 		return c, false
 	}
-	d.charge(ctx, budget, next, spend)
+	d.charge(ctx, budget, next, r.spend)
 	return next, true
 }
 
-// outcome reads the terminal result of the campaign's last dispatch and the
-// spend it incurred. capacity is set when a build attempt was turned away by
-// a service with no room. The last return is false while there is no result.
-func (d *Dispatcher) outcome(ctx context.Context, c scheduler.Campaign) (outcome scheduler.Outcome, spend scheduler.Spend, capacity, ok bool) {
+// needsJumbo reports whether repo's recorded size calls for jumbo stages.
+func (d *Dispatcher) needsJumbo(ctx context.Context, repo string) bool {
+	if d.RepoMetrics == nil || d.JumboRepoBytes <= 0 || repo == "" {
+		return false
+	}
+	bytes, err := db.FetchRepoBytes(ctx, d.RepoMetrics, repo)
+	if err != nil {
+		fmt.Fprintf(d.errw(), "sizing %s: %v\n", repo, err)
+		return false
+	}
+	return bytes >= d.JumboRepoBytes
+}
+
+// result is the terminal result of a campaign's last dispatch.
+type result struct {
+	outcome  scheduler.Outcome
+	spend    scheduler.Spend // what the dispatch incurred
+	repo     string          // the build attempt's strategy repo
+	capacity bool            // a full service turned the build away
+}
+
+// outcome reads the terminal result of the campaign's last dispatch. The
+// last return is false while there is no result.
+func (d *Dispatcher) outcome(ctx context.Context, c scheduler.Campaign) (result, bool) {
 	if c.Stage == scheduler.StageAgent {
 		s, err := d.Sessions.Get(ctx, c.LastSession)
 		if err != nil || s.Status != schema.AgentSessionStatusCompleted {
-			return "", scheduler.Spend{}, false, false
+			return result{}, false
 		}
-		spend := scheduler.Spend{SessionSeconds: spanSeconds(s.Created, s.Updated), Tokens: sessionTokens(s.Usage)}
+		r := result{
+			outcome: scheduler.ClassifySession(s.StopReason),
+			spend:   scheduler.Spend{SessionSeconds: spanSeconds(s.Created, s.Updated), Tokens: sessionTokens(s.Usage)},
+		}
 		if scheduler.IsOversize(s.Summary) {
-			return scheduler.OutcomeOversize, spend, false, true
+			r.outcome = scheduler.OutcomeOversize
 		}
-		return scheduler.ClassifySession(s.StopReason), spend, false, true
+		return r, true
 	}
 	a, err := d.Attempts.Get(ctx, db.AttemptKey{Target: c.Target(), RunID: c.LastRunID})
 	if err != nil || !scheduler.IsTerminal(a.Status) {
-		return "", scheduler.Spend{}, false, false
+		return result{}, false
 	}
-	return scheduler.ClassifyRebuild(a.Status, a.Message), scheduler.Spend{BuildSeconds: attemptBuildSeconds(a)}, scheduler.IsCapacityRejection(a.Message), true
+	return result{
+		outcome:  scheduler.ClassifyRebuild(a.Status, a.Message),
+		spend:    scheduler.Spend{BuildSeconds: attemptBuildSeconds(a)},
+		repo:     scheduler.RepoFromStrategy(a.Strategy),
+		capacity: scheduler.IsCapacityRejection(a.Message),
+	}, true
 }
 
 // attemptBuildSeconds is the builder time GCB reported for the attempt. An
@@ -706,6 +738,7 @@ func (d *Dispatcher) start(ctx context.Context, c scheduler.Campaign, model stri
 			ID:            c.LastRunID,
 			ExecutionHint: schema.ExtendedExecution,
 			BuildTimeout:  inferBuildTimeout,
+			SizeHint:      sizeHint(c),
 		})
 		return "", err
 	case scheduler.StageAgent:
@@ -715,6 +748,7 @@ func (d *Dispatcher) start(ctx context.Context, c scheduler.Campaign, model stri
 			MaxIterations:          d.Config.AgentIterations,
 			IterationBudgetSeconds: int(d.Config.AgentIterationBudget.Seconds()),
 			Model:                  model,
+			MachineClass:           machineClass(c),
 		}
 		if d.Iterations != nil {
 			seed, err := d.seedFor(ctx, c.Target())
@@ -733,6 +767,20 @@ func (d *Dispatcher) start(ctx context.Context, c scheduler.Campaign, model stri
 	default:
 		return "", errors.Errorf("undispatchable stage %q", c.Stage)
 	}
+}
+
+func sizeHint(c scheduler.Campaign) schema.SizeHint {
+	if c.Jumbo {
+		return schema.JumboSize
+	}
+	return schema.UnspecifiedSize
+}
+
+func machineClass(c scheduler.Campaign) schema.MachineClass {
+	if c.Jumbo {
+		return schema.MachineClassJumbo
+	}
+	return schema.MachineClassStandard
 }
 
 // transition applies fn to the stored campaign, provided it is still in

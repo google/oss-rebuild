@@ -14,6 +14,8 @@ import (
 	"github.com/google/go-cmp/cmp"
 	"github.com/google/oss-rebuild/internal/db"
 	"github.com/google/oss-rebuild/pkg/longrunning"
+	"github.com/google/oss-rebuild/pkg/rebuild/npm"
+	"github.com/google/oss-rebuild/pkg/rebuild/rebuild"
 	"github.com/google/oss-rebuild/pkg/rebuild/schema"
 	"github.com/google/oss-rebuild/pkg/scheduler"
 	"google.golang.org/grpc/codes"
@@ -78,6 +80,10 @@ func inflight(pkg string, stage scheduler.Stage, age time.Duration) scheduler.Ca
 	return c
 }
 
+func npmStrategy(repo string) schema.StrategyOneOf {
+	return schema.NewStrategyOneOf(&npm.NPMPackBuild{Location: rebuild.Location{Repo: repo, Ref: "abc"}})
+}
+
 func with(c scheduler.Campaign, edit func(*scheduler.Campaign)) scheduler.Campaign {
 	edit(&c)
 	return c
@@ -102,6 +108,7 @@ func TestPass(t *testing.T) {
 		campaign scheduler.Campaign
 		attempt  *schema.RebuildAttempt
 		session  *schema.AgentSession
+		repoSize int64 // recorded bytes of github.com/org/p
 		api      fakeAPI
 		want     scheduler.Campaign
 		wantSum  Summary
@@ -150,15 +157,58 @@ func TestPass(t *testing.T) {
 			wantSum: Summary{Observed: 1},
 		},
 		{
-			// The agent refused the repository for its size, so the campaign
-			// goes to triage rather than absorbing retries.
-			name:     "OversizeSessionTriages",
+			// Oversize reruns the stage jumbo without spending a retry.
+			name:     "OversizeSessionRetriesJumbo",
 			campaign: inflight("p", scheduler.StageAgent, time.Minute),
-			session:  &schema.AgentSession{ID: "session-0", Status: schema.AgentSessionStatusCompleted, StopReason: schema.AgentCompleteReasonFailed, Summary: "Inference failed: repository exceeds the size limit: https://github.com/org/big at 512 MiB, limit 512 MiB"},
+			session:  &schema.AgentSession{ID: "session-0", Status: schema.AgentSessionStatusCompleted, StopReason: schema.AgentCompleteReasonFailed, Summary: "Inference failed: repository exceeds the size limit: https://github.com/org/big, archive is 1500 MiB, limit 1024 MiB"},
+			want: claimed(with(inflight("p", scheduler.StageAgent, time.Minute), func(c *scheduler.Campaign) {
+				c.Jumbo = true
+			}), "session-1"),
+			wantSum: Summary{InflightSessions: 1, Observed: 1, Approved: 1, Dispatched: 1, AgentDispatched: 1},
+		},
+		{
+			// Jumbo was already too small, so nothing larger is left to try.
+			name: "JumboOversizeSessionTriages",
+			campaign: with(inflight("p", scheduler.StageAgent, time.Minute), func(c *scheduler.Campaign) {
+				c.Jumbo = true
+			}),
+			session: &schema.AgentSession{ID: "session-0", Status: schema.AgentSessionStatusCompleted, StopReason: schema.AgentCompleteReasonFailed, Summary: "Inference failed: repository exceeds the size limit: https://github.com/org/big, archive is 9000 MiB, limit 7168 MiB"},
 			want: with(inflight("p", scheduler.StageAgent, time.Minute), func(c *scheduler.Campaign) {
+				c.Jumbo = true
 				c.State, c.Outcome, c.TriageReason, c.Updated = scheduler.StateNeedsTriage, scheduler.OutcomeOversize, "repository exceeds size limit", testNow
 			}),
 			wantSum: Summary{Observed: 1},
+		},
+		{
+			// A large repo escalates to a jumbo agent session.
+			name:     "LargeRepositoryEscalatesJumbo",
+			campaign: inflight("p", scheduler.StageInfer, time.Minute),
+			attempt:  &schema.RebuildAttempt{RunID: "run-0", Status: schema.RebuildStatusFailure, Message: "rebuild content mismatch", Strategy: npmStrategy("https://github.com/org/p")},
+			repoSize: 2 << 30,
+			want: claimed(with(inflight("p", scheduler.StageInfer, time.Minute), func(c *scheduler.Campaign) {
+				c.Stage, c.Jumbo = scheduler.StageAgent, true
+			}), "session-1"),
+			wantSum: Summary{InflightSessions: 1, Observed: 1, Approved: 1, Dispatched: 1, AgentDispatched: 1},
+		},
+		{
+			name:     "SmallRepositoryEscalatesStandard",
+			campaign: inflight("p", scheduler.StageInfer, time.Minute),
+			attempt:  &schema.RebuildAttempt{RunID: "run-0", Status: schema.RebuildStatusFailure, Message: "rebuild content mismatch", Strategy: npmStrategy("https://github.com/org/p")},
+			repoSize: 100 << 20,
+			want: claimed(with(inflight("p", scheduler.StageInfer, time.Minute), func(c *scheduler.Campaign) {
+				c.Stage = scheduler.StageAgent
+			}), "session-1"),
+			wantSum: Summary{InflightSessions: 1, Observed: 1, Approved: 1, Dispatched: 1, AgentDispatched: 1},
+		},
+		{
+			name: "JumboInferBuildsJumbo",
+			campaign: with(queued("p", scheduler.StageInfer), func(c *scheduler.Campaign) {
+				c.Jumbo = true
+			}),
+			want: claimed(with(queued("p", scheduler.StageInfer), func(c *scheduler.Campaign) {
+				c.Jumbo = true
+			}), ""),
+			wantSum: Summary{QueuedInfer: 1, InflightBuilds: 1, Approved: 1, Dispatched: 1},
 		},
 		{
 			// A launch the API refused must not leave a phantom dispatch to
@@ -172,6 +222,12 @@ func TestPass(t *testing.T) {
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			d := newTestDispatcher(cfg, &tc.api)
+			d.RepoMetrics, d.JumboRepoBytes = db.NewMemoryRepoMetrics(), 1<<30
+			if tc.repoSize > 0 {
+				if err := d.RepoMetrics.Upsert(ctx, schema.RepoMetrics{URI: "https://github.com/org/p", Bytes: tc.repoSize}); err != nil {
+					t.Fatal(err)
+				}
+			}
 			if err := d.Campaigns.Upsert(ctx, tc.campaign); err != nil {
 				t.Fatal(err)
 			}
@@ -197,14 +253,18 @@ func TestPass(t *testing.T) {
 			if diff := cmp.Diff(tc.want, got); diff != "" {
 				t.Errorf("stored campaign mismatch (-want +got):\n%s", diff)
 			}
+			wantHint, wantClass := schema.UnspecifiedSize, schema.MachineClassStandard
+			if tc.want.Jumbo {
+				wantHint, wantClass = schema.JumboSize, schema.MachineClassJumbo
+			}
 			for _, r := range tc.api.creates {
-				if r.ID != testRunID || r.ExecutionHint != schema.ExtendedExecution || r.BuildTimeout != inferBuildTimeout {
-					t.Errorf("create request = %+v, want run id %q with extended execution and build timeout %v", r, testRunID, inferBuildTimeout)
+				if r.ID != testRunID || r.ExecutionHint != schema.ExtendedExecution || r.BuildTimeout != inferBuildTimeout || r.SizeHint != wantHint {
+					t.Errorf("create request = %+v, want run id %q with extended execution, build timeout %v and size hint %q", r, testRunID, inferBuildTimeout, wantHint)
 				}
 			}
 			for _, r := range tc.api.agents {
-				if r.RunID != testRunID {
-					t.Errorf("agent request run id = %q, want %q", r.RunID, testRunID)
+				if r.RunID != testRunID || r.MachineClass != wantClass {
+					t.Errorf("agent request = %+v, want run id %q on class %q", r, testRunID, wantClass)
 				}
 			}
 		})

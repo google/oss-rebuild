@@ -35,11 +35,18 @@ func TestTick(t *testing.T) {
 			want:       Campaign{Stage: StageAgent, State: StateQueued, Outcome: OutcomeFailure, Updated: now},
 		},
 		{
-			name:       "OversizeNeedsTriage",
-			in:         Campaign{Stage: StageInfer, State: StateInFlight},
+			name:       "OversizeRetriesJumbo",
+			in:         Campaign{Stage: StageAgent, State: StateInFlight, Retries: 1},
 			outcome:    OutcomeOversize,
 			maxRetries: 3,
-			want: Campaign{Stage: StageInfer, State: StateNeedsTriage, Outcome: OutcomeOversize,
+			want:       Campaign{Stage: StageAgent, State: StateQueued, Outcome: OutcomeOversize, Retries: 1, Jumbo: true, Updated: now},
+		},
+		{
+			name:       "JumboOversizeNeedsTriage",
+			in:         Campaign{Stage: StageInfer, State: StateInFlight, Jumbo: true},
+			outcome:    OutcomeOversize,
+			maxRetries: 3,
+			want: Campaign{Stage: StageInfer, State: StateNeedsTriage, Outcome: OutcomeOversize, Jumbo: true,
 				TriageReason: "repository exceeds size limit", Updated: now},
 		},
 		{

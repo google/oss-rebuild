@@ -30,15 +30,17 @@ func Dispatch(ctx context.Context, req dispatch.Request, deps *DispatchDeps) (*d
 		return nil, err
 	}
 	d := &dispatch.Dispatcher{
-		Err:        log.Writer(),
-		Campaigns:  db.NewFirestoreCampaigns(deps.Firestore),
-		Budgets:    db.NewFirestoreBudgets(deps.Firestore),
-		Attempts:   db.NewFirestoreAttempts(deps.Firestore),
-		Sessions:   db.NewFirestoreSessions(deps.Firestore),
-		Iterations: db.NewFirestoreIterations(deps.Firestore),
-		Create:     api.Local(CreateRebuildOp, deps.Rebuild),
-		Agent:      api.Local(AgentCreate, deps.Agent),
-		Config:     cfg,
+		Err:            log.Writer(),
+		Campaigns:      db.NewFirestoreCampaigns(deps.Firestore),
+		Budgets:        db.NewFirestoreBudgets(deps.Firestore),
+		Attempts:       db.NewFirestoreAttempts(deps.Firestore),
+		Sessions:       db.NewFirestoreSessions(deps.Firestore),
+		Iterations:     db.NewFirestoreIterations(deps.Firestore),
+		RepoMetrics:    db.NewFirestoreRepoMetrics(deps.Firestore),
+		JumboRepoBytes: deps.Agent.AgentMaxRepoBytes,
+		Create:         api.Local(CreateRebuildOp, deps.Rebuild),
+		Agent:          api.Local(AgentCreate, deps.Agent),
+		Config:         cfg,
 	}
 	report, err := d.Run(ctx, func(ctx context.Context) ([]scheduler.Campaign, error) {
 		return db.ListActiveCampaigns(ctx, deps.Firestore)
