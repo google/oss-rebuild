@@ -14,6 +14,7 @@ import (
 
 	gcs "cloud.google.com/go/storage"
 	"github.com/google/oss-rebuild/internal/api/cratesregistryservice"
+	"github.com/google/oss-rebuild/internal/api/inferenceservice"
 	"github.com/google/oss-rebuild/internal/gitcache"
 	"github.com/google/oss-rebuild/internal/httpx"
 	"github.com/google/oss-rebuild/internal/ratex"
@@ -64,9 +65,12 @@ type AgentDeps struct {
 	GitCache           *gitcache.Client  // When set, inference repo clones go through the git-cache.
 	Retrier            ratex.Retrier     // Paces and retries the auxiliary model calls. Zero value calls once.
 	CratesRegistryStub api.StubFn[cratesregistryservice.FindRegistryCommitRequest, cratesregistryservice.FindRegistryCommitResponse]
-	CratesCache        *cratesregistryservice.Cache // Inference's crates.io metadata.
-	Seed               *schema.AgentSeed            // A sibling version's winning build, tried after the inference attempt.
-	SeedOrigin         *schema.StrategyOneOf        // The inference proposal the seed's session started from.
+	CratesCache        *cratesregistryservice.Cache                 // Inference's crates.io metadata.
+	Seed               *schema.AgentSeed                            // A sibling version's winning build, tried after the inference attempt.
+	SeedOrigin         *schema.StrategyOneOf                        // The inference proposal the seed's session started from.
+	Inference          *inferenceservice.Router                     // Infers remotely and reads the repo on the VM. Needs Shell.
+	Size               schema.SizeHint                              // JumboSize infers on the jumbo service, with its longer deadline.
+	SeedRepo           func(ctx context.Context, repo string) error // Copies the inferred repo to the VM for builds to borrow.
 }
 
 type ProposeOpts struct {
@@ -124,6 +128,8 @@ type RunSessionDeps struct {
 	FreeForm           bool                         // Free-form mode. Needs ScratchRunner.
 	Now                func() time.Time             // Budget clock. Nil uses time.Now.
 	Seed               *schema.AgentSeed            // A sibling version's winning build to start from.
+	Inference          *inferenceservice.Router     // As in AgentDeps. With a ScratchRunner, also seeds the VM.
+	Size               schema.SizeHint              // As in AgentDeps.
 }
 
 // transcriptOpts names iteration iterNum's transcript directory, or nothing
@@ -294,12 +300,23 @@ func doSession(ctx context.Context, req RunSessionReq, deps RunSessionDeps) (com
 		CratesRegistryStub: deps.CratesRegistryStub,
 		CratesCache:        deps.CratesCache,
 		Seed:               deps.Seed,
+		Inference:          deps.Inference,
+		Size:               deps.Size,
 	})
 	if deps.Seed != nil && deps.Seed.Strategy != nil {
 		a.deps.SeedOrigin = readSeedOrigin(ctx, deps.GCSClient, deps.SessionsBucket, deps.Seed.Session)
 	}
 	if deps.ScratchRunner != nil {
 		a.deps.Shell = deps.ScratchRunner
+		if deps.Inference != nil && deps.GitCache != nil {
+			a.deps.SeedRepo = func(ctx context.Context, repo string) error {
+				link, err := deps.GitCache.GetLink(ctx, repo, time.Time{})
+				if err != nil {
+					return errors.Wrap(err, "locating the cached repository")
+				}
+				return deps.ScratchRunner.Seed(ctx, link)
+			}
+		}
 		a.deps.BuildEnv = local.DockerRunBuildEnv()
 		a.deps.SingleEnv = deps.ScratchRunner.SingleEnv
 	}

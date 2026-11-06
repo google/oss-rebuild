@@ -21,6 +21,7 @@ import (
 	gcs "cloud.google.com/go/storage"
 	"github.com/go-git/go-billy/v5/memfs"
 	"github.com/google/oss-rebuild/internal/httpx"
+	"github.com/google/oss-rebuild/internal/shell"
 	"github.com/google/oss-rebuild/internal/verifier"
 	"github.com/google/oss-rebuild/pkg/build"
 	"github.com/google/oss-rebuild/pkg/build/scratch"
@@ -368,6 +369,46 @@ func (r *ScratchRunner) compareScript(p vmPaths, upstreamURI, rebuild string) (s
 		args["Rebuild"] = rebuild
 	}
 	return r.renderScript(compareScriptTpl, p, args)
+}
+
+// seedTimeout bounds copying a repository's cache archive to the VM.
+const seedTimeout = 20 * time.Minute
+
+// Seed copies the git cache's archive at link, a bare repository, to the VM's
+// seed repository, where builds borrow objects from it. It replaces an
+// earlier seed, and a failed copy leaves none.
+func (r *ScratchRunner) Seed(ctx context.Context, link string) error {
+	seed := scratch.SeedRepoPath(cmp.Or(r.WorkDir, scratch.DefaultWorkDir))
+	script := `set -eu
+d=` + shell.SingleQuote(seed) + `
+rm -rf "$d" "$d.part" && mkdir -p "$d.part"
+wget -q ${AUTH_HEADER:+--header "$AUTH_HEADER"} -O - ` + shell.SingleQuote(link) + ` | tar -xz -C "$d.part"
+mv "$d.part" "$d"`
+	req := schema.ScratchExecRequest{
+		ScratchID:      r.ScratchID,
+		Cmd:            []string{"/bin/sh", "-c", script},
+		TimeoutSeconds: int(seedTimeout.Seconds()),
+		Label:          schema.ScratchLabelSeed,
+	}
+	if r.AuthHeader != nil {
+		header, err := r.AuthHeader(ctx)
+		if err != nil {
+			return errors.Wrap(err, "minting the cache credential")
+		}
+		req.Env = map[string]string{"AUTH_HEADER": header}
+	}
+	op, err := scratch.Exec(ctx, r.Stubs, req, 0)
+	if err != nil {
+		return errors.Wrap(err, "seeding the repository")
+	}
+	if op.Error != nil {
+		return errors.Wrap(op.Error, "seeding exec")
+	}
+	if op.Result.ExitCode != 0 {
+		out, _ := scratch.ReadOutput(ctx, r.GCSClient, op, 4096)
+		return errors.Errorf("seeding exited %d: %s", op.Result.ExitCode, strings.TrimSpace(string(out)))
+	}
+	return nil
 }
 
 // compareExec runs script on the VM, with the prebuild credential if auth,

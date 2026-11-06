@@ -4,6 +4,7 @@
 package llm
 
 import (
+	"context"
 	"slices"
 	"testing"
 
@@ -72,4 +73,34 @@ func Test_listRepoFiles(t *testing.T) {
 			t.Errorf("file not listed")
 		}
 	})
+}
+
+func TestGitCommandReader(t *testing.T) {
+	ctx := context.Background()
+	out := "100644 blob a1\tpackage.json\n040000 tree b2\tsrc\n"
+	var ran []string
+	r := GitCommandReader{
+		Git: func(_ context.Context, args ...string) (string, error) {
+			ran = args
+			return out, nil
+		},
+		Ref: func() string { return "abc" },
+	}
+	entries, err := r.ListFiles(ctx, "lib/")
+	if err != nil {
+		t.Fatalf("ListFiles: %v", err)
+	}
+	if want := []string{"package.json", "src/"}; !slices.Equal(entries, want) {
+		t.Errorf("ListFiles = %v, want %v", entries, want)
+	}
+	if want := []string{"ls-tree", "abc:lib"}; !slices.Equal(ran, want) {
+		t.Errorf("ListFiles ran %v, want %v", ran, want)
+	}
+	out = "content"
+	if got, err := r.ReadFile(ctx, "/README.md"); err != nil || got != "content" {
+		t.Errorf("ReadFile = %q, %v", got, err)
+	}
+	if want := []string{"show", "abc:README.md"}; !slices.Equal(ran, want) {
+		t.Errorf("ReadFile ran %v, want %v", ran, want)
+	}
 }

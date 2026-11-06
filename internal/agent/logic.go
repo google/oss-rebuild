@@ -52,8 +52,12 @@ const (
 )
 
 // inferenceTimeout bounds heuristic inference, like the inference service's 14
-// minute request timeout.
-const inferenceTimeout = 15 * time.Minute
+// minute request timeout. jumboInferenceTimeout is the jumbo service's
+// counterpart.
+const (
+	inferenceTimeout      = 15 * time.Minute
+	jumboInferenceTimeout = 30 * time.Minute
+)
 
 func locationFromStrategyOneOf(oneof *schema.StrategyOneOf) (*rebuild.Location, error) {
 	s, err := oneof.Strategy()
@@ -178,8 +182,18 @@ func (a *defaultAgent) singleEnv() bool {
 	return a.deps.SingleEnv
 }
 
+// repoOnVM reports whether the session reads its repository on the scratch VM,
+// holding none in the job.
+func (a *defaultAgent) repoOnVM() bool {
+	return a.deps.Inference != nil && a.deps.Shell != nil
+}
+
 func (a *defaultAgent) getTools() []*llm.FunctionDefinition {
-	tools := append(a.gitTools, a.readLogsTool(), a.setSourceRefTool())
+	git := a.gitTools
+	if a.repoOnVM() {
+		git = llm.RepoTools(llm.GitCommandReader{Git: a.guestGit, Ref: func() string { return a.loc.Ref }})
+	}
+	tools := append(git, a.readLogsTool(), a.setSourceRefTool())
 	if a.deps.Shell != nil {
 		if !a.singleEnv() {
 			tools = append(tools, a.runOnHostTool())
@@ -490,6 +504,38 @@ func dockerExecInContainerScript(command string) string {
 		`exec docker exec -w /src "$c" /bin/sh -c ` + shell.SingleQuote(command)
 }
 
+// guestGitTimeout bounds one git command in the build container, in seconds.
+const guestGitTimeout = 120
+
+// guestGitFunc defines g, git on the checkout or, when there is none, on the
+// seed. The seed is mounted read-only and owned by the VM's user, not the
+// container's.
+const guestGitFunc = `g() { if [ -e /src/.git ]; then git -c safe.directory='*' -C /src "$@"; else git -c safe.directory='*' --git-dir=` + scratch.ContainerSeedRepoPath + ` "$@"; fi; }; `
+
+// errGitExited is git itself failing, which exits 1, 128, or 255. Other codes
+// come from the VM, like 125 for no build container.
+var errGitExited = errors.New("git exited")
+
+// guestGit runs git in the retained build container.
+func (a *defaultAgent) guestGit(ctx context.Context, args ...string) (string, error) {
+	script := guestGitFunc + "g"
+	for _, arg := range args {
+		script += " " + shell.SingleQuote(arg)
+	}
+	res, err := a.deps.Shell.RunCommand(ctx, dockerExecInContainerScript(script), guestGitTimeout, schema.ScratchLabelGit)
+	if err != nil {
+		return "", err
+	}
+	switch res.ExitCode {
+	case 0:
+		return res.Output, nil
+	case 1, 128, 255:
+		return "", errors.Wrapf(errGitExited, "exit %d: %s", res.ExitCode, strings.TrimSpace(res.Output))
+	default:
+		return "", errors.Errorf("running git exited %d: %s", res.ExitCode, strings.TrimSpace(res.Output))
+	}
+}
+
 // serveTimewarp starts the build's timewarp if it is not serving. The
 // container's registry config points at it, but it ran only during the deps
 // phase, and restarting the stopped container does not restart it.
@@ -536,6 +582,10 @@ func (a *defaultAgent) proposeInferenceWithAIAssist(ctx context.Context, initial
 				},
 			},
 		},
+	}
+	if a.deps.Inference != nil {
+		s, err := a.deps.Inference.Infer(ctx, req, a.deps.Size)
+		return s, errors.Wrap(err, "AI-assisted inference failed")
 	}
 	s, err := inferenceservice.Infer(
 		ctx,
@@ -604,6 +654,9 @@ func (a *defaultAgent) toolchainFallback(err error) (*schema.StrategyOneOf, erro
 }
 
 func (a *defaultAgent) proposeHeuristicInference(ctx context.Context) (*schema.StrategyOneOf, error) {
+	if a.deps.Inference != nil {
+		return a.proposeServiceInference(ctx)
+	}
 	wt := memfs.New()
 	str := gitx.NewInMemoryStorer()
 	s, err := inferenceservice.Infer(
@@ -655,6 +708,50 @@ func (a *defaultAgent) proposeHeuristicInference(ctx context.Context) (*schema.S
 	}
 	a.loc = *l
 	return s, nil
+}
+
+// proposeServiceInference is proposeHeuristicInference on the inference
+// services. The job holds no clone, and the VM is seeded for the builds.
+func (a *defaultAgent) proposeServiceInference(ctx context.Context) (*schema.StrategyOneOf, error) {
+	s, err := a.deps.Inference.Infer(ctx, schema.InferenceRequest{
+		Ecosystem: a.t.Ecosystem,
+		Package:   a.t.Package,
+		Version:   a.t.Version,
+		Artifact:  a.t.Artifact,
+	}, a.deps.Size)
+	// A failure that resolved the source, or refused it for its size, has its
+	// repository, so a model repository hint cannot help it.
+	if d, ok := api.DetailOf[rebuild.InferenceErrorDetail](err); err != nil && (!ok || !d.Located()) && !inferenceservice.RefusedForSize(err) {
+		if s, err = a.proposeInferenceWithAIAssist(ctx, err, nil, nil); err == nil {
+			log.Println("AI-assisted inference succeeded.")
+		}
+	}
+	if err != nil {
+		if s, err = a.toolchainFallback(err); err != nil {
+			return nil, errors.Wrap(err, "AI-assisted inference failed")
+		}
+	}
+	l, err := locationFromStrategyOneOf(s)
+	if err != nil {
+		return nil, errors.Wrap(err, "extracting location")
+	}
+	a.loc = *l
+	if a.deps.SeedRepo != nil && a.loc.Repo != "" {
+		// Best effort: without a seed, builds clone the repository in full.
+		if err := a.deps.SeedRepo(ctx, a.loc.Repo); err != nil {
+			log.Printf("seeding the VM with %s: %v", a.loc.Repo, err)
+		}
+	}
+	return s, nil
+}
+
+// inferenceTimeout bounds the first inference. Jumbo sessions get the jumbo
+// service's longer bound.
+func (a *defaultAgent) inferenceTimeout() time.Duration {
+	if a.deps.Size == schema.JumboSize {
+		return jumboInferenceTimeout
+	}
+	return inferenceTimeout
 }
 
 func (a *defaultAgent) genericPrompt() []string {
@@ -1070,7 +1167,8 @@ func (a *defaultAgent) Propose(ctx context.Context, opts *ProposeOpts) (*schema.
 		// history without consulting its context, so the call is abandoned rather
 		// than interrupted.
 		// NOTE: An abandoned call still sets a.repo, a.loc and a.inferenceFailure.
-		ictx, cancel := context.WithTimeoutCause(ctx, inferenceTimeout, errors.Wrapf(context.DeadlineExceeded, "inference ran past %s", inferenceTimeout))
+		timeout := a.inferenceTimeout()
+		ictx, cancel := context.WithTimeoutCause(ctx, timeout, errors.Wrapf(context.DeadlineExceeded, "inference ran past %s", timeout))
 		defer cancel()
 		type proposal struct {
 			s   *schema.StrategyOneOf

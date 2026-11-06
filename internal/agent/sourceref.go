@@ -54,11 +54,11 @@ func (a *defaultAgent) setSourceRefTool() *llm.FunctionDefinition {
 				},
 			},
 		},
-		Function: func(_ context.Context, args map[string]any) genai.FunctionResponse {
+		Function: func(ctx context.Context, args map[string]any) genai.FunctionResponse {
 			ref, _ := args["ref"].(string)
 			reason, _ := args["reason"].(string)
 			resp := map[string]any{"sha": "", "error": "", "result": ""}
-			sha, err := a.setSourceRef(ref, reason)
+			sha, err := a.setSourceRef(ctx, ref, reason)
 			if err != nil {
 				resp["error"] = err.Error()
 			} else {
@@ -72,7 +72,7 @@ func (a *defaultAgent) setSourceRefTool() *llm.FunctionDefinition {
 
 // setSourceRef resolves ref in the session's repository and moves the agent's
 // location to it.
-func (a *defaultAgent) setSourceRef(ref, reason string) (string, error) {
+func (a *defaultAgent) setSourceRef(ctx context.Context, ref, reason string) (string, error) {
 	ref = strings.TrimSpace(ref)
 	if ref == "" {
 		return "", errors.New("ref is required")
@@ -80,19 +80,10 @@ func (a *defaultAgent) setSourceRef(ref, reason string) (string, error) {
 	if strings.TrimSpace(reason) == "" {
 		return "", errors.New("reason is required: say what shows the release was cut from this commit")
 	}
-	if a.repo == nil {
-		return "", errors.New("no repository is loaded")
-	}
-	hash, err := a.repo.ResolveRevision(git2.Revision(ref))
+	sha, err := a.resolveCommit(ctx, ref)
 	if err != nil {
-		// A publish commit is often never pushed (.cargo_vcs_info.json, gitHead), so
-		// point at the nearest commit the repository has.
-		return "", errors.Errorf("%q is not a revision of %s. A publish commit recorded in the artifact may never have been pushed; if so, call set_source_ref again with the nearest pushed commit whose tree matches the artifact (its pushed parent, or the release tag's parent), and reproduce any difference in the build", ref, a.loc.Repo)
+		return "", err
 	}
-	if _, err := a.repo.CommitObject(*hash); err != nil {
-		return "", errors.Wrapf(err, "%q does not name a commit", ref)
-	}
-	sha := hash.String()
 	if sha == a.loc.Ref {
 		return sha, errors.Errorf("%s is already the source ref", sha)
 	}
@@ -101,6 +92,51 @@ func (a *defaultAgent) setSourceRef(ref, reason string) (string, error) {
 	a.refMoved = true
 	a.loc.Ref = sha
 	log.Printf("source ref moved from %s to %s: %s", move.From, move.To, reason)
+	return sha, nil
+}
+
+// resolveCommit returns the commit ref names in the session's repository, in
+// the job or on the scratch VM.
+func (a *defaultAgent) resolveCommit(ctx context.Context, ref string) (string, error) {
+	// A publish commit is often never pushed (.cargo_vcs_info.json, gitHead), so
+	// point at the nearest commit the repository has.
+	notRevision := errors.Errorf("%q is not a revision of %s. A publish commit recorded in the artifact may never have been pushed; if so, call set_source_ref again with the nearest pushed commit whose tree matches the artifact (its pushed parent, or the release tag's parent), and reproduce any difference in the build", ref, a.loc.Repo)
+	if a.repoOnVM() {
+		sha, err := a.resolveCommitOnVM(ctx, ref)
+		if errors.Is(err, errGitExited) {
+			return "", errors.Errorf("%v Git said: %v", notRevision, err)
+		}
+		return sha, errors.Wrapf(err, "resolving %q on the VM", ref)
+	}
+	if a.repo == nil {
+		return "", errors.New("no repository is loaded")
+	}
+	hash, err := a.repo.ResolveRevision(git2.Revision(ref))
+	if err != nil {
+		return "", notRevision
+	}
+	if _, err := a.repo.CommitObject(*hash); err != nil {
+		return "", errors.Wrapf(err, "%q does not name a commit", ref)
+	}
+	return hash.String(), nil
+}
+
+// resolveCommitOnVM returns the commit ref names, fetching it from the
+// checkout's origin when the clone lacks it.
+func (a *defaultAgent) resolveCommitOnVM(ctx context.Context, ref string) (string, error) {
+	out, err := a.guestGit(ctx, "rev-parse", "--verify", "--quiet", ref+"^{commit}")
+	if errors.Is(err, errGitExited) {
+		if _, err = a.guestGit(ctx, "fetch", "-q", "origin", ref); err == nil {
+			out, err = a.guestGit(ctx, "rev-parse", "--verify", "--quiet", "FETCH_HEAD^{commit}")
+		}
+	}
+	if err != nil {
+		return "", err
+	}
+	sha := strings.TrimSpace(out)
+	if sha == "" {
+		return "", errors.New("git printed no commit")
+	}
 	return sha, nil
 }
 
@@ -139,14 +175,13 @@ func (a *defaultAgent) inferAt(ctx context.Context, loc rebuild.Location) (rebui
 			LocationHint: &rebuild.LocationHint{Location: rebuild.Location{Repo: loc.Repo, Ref: loc.Ref, Dir: loc.Dir}},
 		},
 	}
-	s, err := inferenceservice.Infer(ctx, req, &inferenceservice.InferDeps{
-		HTTPClient:         a.deps.RegistryClient,
-		GitCache:           a.deps.GitCache,
-		CratesRegistryStub: a.deps.CratesRegistryStub,
-		RepoOptF: func() *gitx.RepositoryOptions {
-			return &gitx.RepositoryOptions{Worktree: memfs.New(), Storer: gitx.NewInMemoryStorer()}
-		},
-	})
+	var s *schema.StrategyOneOf
+	var err error
+	if a.deps.Inference != nil {
+		s, err = a.deps.Inference.Infer(ctx, req, a.deps.Size)
+	} else {
+		s, err = a.inferInJob(ctx, req)
+	}
 	if err != nil {
 		return rebuild.Instructions{}, err
 	}
@@ -155,4 +190,17 @@ func (a *defaultAgent) inferAt(ctx context.Context, loc rebuild.Location) (rebui
 		return rebuild.Instructions{}, err
 	}
 	return st.GenerateFor(a.t, a.buildEnv())
+}
+
+// inferInJob runs inference in the job, holding the repository in memory.
+func (a *defaultAgent) inferInJob(ctx context.Context, req schema.InferenceRequest) (*schema.StrategyOneOf, error) {
+	return inferenceservice.Infer(ctx, req, &inferenceservice.InferDeps{
+		HTTPClient:         a.deps.RegistryClient,
+		GitCache:           a.deps.GitCache,
+		CratesRegistryStub: a.deps.CratesRegistryStub,
+		CratesCache:        a.deps.CratesCache,
+		RepoOptF: func() *gitx.RepositoryOptions {
+			return &gitx.RepositoryOptions{Worktree: memfs.New(), Storer: gitx.NewInMemoryStorer()}
+		},
+	})
 }
