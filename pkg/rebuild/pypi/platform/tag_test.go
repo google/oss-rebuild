@@ -130,34 +130,39 @@ func TestParseCompressedTags(t *testing.T) {
 
 func TestHighestLibcVersionTag(t *testing.T) {
 	tests := []struct {
-		name      string
-		raw       string
-		wantRaw   string
-		wantMinor int
+		name       string
+		raw        string
+		wantRaw    string
+		wantPolicy string
+		wantMinor  int
 	}{
 		{
-			name:      "compressed set with manylinux1 and 2_28",
-			raw:       "manylinux1_x86_64.manylinux_2_28_x86_64.manylinux_2_5_x86_64",
-			wantRaw:   "manylinux_2_28_x86_64",
-			wantMinor: 28,
+			name:       "compressed set with manylinux1 and 2_28",
+			raw:        "manylinux1_x86_64.manylinux_2_28_x86_64.manylinux_2_5_x86_64",
+			wantRaw:    "manylinux_2_28_x86_64",
+			wantPolicy: "manylinux_2_28",
+			wantMinor:  28,
 		},
 		{
-			name:      "manylinux2014 and 2_17",
-			raw:       "manylinux2014_x86_64.manylinux_2_17_x86_64",
-			wantRaw:   "manylinux2014_x86_64",
-			wantMinor: 17,
+			name:       "manylinux2014 and 2_17",
+			raw:        "manylinux2014_x86_64.manylinux_2_17_x86_64",
+			wantRaw:    "manylinux2014_x86_64",
+			wantPolicy: "manylinux2014",
+			wantMinor:  17,
 		},
 		{
-			name:      "single tag",
-			raw:       "manylinux_2_28_x86_64",
-			wantRaw:   "manylinux_2_28_x86_64",
-			wantMinor: 28,
+			name:       "single tag",
+			raw:        "manylinux_2_28_x86_64",
+			wantRaw:    "manylinux_2_28_x86_64",
+			wantPolicy: "manylinux_2_28",
+			wantMinor:  28,
 		},
 		{
-			name:      "musllinux compressed set",
-			raw:       "musllinux_1_1_x86_64.musllinux_1_2_x86_64",
-			wantRaw:   "musllinux_1_2_x86_64",
-			wantMinor: 2,
+			name:       "musllinux compressed set",
+			raw:        "musllinux_1_1_x86_64.musllinux_1_2_x86_64",
+			wantRaw:    "musllinux_1_2_x86_64",
+			wantPolicy: "musllinux_1_2",
+			wantMinor:  2,
 		},
 	}
 
@@ -177,7 +182,17 @@ func TestHighestLibcVersionTag(t *testing.T) {
 			if gotStr := HighestLibcTagString(tt.raw); gotStr != tt.wantRaw {
 				t.Errorf("HighestLibcTagString(%q) = %q, want %q", tt.raw, gotStr, tt.wantRaw)
 			}
+			gotPolicy, err := HighestPolicy(tt.raw)
+			if err != nil {
+				t.Fatalf("HighestPolicy(%q) failed: %v", tt.raw, err)
+			}
+			if gotPolicy != tt.wantPolicy {
+				t.Errorf("HighestPolicy(%q) = %q, want %q", tt.raw, gotPolicy, tt.wantPolicy)
+			}
 		})
+	}
+	if _, err := HighestPolicy("invalid_tag"); err == nil {
+		t.Errorf("HighestPolicy(invalid_tag) expected error, got nil")
 	}
 }
 

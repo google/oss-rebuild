@@ -91,6 +91,7 @@ import (
 	"debug/elf"
 	"fmt"
 	"io"
+	"os"
 	"path"
 	re "regexp"
 	"slices"
@@ -100,7 +101,14 @@ import (
 	"github.com/pkg/errors"
 )
 
-const maxELFFileSize = 128 << 20 // 128 MiB
+const (
+	// Empirical thresholds for ELF inspection: members up to maxInMemoryELFSize
+	// are buffered in memory, larger members up to maxELFFileSize (headroom for
+	// large unstripped Rust extensions such as polars and lancedb) stream via a
+	// temporary file, and anything larger is skipped.
+	maxInMemoryELFSize = 128 << 20
+	maxELFFileSize     = 512 << 20
+)
 
 var (
 	// sharedLibNamePat matches shared object filenames (.so or .so.<numeric-version>).
@@ -120,6 +128,7 @@ var (
 		"ld64.so.1",
 		"ld64.so.2",
 		"linux-vdso.so.1",
+		"libc.so", // musl DT_NEEDED from rust-musl-cross and Alpine toolchains
 		"libc.so.6",
 		"libm.so.6",
 		"libmvec.so.1",
@@ -199,45 +208,82 @@ func formatLibraryDeps(soname string, libc platform.LibcImpl) []string {
 	}
 }
 
+// withWheelELF opens f as an ELF binary and passes it to fn, ignoring non-ELF
+// members and members larger than maxELFFileSize. Entries larger than
+// maxInMemoryELFSize stream to a temporary file so large Rust extensions do not
+// buffer hundreds of megabytes on the heap.
+func withWheelELF(f *zip.File, fn func(*elf.File) error) error {
+	if f.UncompressedSize64 > maxELFFileSize {
+		return nil
+	}
+	rc, err := f.Open()
+	if err != nil {
+		return errors.Wrapf(err, "opening %s in wheel", f.Name)
+	}
+	defer rc.Close()
+	var r io.ReaderAt
+	if f.UncompressedSize64 <= maxInMemoryELFSize {
+		data, err := io.ReadAll(rc)
+		if err != nil {
+			return errors.Wrapf(err, "reading %s in wheel", f.Name)
+		}
+		r = bytes.NewReader(data)
+	} else {
+		tmp, err := os.CreateTemp("", "oss-rebuild-elf-*")
+		if err != nil {
+			return errors.Wrap(err, "creating temp file for wheel ELF")
+		}
+		defer os.Remove(tmp.Name())
+		defer tmp.Close()
+		if _, err := io.Copy(tmp, rc); err != nil {
+			return errors.Wrapf(err, "streaming %s in wheel", f.Name)
+		}
+		r = tmp
+	}
+	ef, err := elf.NewFile(r)
+	if err != nil {
+		return nil
+	}
+	defer ef.Close()
+	return fn(ef)
+}
+
 // inferELFSystemDeps extracts shared library dependencies from ELF shared
 // objects in a wheel archive and formats them for the target libc's package
 // manager.
 func inferELFSystemDeps(zr *zip.Reader, libc platform.LibcImpl) ([]string, error) {
 	var rawCandidates []string
+	var needsSystemLLD bool
 	internalLibs := make(map[string]bool)
 	for _, f := range zr.File {
-		if f.FileInfo().IsDir() || f.UncompressedSize64 > maxELFFileSize {
+		if f.FileInfo().IsDir() {
 			continue
 		}
 		baseName := path.Base(f.Name)
 		if !sharedLibNamePat.MatchString(strings.ToLower(baseName)) {
 			continue
 		}
-		rc, err := f.Open()
+		err := withWheelELF(f, func(ef *elf.File) error {
+			cand := baseName
+			if sonames, err := ef.DynString(elf.DT_SONAME); err == nil && len(sonames) > 0 && sonames[0] != "" {
+				cand = sonames[0]
+			}
+			if isBundledLibPath(f.Name) {
+				rawCandidates = append(rawCandidates, cand)
+			} else {
+				internalLibs[unbundledSoname(baseName)] = true
+				internalLibs[unbundledSoname(cand)] = true
+				if libc == platform.Musl && hasSystemLLDComment(ef) {
+					needsSystemLLD = true
+				}
+			}
+			if imported, err := ef.ImportedLibraries(); err == nil {
+				rawCandidates = append(rawCandidates, imported...)
+			}
+			return nil
+		})
 		if err != nil {
-			return nil, errors.Wrapf(err, "opening %s in wheel", f.Name)
-		}
-		data, err := io.ReadAll(rc)
-		rc.Close()
-		if err != nil {
-			return nil, errors.Wrapf(err, "reading %s in wheel", f.Name)
-		}
-		ef, err := elf.NewFile(bytes.NewReader(data))
-		if err != nil {
-			continue
-		}
-		cand := baseName
-		if sonames, err := ef.DynString(elf.DT_SONAME); err == nil && len(sonames) > 0 && sonames[0] != "" {
-			cand = sonames[0]
-		}
-		if isBundledLibPath(f.Name) {
-			rawCandidates = append(rawCandidates, cand)
-		} else {
-			internalLibs[unbundledSoname(baseName)] = true
-			internalLibs[unbundledSoname(cand)] = true
-		}
-		if imported, err := ef.ImportedLibraries(); err == nil {
-			rawCandidates = append(rawCandidates, imported...)
+			return nil, err
 		}
 	}
 	var deps []string
@@ -248,7 +294,59 @@ func inferELFSystemDeps(zr *zip.Reader, libc platform.LibcImpl) ([]string, error
 		}
 		deps = appendUnique(deps, formatLibraryDeps(soname, libc)...)
 	}
+	if needsSystemLLD {
+		deps = appendUnique(deps, "lld")
+	}
 	return deps, nil
+}
+
+// hasSystemLLDComment reports whether an ELF file's .comment section records
+// a system LLD linker rather than rustup's bundled rust-lld.
+// NOTE: rustup's bundled rust-lld is built from Rust CI and stamps
+// "Linker: LLD 21.1.8 (/checkout/src/llvm-project/llvm <sha>)", whereas a
+// distro lld stamps "Linker: LLD 20.1.8" without that source checkout path.
+// Only musllinux is handled at the call site because rustc on
+// x86_64-unknown-linux-musl invokes ld.lld for cdylib targets, while manylinux
+// targets link with the container's default gcc toolchain.
+func hasSystemLLDComment(ef *elf.File) bool {
+	sec := ef.Section(".comment")
+	if sec == nil {
+		return false
+	}
+	comment, err := sec.Data()
+	if err != nil {
+		return false
+	}
+	for _, entry := range bytes.Split(comment, []byte{0}) {
+		s := strings.TrimSpace(string(entry))
+		if strings.HasPrefix(s, "Linker: LLD") && !strings.Contains(s, "/checkout/src/llvm-project") {
+			return true
+		}
+	}
+	return false
+}
+
+// mergeSystemDeps appends ELF-inferred dependencies whose package name is not
+// already specified in dst. On Alpine, apk keys world constraints by package
+// name, so a trailing unpinned package from ELF inspection would overwrite an
+// earlier version pin from a cibuildwheel hook.
+func mergeSystemDeps(dst, elfDeps []string) []string {
+	for _, dep := range elfDeps {
+		name := packageSpecName(dep)
+		if !slices.ContainsFunc(dst, func(existing string) bool {
+			return packageSpecName(existing) == name
+		}) {
+			dst = append(dst, dep)
+		}
+	}
+	return dst
+}
+
+func packageSpecName(spec string) string {
+	if m := packageSpecPat.FindStringSubmatch(spec); m != nil {
+		return m[1]
+	}
+	return spec
 }
 
 func appendUnique(dst []string, src ...string) []string {

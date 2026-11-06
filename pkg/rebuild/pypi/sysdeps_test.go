@@ -115,6 +115,7 @@ func createTestELF(importedLibs []string, soname string) []byte {
 
 func TestInferELFSystemDeps(t *testing.T) {
 	extELF := createTestELF([]string{
+		"libc.so",
 		"libc.so.6",
 		"libgfortran-12345678.so.5.0.0",
 		"libcgraph-17278668.so.6.0.0",
@@ -214,6 +215,114 @@ func TestInferELFSystemDeps(t *testing.T) {
 			got, err := inferELFSystemDeps(zr, tc.libc)
 			if err != nil {
 				t.Fatalf("inferELFSystemDeps() unexpected error: %v", err)
+			}
+			if diff := cmp.Diff(tc.want, got); diff != "" {
+				t.Errorf("inferELFSystemDeps() diff (-want +got):\n%s", diff)
+			}
+		})
+	}
+}
+
+func TestInferELFSystemDepsSystemLLD(t *testing.T) {
+	tests := []struct {
+		name    string
+		entries []archive.ZipEntry
+		libc    platform.LibcImpl
+		want    []string
+	}{
+		{
+			name: "SystemLLDOnMusl",
+			entries: []archive.ZipEntry{
+				{
+					FileHeader: &zip.FileHeader{Name: "pkg/_native.cpython-312-x86_64-linux-musl.so"},
+					Body:       elfWithComment("GCC: (Alpine 14.2.0)\x00Linker: LLD 20.1.8\x00rustc version 1.97.1 (8bab26f4f 2026-07-14)"),
+				},
+			},
+			libc: platform.Musl,
+			want: []string{"lld"},
+		},
+		{
+			name: "RustupBundledLLDIgnoredOnMusl",
+			entries: []archive.ZipEntry{
+				{
+					FileHeader: &zip.FileHeader{Name: "pkg/_native.cpython-312-x86_64-linux-musl.so"},
+					Body:       elfWithComment("Linker: LLD 21.1.8 (/checkout/src/llvm-project/llvm abc123)\x00rustc version 1.94.1"),
+				},
+			},
+			libc: platform.Musl,
+			want: nil,
+		},
+		{
+			name: "SystemLLDIgnoredOnGlibc",
+			entries: []archive.ZipEntry{
+				{
+					FileHeader: &zip.FileHeader{Name: "pkg/_native.cpython-312-x86_64-linux-gnu.so"},
+					Body:       elfWithComment("Linker: LLD 20.1.8\x00rustc version 1.97.1"),
+				},
+			},
+			libc: platform.Glibc,
+			want: nil,
+		},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			buf := must(archivetest.ZipFile(tc.entries))
+			zr := must(zip.NewReader(bytes.NewReader(buf.Bytes()), int64(buf.Len())))
+			got, err := inferELFSystemDeps(zr, tc.libc)
+			if err != nil {
+				t.Fatalf("inferELFSystemDeps() unexpected error: %v", err)
+			}
+			if diff := cmp.Diff(tc.want, got); diff != "" {
+				t.Errorf("inferELFSystemDeps() diff (-want +got):\n%s", diff)
+			}
+		})
+	}
+}
+
+func TestInferELFSystemDepsMuslCrossLibcSo(t *testing.T) {
+	entries := []archive.ZipEntry{
+		{
+			FileHeader: &zip.FileHeader{Name: "pydantic_core/_pydantic_core.cpython-312-x86_64-linux-musl.so"},
+			Body:       createTestELF([]string{"libc.so", "libgcc_s-f685abf1.so.1"}, ""),
+		},
+		{
+			FileHeader: &zip.FileHeader{Name: "pydantic_core.libs/libgcc_s-f685abf1.so.1"},
+			Body:       createTestELF([]string{"libc.so"}, "libgcc_s-f685abf1.so.1"),
+		},
+	}
+	buf := must(archivetest.ZipFile(entries))
+	zr := must(zip.NewReader(bytes.NewReader(buf.Bytes()), int64(buf.Len())))
+	got, err := inferELFSystemDeps(zr, platform.Musl)
+	if err != nil {
+		t.Fatalf("inferELFSystemDeps() error = %v", err)
+	}
+	if diff := cmp.Diff([]string(nil), got); diff != "" {
+		t.Errorf("inferELFSystemDeps() diff (-want +got):\n%s", diff)
+	}
+}
+
+func TestInferELFSystemDepsLargeELF(t *testing.T) {
+	for _, tc := range []struct {
+		name string
+		size int64
+		want []string
+	}{
+		{
+			name: "OversizedAbove128MiBStreamedViaTempFile",
+			size: 130 << 20,
+			want: []string{"libssl.so.3()(64bit)", "/usr/lib64/libssl.so"},
+		},
+		{
+			name: "OversizedAbove512MiBSkipped",
+			size: 513 << 20,
+			want: nil,
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			zr := paddedELFZipReader(t, "lancedb/_lancedb.abi3.so", createTestELF([]string{"libc.so.6", "libssl.so.3"}, ""), tc.size)
+			got, err := inferELFSystemDeps(zr, platform.Glibc)
+			if err != nil {
+				t.Fatalf("inferELFSystemDeps() error = %v", err)
 			}
 			if diff := cmp.Diff(tc.want, got); diff != "" {
 				t.Errorf("inferELFSystemDeps() diff (-want +got):\n%s", diff)

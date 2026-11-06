@@ -3,6 +3,12 @@
 
 package cratesio
 
+import (
+	"strings"
+
+	"github.com/pelletier/go-toml/v2"
+)
+
 // CargoVCSInfo abstracts the contents of the .cargo_vcs_info.json file included in published crates.
 //
 // Format: https://doc.rust-lang.org/cargo/commands/cargo-package.html#cargo_vcs_infojson-format
@@ -21,7 +27,16 @@ type GitInfo struct {
 // Format: https://doc.rust-lang.org/cargo/reference/manifest.html
 type CargoTOML struct {
 	PackageManifest `toml:"package"`
-	Workspace       *WorkspaceManifest `toml:"workspace"`
+	Workspace       *WorkspaceManifest  `toml:"workspace"`
+	Features        map[string][]string `toml:"features"`
+}
+
+// ParseCargoTOML unmarshals a Cargo.toml manifest, stripping a leading UTF-8
+// byte order mark that Cargo accepts but go-toml rejects.
+func ParseCargoTOML(content string) (CargoTOML, error) {
+	var m CargoTOML
+	err := toml.Unmarshal([]byte(strings.TrimPrefix(content, "\uFEFF")), &m)
+	return m, err
 }
 
 // PackageManifest is the [package] section of the Cargo.toml file.
