@@ -68,7 +68,7 @@ func GuessArtifact(ctx context.Context, t rebuild.Target, mux rebuild.RegistryMu
 	case rebuild.Debian:
 		return "", errors.New("debian requires explicit artifact")
 	case rebuild.Maven:
-		return "", errors.New("maven not implemented")
+		guess = mavenrb.ArtifactName(t)
 	case rebuild.RubyGems:
 		guess = rubygemsrb.ArtifactName(t)
 	case rebuild.OCI:
