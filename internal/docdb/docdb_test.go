@@ -289,11 +289,18 @@ func probeWatermark(db *sqlite3.Conn) (time.Time, error) {
 // and schema era to dest under object.
 func buildBase(t *testing.T, dest billy.Basic, object string, docs []json.RawMessage, watermark time.Time, version int) {
 	t.Helper()
+	buildBaseOf(t, probeTable, dest, object, docs, watermark, version)
+}
+
+// buildBaseOf is buildBase for a database built from td.
+func buildBaseOf(t *testing.T, td TableDef, dest billy.Basic, object string, docs []json.RawMessage, watermark time.Time, version int) {
+	t.Helper()
 	path := filepath.Join(t.TempDir(), "base.db")
 	db := must(sqlite3.Open(path))
-	must1(StoreDocs(db, probeTable, docs))
+	must1(StoreDocs(db, td, docs))
 	must1(db.Exec("CREATE TABLE probe_meta (watermark TEXT); INSERT INTO probe_meta VALUES ('" + sqlitex.TimeColumn(watermark) + "')"))
 	must1(sqlitex.SetVersion(db, version))
+	must1(stamp(db, []TableDef{td}))
 	must1(db.Close())
 	must1(sqlitex.Publish(dest, object, path))
 }
@@ -794,4 +801,39 @@ func TestCachePool(t *testing.T) {
 	if mode := must(pragmaText(c.writer, "journal_mode")); mode != "wal" {
 		t.Errorf("journal_mode = %s, want wal", mode)
 	}
+}
+
+// TestCacheServesMismatchedShapeUntilMatchingBase opens a base built from
+// earlier table definitions, one index short of its reader's: the copy serves
+// without segments until a base from the reader's definitions replaces it.
+func TestCacheServesMismatchedShapeUntilMatchingBase(t *testing.T) {
+	ctx := context.Background()
+	dest := testDest(t)
+	indexed := probeTable
+	indexed.Indexes = append([][]string{{"when_at"}}, probeTable.Indexes...)
+	up := Upstream{FS: dest, Object: "probe.db.gz", Deltas: "deltas", Defs: []TableDef{indexed}, Schema: 1, Watermark: probeWatermark}
+	now := dt(0)
+	buildBase(t, dest, up.Object, []json.RawMessage{probe("k1", "hello", now)}, now, 1)
+	c := must(OpenCache(ctx, up, time.Hour))
+	defer c.Close()
+	segTime := now.Add(5 * time.Minute)
+	must(WriteSegment(dest, up.Deltas, segTime, up.Defs, map[string][]json.RawMessage{indexed.Name: {probe("k2", "fresh", segTime)}}))
+	check := func(rows string, fresh time.Time) {
+		t.Helper()
+		must1(c.Query(func(db *sqlite3.Conn) error {
+			if n := queryText(t, db, "SELECT count(*) FROM gen_probe"); n != rows {
+				t.Errorf("rows = %s, want %s", n, rows)
+			}
+			return nil
+		}))
+		if got := c.Freshness(); !got.Equal(fresh) {
+			t.Errorf("Freshness = %v, want %v", got, fresh)
+		}
+	}
+	must1(c.sync())
+	check("1", now)
+	// A base from the reader's definitions replaces the copy and takes the segment.
+	buildBaseOf(t, indexed, dest, up.Object, []json.RawMessage{probe("k1", "hello", now)}, now, 1)
+	must1(c.sync())
+	check("2", segTime)
 }

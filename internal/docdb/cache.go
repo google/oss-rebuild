@@ -11,6 +11,7 @@ import (
 	"os"
 	"path/filepath"
 	"runtime"
+	"strconv"
 	"sync"
 	"sync/atomic"
 	"syscall"
@@ -77,7 +78,8 @@ type Cache struct {
 	refusedTag string // base tag already downloaded and refused on schema
 	// TODO: Persist replay progress in the copy itself (an applied
 	// watermark) if the hydrated database ever needs reuse across processes.
-	applied string // newest applied segment name
+	applied       string // newest applied segment name
+	shapeMismatch bool   // the copy was built from other table definitions, so it takes no segments
 }
 
 // cacheDirPrefix and the owner's pid start each cache directory's name, so a
@@ -229,6 +231,12 @@ func (c *Cache) sync() error {
 			return err
 		}
 	}
+	// Only apply segments to a copy built from the same table definitions as
+	// up.Defs. Otherwise serving the stale copy avoids failed refreshes and stalls
+	// from mismatched tables and indexes.
+	if c.shapeMismatch {
+		return nil
+	}
 	segs, err := fetchNewSegments(c.up.FS, c.up.Deltas, c.applied, c.watermark)
 	if err != nil {
 		return err
@@ -326,6 +334,14 @@ func (c *Cache) open(path string) error {
 	}
 	if c.watermark, err = c.up.Watermark(w); err != nil {
 		return errors.Wrap(err, "reading watermark")
+	}
+	id, err := pragmaText(w, "application_id")
+	if err != nil {
+		return errors.Wrap(err, "reading table definitions stamp")
+	}
+	want := strconv.Itoa(int(fingerprint(c.up.Defs)))
+	if c.shapeMismatch = id != want; c.shapeMismatch {
+		log.Printf("docdb cache: copy's table definitions have fingerprint %s, not %s, serving it without segments until the next base", id, want)
 	}
 	// A connection runs one query at a time and holds its own page cache and
 	// sort space, so one per CPU the runtime schedules on keeps queries off
