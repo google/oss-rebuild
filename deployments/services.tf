@@ -660,7 +660,7 @@ resource "google_cloud_run_v2_service" "dashboard" {
       resources {
         limits = {
           cpu    = "2000m"
-          memory = "4G" // holds the snapshot base in memory
+          memory = "8G" // holds the snapshot base and refresh WAL in memory
         }
         startup_cpu_boost = true
       }
