@@ -724,6 +724,42 @@ PYTHONPATH=/deps/wheel-cli /deps/bin/python3 -m wheel tags --remove --platform-t
 				OutputPath: "the_dir/dist/the_artifact",
 			},
 		},
+		{
+			"WithBuildEnvPath",
+			&PlatformWheelBuild{
+				Location:     defaultLocation,
+				PythonTag:    "cp310",
+				ABITag:       "cp310",
+				Requirements: []string{"numpy==2.0.0"},
+				PlatformTag:  "manylinux_2_28_x86_64",
+				BuildEnvPath: "/tmp/build-env-v9c0qwj_",
+			},
+			rebuild.Instructions{
+				Location: defaultLocation,
+				Source:   "git checkout --force 'the_ref'",
+				Deps: `for py in /opt/python/cp310-cp310/bin/python /opt/python/cp310-*/bin/python; do [ -x "$py" ] && break; done
+"$py" -m venv /tmp/build-env-v9c0qwj_
+/tmp/build-env-v9c0qwj_/bin/pip install build wheel
+/tmp/build-env-v9c0qwj_/bin/pip install --target /tmp/build-env-v9c0qwj_/wheel-cli wheel
+/tmp/build-env-v9c0qwj_/bin/pip install 'numpy==2.0.0'`,
+				Build: `/tmp/build-env-v9c0qwj_/bin/python3 -m build --wheel -n the_dir
+mkdir -p the_dir/dist/repaired
+AUDITWHEEL="/tmp/build-env-v9c0qwj_/bin/auditwheel"
+if [ ! -x "$AUDITWHEEL" ]; then
+  AUDITWHEEL="auditwheel"
+fi
+$AUDITWHEEL repair the_dir/dist/*.whl --plat manylinux_2_28_x86_64 -w the_dir/dist/repaired/
+rm -f the_dir/dist/*.whl
+mv the_dir/dist/repaired/*.whl the_dir/dist/
+rm -rf the_dir/dist/repaired
+PYTHONPATH=/tmp/build-env-v9c0qwj_/wheel-cli /tmp/build-env-v9c0qwj_/bin/python3 -m wheel tags --remove --platform-tag manylinux_2_28_x86_64 the_dir/dist/*.whl`,
+				Requires: rebuild.RequiredEnv{
+					BaseImage:  "quay.io/pypa/manylinux_2_28_x86_64",
+					SystemDeps: []string{"git"},
+				},
+				OutputPath: "the_dir/dist/the_artifact",
+			},
+		},
 	}
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
@@ -901,6 +937,32 @@ func TestValidateBuildRoot(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			b := &PlatformWheelBuild{PlatformTag: "manylinux2014_x86_64", BuildRoot: tt.buildRoot}
+			if _, err := b.ToWorkflow(); (err != nil) != tt.wantErr {
+				t.Errorf("ToWorkflow() error = %v, wantErr %v", err, tt.wantErr)
+			}
+		})
+	}
+}
+
+func TestValidateBuildEnvPath(t *testing.T) {
+	tests := []struct {
+		name         string
+		buildEnvPath string
+		wantErr      bool
+	}{
+		{name: "Unset"},
+		{name: "BuildEnv", buildEnvPath: "/tmp/build-env-v9c0qwj_"},
+		{name: "PipBuildEnvOverlay", buildEnvPath: "/tmp/pip-build-env-zeqt36e6/overlay"},
+		{name: "PipBuildEnvNormal", buildEnvPath: "/tmp/pip-build-env-zeqt36e6/normal"},
+		{name: "OutsideTmp", buildEnvPath: "/var/tmp/build-env-v9c0qwj_"},
+		{name: "Relative", buildEnvPath: "tmp/build-env-v9c0qwj_", wantErr: true},
+		{name: "TrailingSlash", buildEnvPath: "/tmp/build-env-v9c0qwj_/", wantErr: true},
+		{name: "ShellMetacharacter", buildEnvPath: "/tmp/build-env-abc;true", wantErr: true},
+		{name: "InsideCheckout", buildEnvPath: "/src/venv", wantErr: true},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			b := &PlatformWheelBuild{PlatformTag: "manylinux2014_x86_64", BuildEnvPath: tt.buildEnvPath}
 			if _, err := b.ToWorkflow(); (err != nil) != tt.wantErr {
 				t.Errorf("ToWorkflow() error = %v, wantErr %v", err, tt.wantErr)
 			}

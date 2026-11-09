@@ -146,6 +146,8 @@ type PlatformWheelBuild struct {
 	BaseImage string `json:"base_image,omitempty" yaml:"base_image,omitempty"`
 	// BuildRoot is the absolute path the build is run from, when set.
 	BuildRoot string `json:"build_root,omitempty" yaml:"build_root,omitempty"`
+	// BuildEnvPath is the isolated virtual environment path build dependencies are installed into, when set.
+	BuildEnvPath string `json:"build_env_path,omitempty" yaml:"build_env_path,omitempty"`
 }
 
 var _ rebuild.Strategy = &PlatformWheelBuild{}
@@ -160,23 +162,27 @@ func (b *PlatformWheelBuild) resolveBaseImage() (string, error) {
 	return platform.SelectBaseImage(b.PlatformTag)
 }
 
-// checkoutDir is where the build planners check out the repository.
-const checkoutDir = "/src"
+const (
+	// checkoutDir is where the build planners check out the repository.
+	checkoutDir = "/src"
+	// venvDir is where the dependency steps create the virtual environment by default.
+	venvDir = "/deps"
+)
 
-// buildRootPat matches absolute paths of characters that need no shell quoting.
-var buildRootPat = re.MustCompile(`^(/[A-Za-z0-9._+,@-]+)+$`)
+// buildPathPat matches absolute paths of characters that need no shell quoting.
+var buildPathPat = re.MustCompile(`^(/[A-Za-z0-9._+,@-]+)+$`)
 
-// validateBuildRoot rejects build roots that the build step cannot use.
-func validateBuildRoot(root string) error {
+// validateBuildPath rejects paths that the build steps cannot use.
+func validateBuildPath(p string) error {
 	switch {
-	case root == "":
+	case p == "":
 		return nil
-	case !buildRootPat.MatchString(root):
-		return errors.Errorf("build root %q is not an absolute path of letters, digits and '._+,@-'", root)
-	case path.Clean(root) != root:
-		return errors.Errorf("build root %q is not a clean path", root)
-	case root == checkoutDir || strings.HasPrefix(root, checkoutDir+"/"):
-		return errors.Errorf("build root %q is in the checkout at %s", root, checkoutDir)
+	case !buildPathPat.MatchString(p):
+		return errors.Errorf("path %q is not an absolute path of letters, digits and '._+,@-'", p)
+	case path.Clean(p) != p:
+		return errors.Errorf("path %q is not a clean path", p)
+	case p == checkoutDir || strings.HasPrefix(p, checkoutDir+"/"):
+		return errors.Errorf("path %q is in the checkout at %s", p, checkoutDir)
 	}
 	return nil
 }
@@ -186,8 +192,15 @@ func (b *PlatformWheelBuild) ToWorkflow() (*rebuild.WorkflowStrategy, error) {
 	if err != nil {
 		return nil, errors.Wrap(err, "selecting base image")
 	}
-	if err := validateBuildRoot(b.BuildRoot); err != nil {
+	if err := validateBuildPath(b.BuildRoot); err != nil {
 		return nil, errors.Wrap(err, "validating build root")
+	}
+	if err := validateBuildPath(b.BuildEnvPath); err != nil {
+		return nil, errors.Wrap(err, "validating build env path")
+	}
+	venv := venvDir
+	if b.BuildEnvPath != "" {
+		venv = b.BuildEnvPath
 	}
 	var registryTime string
 	if !b.RegistryTime.IsZero() {
@@ -218,8 +231,8 @@ func (b *PlatformWheelBuild) ToWorkflow() (*rebuild.WorkflowStrategy, error) {
 				"requirements": flow.MustToJSON(b.Requirements),
 				"pythonTag":    b.PythonTag,
 				"abiTag":       b.ABITag,
-				"venv":         "/deps",
-				"wheelCli":     "/deps/wheel-cli",
+				"venv":         venv,
+				"wheelCli":     venv + "/wheel-cli",
 			},
 		}},
 		Build: []flow.Step{{
@@ -228,8 +241,8 @@ func (b *PlatformWheelBuild) ToWorkflow() (*rebuild.WorkflowStrategy, error) {
 				"dir":        b.Location.Dir,
 				"distDir":    distDir,
 				"buildRoot":  b.BuildRoot,
-				"locator":    "/deps/bin/",
-				"wheelCli":   "/deps/wheel-cli",
+				"locator":    venv + "/bin/",
+				"wheelCli":   venv + "/wheel-cli",
 				"venvOnPath": needsVenvOnPath(b.Requirements),
 				// auditwheel repair --plat requires a single policy tag rather than a compressed
 				// tag set, and the highest tag matches the build container policy.
