@@ -113,10 +113,57 @@ func createTestELF(importedLibs []string, soname string) []byte {
 	return buf.Bytes()
 }
 
+func TestUnbundledSoname(t *testing.T) {
+	tests := []struct {
+		name  string
+		input string
+		want  string
+	}{
+		{
+			name:  "DashedStemWithVersionAfterHash",
+			input: "libpango-1-e80d1584.0.so.0.4200.3",
+			want:  "libpango-1.0.so.0",
+		},
+		{
+			name:  "DashedStemBeforeHash",
+			input: "libpixman-1-06469c37.so.0.38.4",
+			want:  "libpixman-1.so.0",
+		},
+		{
+			name:  "DoubleAuditwheelHashThreePartVersion",
+			input: "libgfortran-83c28eba-468e71e5.so.5.0.0",
+			want:  "libgfortran.so.5",
+		},
+		{
+			name:  "DoubleAuditwheelHashSingleVersion",
+			input: "libgcc_s-0cd532bd-c8f934f9.so.1",
+			want:  "libgcc_s.so.1",
+		},
+		{
+			name:  "ShortHexSuffixPreserved",
+			input: "libfoo-deadbeef-cafe.so",
+			want:  "libfoo-deadbeef-cafe.so",
+		},
+		{
+			name:  "TwoPartVersionPreserved",
+			input: "libjbig-2504a0c3.so.2.1",
+			want:  "libjbig.so.2.1",
+		},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			if got := unbundledSoname(tc.input); got != tc.want {
+				t.Errorf("unbundledSoname(%q) = %q, want %q", tc.input, got, tc.want)
+			}
+		})
+	}
+}
+
 func TestInferELFSystemDeps(t *testing.T) {
 	extELF := createTestELF([]string{
 		"libc.so.6",
 		"libgfortran-12345678.so.5.0.0",
+		"libgfortran-83c28eba-468e71e5.so.5.0.0",
 		"libcgraph-17278668.so.6.0.0",
 		"libcdt.so.5",
 		"libssl-abcdef12.so.1.1",
@@ -143,6 +190,10 @@ func TestInferELFSystemDeps(t *testing.T) {
 		{
 			FileHeader: &zip.FileHeader{Name: ".libs_cffi_backend/libffi-12345678.so.8.1.0"},
 			Body:       createTestELF(nil, ""),
+		},
+		{
+			FileHeader: &zip.FileHeader{Name: "numpy.libs/libgfortran-83c28eba-468e71e5.so.5.0.0"},
+			Body:       createTestELF(nil, "libgfortran-83c28eba-468e71e5.so.5.0.0"),
 		},
 		{
 			FileHeader: &zip.FileHeader{Name: "pygraphviz.libs/libignored.so.debug"},
