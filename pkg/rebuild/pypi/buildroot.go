@@ -45,14 +45,15 @@
 //     strings from every linked header, so the repository-relative path must
 //     span a directory and generated files do not match through a .pyx or .py
 //     sibling.
-//  3. Selection: Candidates inside "site-packages", "dist-packages", or
-//     ".cargo" hold unpacked dependencies and drop out, as do those that
-//     validateBuildRoot rejects, such as paths that need shell quoting. The
-//     most common candidate wins, breaking ties by the lexically smallest
-//     root, and .rodata candidates count only if DWARF yields none. checkoutDir
-//     ("/src") stays a candidate so an upstream build in the checkout can be
-//     told apart from a wheel with no evidence, and then maps to "" since the
-//     build already runs there.
+//  3. Selection: Candidates inside "site-packages", "dist-packages", ".cargo",
+//     or the isolated build environments that "python -m build" and "pip
+//     wheel" create under "/tmp" hold unpacked dependencies and drop out, as
+//     do those that validateBuildRoot rejects, such as paths that need shell
+//     quoting. The most common candidate wins, breaking ties by the lexically
+//     smallest root, and .rodata candidates count only if DWARF yields none.
+//     checkoutDir ("/src") stays a candidate so an upstream build in the
+//     checkout can be told apart from a wheel with no evidence, and then maps
+//     to "" since the build already runs there.
 //
 // References:
 //   - DWARF Debugging Information Format Version 4, §3.1.1:
@@ -253,6 +254,9 @@ func mostCommonRoot(roots []string) string {
 var dependencyTreeDirs = []string{"site-packages", "dist-packages", ".cargo"}
 
 func isDependencyTree(root string) bool {
+	if strings.HasPrefix(root, "/tmp/build-env-") || strings.HasPrefix(root, "/tmp/pip-build-env-") {
+		return true
+	}
 	return slices.ContainsFunc(strings.Split(root, "/"), func(dir string) bool {
 		return slices.Contains(dependencyTreeDirs, dir)
 	})
