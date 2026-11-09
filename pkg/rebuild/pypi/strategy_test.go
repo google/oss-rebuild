@@ -868,6 +868,81 @@ PATH=/deps/bin/:$PATH /deps/bin/python3 -m build --wheel -n the_dir
 				OutputPath: "the_dir/dist/the_artifact",
 			},
 		},
+		{
+			"WithMesonBuildDir",
+			&PlatformWheelBuild{
+				Location:      defaultLocation,
+				PythonTag:     "cp312",
+				ABITag:        "cp312",
+				Requirements:  []string{"meson-python==0.17.1", "ninja"},
+				PlatformTag:   "manylinux_2_28_x86_64",
+				MesonBuildDir: ".mesonpy-0roiogjz",
+			},
+			rebuild.Instructions{
+				Location: defaultLocation,
+				Source:   "git checkout --force 'the_ref'",
+				Deps: `for py in /opt/python/cp312-cp312/bin/python /opt/python/cp312-*/bin/python; do [ -x "$py" ] && break; done
+"$py" -m venv /deps
+/deps/bin/pip install build wheel
+/deps/bin/pip install 'meson-python==0.17.1'
+/deps/bin/pip install 'ninja'`,
+				Build: `PATH=/deps/bin/:$PATH /deps/bin/python -m build --wheel -n -Cbuild-dir=.mesonpy-0roiogjz the_dir
+mkdir -p the_dir/dist/repaired
+AUDITWHEEL="/deps/bin/auditwheel"
+if [ ! -x "$AUDITWHEEL" ]; then
+  AUDITWHEEL="auditwheel"
+fi
+$AUDITWHEEL repair the_dir/dist/*.whl --plat manylinux_2_28_x86_64 --only-plat -w the_dir/dist/repaired/
+rm -f the_dir/dist/*.whl
+mv the_dir/dist/repaired/*.whl the_dir/dist/the_artifact
+rm -rf the_dir/dist/repaired`,
+				Requires: rebuild.RequiredEnv{
+					BaseImage:  "quay.io/pypa/manylinux_2_28_x86_64",
+					SystemDeps: []string{"git"},
+				},
+				OutputPath: "the_dir/dist/the_artifact",
+			},
+		},
+		{
+			"WithMesonBuildDirAndBuildRoot",
+			&PlatformWheelBuild{
+				Location:      rebuild.Location{Ref: "the_ref", Repo: "the_repo"},
+				PythonTag:     "cp312",
+				ABITag:        "cp312",
+				Requirements:  []string{"meson-python==0.17.1", "ninja"},
+				PlatformTag:   "manylinux_2_28_x86_64",
+				BuildRoot:     "/project",
+				BuildEnvPath:  "/tmp/build-env-dfa9bu3d",
+				MesonBuildDir: ".mesonpy-0roiogjz",
+			},
+			rebuild.Instructions{
+				Location: rebuild.Location{Ref: "the_ref", Repo: "the_repo"},
+				Source:   "git checkout --force 'the_ref'",
+				Deps: `for py in /opt/python/cp312-cp312/bin/python /opt/python/cp312-*/bin/python; do [ -x "$py" ] && break; done
+"$py" -m venv /tmp/build-env-dfa9bu3d
+/tmp/build-env-dfa9bu3d/bin/pip install build wheel
+/tmp/build-env-dfa9bu3d/bin/pip install 'meson-python==0.17.1'
+/tmp/build-env-dfa9bu3d/bin/pip install 'ninja'`,
+				Build: `mkdir -p $(dirname /project)
+mkdir /project
+cp -a . /project
+PATH=/tmp/build-env-dfa9bu3d/bin/:$PATH /tmp/build-env-dfa9bu3d/bin/python -m build --wheel -n -Cbuild-dir=.mesonpy-0roiogjz --outdir dist /project
+mkdir -p dist/repaired
+AUDITWHEEL="/tmp/build-env-dfa9bu3d/bin/auditwheel"
+if [ ! -x "$AUDITWHEEL" ]; then
+  AUDITWHEEL="auditwheel"
+fi
+$AUDITWHEEL repair dist/*.whl --plat manylinux_2_28_x86_64 --only-plat -w dist/repaired/
+rm -f dist/*.whl
+mv dist/repaired/*.whl dist/the_artifact
+rm -rf dist/repaired`,
+				Requires: rebuild.RequiredEnv{
+					BaseImage:  "quay.io/pypa/manylinux_2_28_x86_64",
+					SystemDeps: []string{"git"},
+				},
+				OutputPath: "dist/the_artifact",
+			},
+		},
 	}
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
@@ -1023,7 +1098,7 @@ func TestPlatformWheelBuildVenvOnPath(t *testing.T) {
 	if err != nil {
 		t.Fatalf("GenerateFor() failed unexpectedly: %v", err)
 	}
-	wantBuild := `PATH=/deps/bin/:$PATH /deps/bin/python3 -m build --wheel -n the_dir
+	wantBuild := `PATH=/deps/bin/:$PATH /deps/bin/python -m build --wheel -n the_dir
 mkdir -p the_dir/dist/repaired
 AUDITWHEEL="/deps/bin/auditwheel"
 if [ ! -x "$AUDITWHEEL" ]; then
@@ -1090,6 +1165,35 @@ func TestValidateBuildEnvPath(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			b := &PlatformWheelBuild{PlatformTag: "manylinux2014_x86_64", BuildEnvPath: tt.buildEnvPath}
+			if _, err := b.ToWorkflow(); (err != nil) != tt.wantErr {
+				t.Errorf("ToWorkflow() error = %v, wantErr %v", err, tt.wantErr)
+			}
+		})
+	}
+}
+
+func TestValidateMesonBuildDir(t *testing.T) {
+	tests := []struct {
+		name          string
+		mesonBuildDir string
+		wantErr       bool
+	}{
+		{name: "Unset"},
+		{name: "EightChars", mesonBuildDir: ".mesonpy-0roiogjz"},
+		{name: "UnderscoreValid", mesonBuildDir: ".mesonpy-a1_B2_c3"},
+		{name: "Max24Chars", mesonBuildDir: ".mesonpy-abcdefghijklmnopqrstuvwx"},
+		{name: "MissingLeadingDot", mesonBuildDir: "mesonpy-0roiogjz", wantErr: true},
+		{name: "TooShort", mesonBuildDir: ".mesonpy-abc", wantErr: true},
+		{name: "TooLong", mesonBuildDir: ".mesonpy-abcdefghijklmnopqrstuvwxy", wantErr: true},
+		{name: "PathSeparator", mesonBuildDir: "/project/.mesonpy-0roiogjz", wantErr: true},
+		{name: "ShellMetacharacter", mesonBuildDir: ".mesonpy-abc123;id", wantErr: true},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			b := &PlatformWheelBuild{
+				PlatformTag:   "manylinux2014_x86_64",
+				MesonBuildDir: tt.mesonBuildDir,
+			}
 			if _, err := b.ToWorkflow(); (err != nil) != tt.wantErr {
 				t.Errorf("ToWorkflow() error = %v, wantErr %v", err, tt.wantErr)
 			}

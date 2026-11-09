@@ -984,7 +984,7 @@ func TestInferBuildRoot(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			zr := readWheel(t, zipEntry("pkg/module.cpython-312-x86_64-linux-gnu.so", string(tt.module)))
-			got, _, err := inferBuildPaths(zr, tree, tt.usesCibuildwheel)
+			got, _, _, err := inferBuildPaths(zr, tree, "", tt.usesCibuildwheel)
 			if err != nil {
 				t.Fatalf("inferBuildPaths(%t) returned error: %v", tt.usesCibuildwheel, err)
 			}
@@ -1159,10 +1159,41 @@ func TestInferBuildEnvPath(t *testing.T) {
 			},
 			want: "",
 		},
+		{
+			name: "BuildConfigPythonPath",
+			entries: []archive.ZipEntry{
+				zipEntry("contourpy/util/_build_config.py", `python_path=r"/tmp/build-env-dfa9bu3d/bin/python"`+"\n"),
+			},
+			want: "/tmp/build-env-dfa9bu3d",
+		},
+		{
+			name: "PackagedCppMetadataHeader",
+			entries: []archive.ZipEntry{
+				zipEntry("tenpy/linalg/_np_conserved.cpp", `/* "include_dirs": ["/tmp/pip-build-env-q7x8y9z0/overlay/lib/python3.12/site-packages/numpy/_core/include"] */`+"\n"),
+			},
+			want: "/tmp/pip-build-env-q7x8y9z0/overlay",
+		},
+		{
+			name: "PackagedSourceNonRootTmpIgnored",
+			entries: []archive.ZipEntry{
+				zipEntry("pkg/_ext.cpp", `/* "/var/tmp/build-env-abc123/include/x.h" */`+"\n"),
+			},
+			want: "",
+		},
+		{
+			name: "RodataTakesPrecedenceOverPackagedSource",
+			entries: []archive.ZipEntry{
+				zipEntry("pkg/ext.cpython-312-x86_64-linux-gnu.so", string(elfWithRodata(
+					"/tmp/build-env-rodata99/lib/python3.12/site-packages/numpy/__init__.pxd",
+				))),
+				zipEntry("pkg/_build_config.py", `python_path=r"/tmp/build-env-cfg12345/bin/python"`+"\n"),
+			},
+			want: "/tmp/build-env-rodata99",
+		},
 	}
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
-			_, got, err := inferBuildPaths(readWheel(t, tc.entries...), tree, false)
+			_, got, _, err := inferBuildPaths(readWheel(t, tc.entries...), tree, "", false)
 			if err != nil {
 				t.Fatalf("inferBuildPaths() returned error: %v", err)
 			}
@@ -1268,5 +1299,224 @@ func TestMaturinTakesTarget(t *testing.T) {
 		if got := maturinTakesTarget(tc.reqs); got != tc.want {
 			t.Errorf("maturinTakesTarget(%v) = %t, want %t", tc.reqs, got, tc.want)
 		}
+	}
+}
+
+func TestInferMesonBuildDir(t *testing.T) {
+	repo := must(gitxtest.CreateRepo([]gitxtest.Commit{{ID: "initial-commit", Files: gitxtest.FileContent{
+		"src/ext.c":      "",
+		"python/src/a.c": "",
+	}}}, nil))
+	tree := must(must(repo.Repository.CommitObject(git2.Hash(repo.Commits["initial-commit"]))).Tree())
+	tests := []struct {
+		name             string
+		entries          []archive.ZipEntry
+		dir              string
+		usesCibuildwheel bool
+		want             string
+	}{
+		{
+			name: "BuildConfigUnderProject",
+			entries: []archive.ZipEntry{
+				zipEntry("contourpy/util/_build_config.py", "build_dir=r\"/project/.mesonpy-0roiogjz/lib/contourpy/util\"\n"),
+			},
+			usesCibuildwheel: true,
+			want:             ".mesonpy-0roiogjz",
+		},
+		{
+			name: "BuildConfigMismatchedRootIgnored",
+			entries: []archive.ZipEntry{
+				zipEntry("contourpy/util/_build_config.py", "build_dir=r\"/other/.mesonpy-0roiogjz/lib/contourpy/util\"\n"),
+			},
+			usesCibuildwheel: true,
+			want:             "",
+		},
+		{
+			name: "BuildConfigSubdirPackage",
+			entries: []archive.ZipEntry{
+				zipEntry("pkg/_build_config.py", "build_dir=r\"/project/python/.mesonpy-a1b2c3d4/src\"\n"),
+			},
+			dir:              "python",
+			usesCibuildwheel: true,
+			want:             ".mesonpy-a1b2c3d4",
+		},
+		{
+			name: "EmptyBuildRootUsesCheckoutDir",
+			entries: []archive.ZipEntry{
+				zipEntry("pkg/_build_config.py", "build_dir=r\"/src/.mesonpy-0roiogjz/src\"\n"),
+			},
+			want: ".mesonpy-0roiogjz",
+		},
+		{
+			name: "EmptyBuildRootOutsideCheckoutDirIgnored",
+			entries: []archive.ZipEntry{
+				zipEntry("pkg/_build_config.py", "build_dir=r\"/other/.mesonpy-0roiogjz/src\"\n"),
+			},
+			want: "",
+		},
+		{
+			name: "EmptyBuildRootSubdirPackage",
+			entries: []archive.ZipEntry{
+				zipEntry("pkg/_build_config.py", "build_dir=r\"/src/.mesonpy-0roiogjz/src\"\n"),
+				zipEntry("pkg/sub/_build_config.py", "build_dir=r\"/src/python/.mesonpy-a1b2c3d4/src\"\n"),
+			},
+			dir:  "python",
+			want: ".mesonpy-a1b2c3d4",
+		},
+		{
+			name: "DWARFCompDir",
+			entries: []archive.ZipEntry{
+				zipEntry("pkg/ext.cpython-312-x86_64-linux-gnu.so", string(elfWithUnits(
+					compileUnit{Name: "../src/ext.c", CompDir: "/project/.mesonpy-z9y8x7w6"},
+				))),
+			},
+			want: ".mesonpy-z9y8x7w6",
+		},
+		{
+			name: "DWARF5RelativeLineTableEntry",
+			entries: []archive.ZipEntry{
+				zipEntry("pkg/ext.cpython-312-x86_64-linux-gnu.so", string(elfWithLineFiles(5,
+					"/project",
+					".mesonpy-d5line99/include",
+					"config.h",
+				))),
+			},
+			usesCibuildwheel: true,
+			want:             ".mesonpy-d5line99",
+		},
+		{
+			name: "InvalidShortNameIgnored",
+			entries: []archive.ZipEntry{
+				zipEntry("pkg/_build_config.py", "build_dir=r\"/project/.mesonpy-ab/src\"\n"),
+			},
+			usesCibuildwheel: true,
+			want:             "",
+		},
+		{
+			name: "RelativeParentPathIgnored",
+			entries: []archive.ZipEntry{
+				zipEntry("pkg/_build_config.py", "build_dir=r\"rel/project/.mesonpy-0roiogjz/src\"\n"),
+			},
+			usesCibuildwheel: true,
+			want:             "",
+		},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			_, _, got, err := inferBuildPaths(readWheel(t, tc.entries...), tree, tc.dir, tc.usesCibuildwheel)
+			if err != nil {
+				t.Fatalf("inferBuildPaths() returned error: %v", err)
+			}
+			if diff := cmp.Diff(tc.want, got); diff != "" {
+				t.Errorf("inferBuildPaths() meson build dir diff (-want +got):\n%s", diff)
+			}
+		})
+	}
+}
+
+func TestInferStrategy_MesonBuildDirAndPackagedSourceEnv(t *testing.T) {
+	tests := []struct {
+		name              string
+		pyproject         string
+		generator         string
+		extraEntries      []archive.ZipEntry
+		wantBuildEnvPath  string
+		wantMesonBuildDir string
+	}{
+		{
+			name: "MesonBuildConfigInfersBoth",
+			pyproject: `[project]
+name = "contourpy"
+version = "1.3.3"
+[build-system]
+requires = ["meson-python>=0.13.1"]
+build-backend = "mesonpy"
+`,
+			generator: "meson (0.17.1)",
+			extraEntries: []archive.ZipEntry{
+				zipEntry("contourpy/util/_build_config.py", "python_path=r\"/tmp/build-env-dfa9bu3d/bin/python\"\nbuild_dir=r\"/project/.mesonpy-0roiogjz/lib/contourpy/util\"\n"),
+			},
+			wantBuildEnvPath:  "/tmp/build-env-dfa9bu3d",
+			wantMesonBuildDir: ".mesonpy-0roiogjz",
+		},
+		{
+			name: "SetuptoolsBackendSkipsMesonBuildDir",
+			pyproject: `[project]
+name = "contourpy"
+version = "1.3.3"
+[build-system]
+requires = ["setuptools>=61"]
+`,
+			generator: "setuptools (70.0.0)",
+			extraEntries: []archive.ZipEntry{
+				zipEntry("contourpy/_build_config.py", "python_path=r\"/tmp/build-env-dfa9bu3d/bin/python\"\nbuild_dir=r\"/project/.mesonpy-0roiogjz/lib\"\n"),
+			},
+			wantBuildEnvPath:  "/tmp/build-env-dfa9bu3d",
+			wantMesonBuildDir: "",
+		},
+		{
+			name: "PackagedCppInfersBuildEnvPath",
+			pyproject: `[project]
+name = "contourpy"
+version = "1.3.3"
+[build-system]
+requires = ["setuptools>=61"]
+`,
+			generator: "setuptools (70.0.0)",
+			extraEntries: []archive.ZipEntry{
+				zipEntry("contourpy/_cython.cpp", "/* \"include_dirs\": [\"/tmp/build-env-c1d2e3f4/lib/python3.12/site-packages/numpy/_core/include\"] */\n"),
+			},
+			wantBuildEnvPath:  "/tmp/build-env-c1d2e3f4",
+			wantMesonBuildDir: "",
+		},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			indentedPyproject := "        " + strings.ReplaceAll(strings.TrimSuffix(tc.pyproject, "\n"), "\n", "\n        ") + "\n"
+			repo := must(gitxtest.CreateRepoFromYAML(fmt.Sprintf(`commits:
+  - id: release-commit
+    tag: v1.3.3
+    files:
+      pyproject.toml: |
+%s      .github/workflows/wheels.yml: |
+        jobs:
+          build:
+            steps:
+              - uses: pypa/cibuildwheel@v2.22.0
+`, indentedPyproject), nil))
+			filename := "contourpy-1.3.3-cp312-cp312-manylinux_2_17_x86_64.whl"
+			wheelURL := "https://files.pythonhosted.org/" + filename
+			entries := append([]archive.ZipEntry{
+				zipEntry("contourpy-1.3.3.dist-info/WHEEL", fmt.Sprintf("Wheel-Version: 1.0\nGenerator: %s\nRoot-Is-Purelib: false\nTag: cp312-cp312-manylinux_2_17_x86_64\n", tc.generator)),
+				zipEntry("contourpy-1.3.3.dist-info/METADATA", "Metadata-Version: 2.1\nName: contourpy\nVersion: 1.3.3\n"),
+				zipEntry("contourpy/_contourpy.cpython-312-x86_64-linux-gnu.so", string(elfWithUnits())),
+			}, tc.extraEntries...)
+			wheelBuf := must(archivetest.ZipFile(entries))
+			releaseJSON := fmt.Sprintf(`{"info":{"name":"contourpy","version":"1.3.3"},"urls":[{"filename":%q,"url":%q,"size":%d,"upload_time_iso_8601":"2025-04-15T00:00:00Z"}]}`, filename, wheelURL, wheelBuf.Len())
+			mux := rebuild.RegistryMux{PyPI: pypireg.HTTPRegistry{Client: &httpxtest.MockClient{
+				Calls: []httpxtest.Call{
+					{URL: "https://pypi.org/pypi/contourpy/1.3.3/json", Response: &http.Response{StatusCode: 200, Body: httpxtest.Body(releaseJSON)}},
+					{URL: "https://pypi.org/pypi/contourpy/1.3.3/json", Response: &http.Response{StatusCode: 200, Body: httpxtest.Body(releaseJSON)}},
+					{URL: wheelURL, Response: &http.Response{StatusCode: 200, Body: io.NopCloser(bytes.NewReader(wheelBuf.Bytes()))}},
+				},
+				URLValidator: httpxtest.NewURLValidator(t),
+			}}}
+			rcfg := &rebuild.RepoConfig{Repo: gitx.Repo{Repository: repo.Repository, Storer: repo.Storer}, URI: "https://github.com/contourpy/contourpy"}
+			target := rebuild.Target{Ecosystem: rebuild.PyPI, Package: "contourpy", Version: "1.3.3", Artifact: filename}
+			strat, err := Rebuilder{}.InferStrategy(context.Background(), target, mux, rcfg, nil)
+			if err != nil {
+				t.Fatalf("InferStrategy() unexpected error: %v", err)
+			}
+			got, ok := strat.(*PlatformWheelBuild)
+			if !ok {
+				t.Fatalf("InferStrategy() returned %T, want *PlatformWheelBuild", strat)
+			}
+			if diff := cmp.Diff(tc.wantBuildEnvPath, got.BuildEnvPath); diff != "" {
+				t.Errorf("BuildEnvPath diff (-want +got):\n%s", diff)
+			}
+			if diff := cmp.Diff(tc.wantMesonBuildDir, got.MesonBuildDir); diff != "" {
+				t.Errorf("MesonBuildDir diff (-want +got):\n%s", diff)
+			}
+		})
 	}
 }
