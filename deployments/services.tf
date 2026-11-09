@@ -173,6 +173,8 @@ resource "google_cloud_run_v2_service" "git-cache" {
   ingress             = local.cloud_run_ingress
   deletion_protection = false
   template {
+    execution_environment = "EXECUTION_ENVIRONMENT_GEN2" // fills run git over in-memory staging and the network, both syscall-heavy
+
     service_account = google_service_account.git-cache.email
     timeout         = "${60 * 60}s" // 60 minutes
     containers {
@@ -222,6 +224,8 @@ resource "google_cloud_run_v2_service" "inference" {
   ingress             = local.cloud_run_ingress
   deletion_protection = false
   template {
+    execution_environment = "EXECUTION_ENVIRONMENT_GEN2" // clones and tree walks are syscall-heavy
+
     service_account = google_service_account.inference.email
     timeout         = "${each.value.timeout_s}s"
     containers {
@@ -278,6 +282,8 @@ resource "google_cloud_run_v2_service" "crates-registry" {
   ingress             = local.cloud_run_ingress
   deletion_protection = false
   template {
+    execution_environment = "EXECUTION_ENVIRONMENT_GEN2" // resolves walk the index's history, which is syscall-heavy
+
     service_account = google_service_account.crates-registry.email
     timeout         = "${45 * 60}s" // 45 minutes
     containers {
@@ -638,6 +644,8 @@ resource "google_cloud_run_v2_service" "dashboard" {
   ingress             = "INGRESS_TRAFFIC_INTERNAL_LOAD_BALANCER"
   deletion_protection = true # Serves viewers, unlike the backends
   template {
+    execution_environment = "EXECUTION_ENVIRONMENT_GEN2" // NOTE: WAL readers fail on gen1
+
     service_account = google_service_account.dashboard[0].email
     timeout         = "${5 * 60}s" // 5 minutes, for cold-start hydration
     containers {
