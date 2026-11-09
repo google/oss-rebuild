@@ -4,9 +4,12 @@
 package maven
 
 import (
+	"bytes"
+	"cmp"
 	"context"
 	"encoding/xml"
 	"fmt"
+	"io"
 	"log"
 	"path"
 	"strings"
@@ -105,11 +108,44 @@ func MavenInfer(ctx context.Context, t rebuild.Target, mux rebuild.RegistryMux, 
 		}
 	}
 	loc := rebuild.Location{Repo: repoConfig.URI, Dir: dir, Ref: ref, Submodules: submodules}
-	jdk, err := inferOrFallbackToDefaultJDK(ctx, t.Package, t.Version, mux)
+	jar, err := readUpstreamJar(ctx, t.Package, t.Version, mux)
 	if err != nil {
 		return nil, &rebuild.InferenceError{Detail: rebuild.InferenceErrorDetail{Location: loc}, Err: errors.Wrap(err, "fetching JDK")}
 	}
-	return &MavenBuild{Location: loc, JDKVersion: jdk}, nil
+	b := &MavenBuild{Location: loc, JDKVersion: jdkFor(jar.JDK)}
+	refCommit, err := repoConfig.Repository.CommitObject(git2.NewHash(ref))
+	if err != nil {
+		return nil, errors.Wrapf(err, "[INTERNAL] resolving ref commit [repo=%s,ref=%s]", repoConfig.URI, ref)
+	}
+	// The Maven release sets the default plugin versions, which shape much of
+	// the output. Use the release a wrapper pins, else one an old manifest
+	// names, else the newest at the commit's date.
+	b.MavenVersion = cmp.Or(wrapperMaven(refCommit, dir), jar.Maven, mavenAt(refCommit.Committer.When))
+	// CRLF in the copied pom.xml but not in the repository's means the
+	// publisher's checkout converted line endings.
+	if jar.CRLF && !blobHasCRLF(refCommit, path.Join(dir, "pom.xml")) {
+		b.CRLF = true
+	}
+	return b, nil
+}
+
+// blobHasCRLF reports whether the file at p in the commit has CRLF line endings.
+func blobHasCRLF(commit *git2.Commit, p string) bool {
+	tree, err := commit.Tree()
+	if err != nil {
+		return false
+	}
+	f, err := tree.File(p)
+	if err != nil {
+		return false
+	}
+	r, err := f.Reader()
+	if err != nil {
+		return false
+	}
+	defer r.Close()
+	b, err := io.ReadAll(r)
+	return err == nil && bytes.Contains(b, []byte("\r\n"))
 }
 
 // findBuildDir is a helper that checks if a given commit contains a valid pom.xml for the package.
