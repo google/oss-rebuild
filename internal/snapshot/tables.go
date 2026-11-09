@@ -476,10 +476,9 @@ ORDER BY 1, 2`
 // The scopes below let a delta refresh the derived tables keyed by package
 // or by source row in proportion to its size. The rows its documents reach
 // are deleted and re-derived with the doc tables narrowed to what those rows
-// read. The other derived tables re-derive whole, except coverage_weekly,
-// which waits for the whole build, and package_rank, which only it changes.
-// ecosystem_daily is among the whole ones. Its rows are per day, and a day
-// holds a large share of the completed builds, so a scope would save little.
+// read, and ecosystem_daily by the days its documents fall on. The other
+// derived tables re-derive whole, except coverage_weekly, which waits for
+// the whole build, and package_rank, which only it changes.
 // touched_<table> holds the keys of the documents a delta applied.
 
 // touchedAttempt selects the attempts a delta applied.
@@ -542,6 +541,56 @@ var standingScope = docdb.Scope{
 		{Table: TablePackageRank, Query: "SELECT * FROM main.package_rank WHERE " + inTouchedPackages},
 		{Table: TableVersionStats, Query: "SELECT * FROM main.version_stats WHERE " + inTouchedPackages},
 		{Table: TableCampaigns, Query: "SELECT * FROM main.campaigns WHERE " + inTouchedPackages},
+	},
+}
+
+// onTouchedDays selects the rows of main.<table> created on a touched day, as
+// a range per day so the created index serves it. It is one SELECT with one
+// range so that it flattens into the query reading it, which then reads only
+// the columns it uses.
+func onTouchedDays(table string) string {
+	return "SELECT x.* FROM (SELECT DISTINCT day FROM touched_days) t JOIN main." + table + " x" +
+		" ON x.created >= t.day AND x.created < date(t.day, '+1 day')"
+}
+
+// touchedDaysKey selects the (ecosystem, day) rows a delta reaches: the days
+// the completed builds, sessions, and scratches it applied were created on.
+// Documents without a stamp fall on the empty day, which only the whole
+// build refreshes.
+// NOTE: A first success can move off a day the delta doesn't touch, when an
+// earlier success lands after a later one or a success becomes a failure.
+// That day's first-success counts stay stale until the next whole build.
+const touchedDaysKey = `
+SELECT ecosystem, day FROM (
+SELECT ecosystem, coalesce(substr(created, 1, 10), '') AS day FROM main.attempts WHERE ` + touchedAttempt + `
+UNION SELECT s.ecosystem, coalesce(substr(i.created, 1, 10), '')
+	FROM main.agent_iterations i JOIN main.agent_sessions s ON s.session_id = i.session_id
+	WHERE (i.session_id, i.number) IN (SELECT session_id, number FROM touched_agent_iterations)
+UNION SELECT ecosystem, coalesce(substr(created, 1, 10), '') FROM main.agent_sessions
+	WHERE session_id IN (SELECT session_id FROM touched_agent_sessions)
+UNION SELECT s.ecosystem, coalesce(substr(sc.created, 1, 10), '')
+	FROM main.scratch_vms sc JOIN main.agent_sessions s ON s.scratch_id = sc.scratch_id
+	WHERE sc.scratch_id IN (` + touchedScratchesKey + `))
+WHERE day != ''`
+
+// ecosystemDailyScope keys ecosystem_daily by (ecosystem, day). The day
+// sessions are those created on the touched days and those of the days'
+// iterations and scratches, which join them for their target.
+var ecosystemDailyScope = docdb.Scope{
+	Keys: []docdb.Key{
+		{Name: "days", Query: touchedDaysKey},
+		{Name: "day_sessions", Query: `
+			SELECT session_id FROM (` + onTouchedDays(TableAgentSessions) + `)
+			UNION SELECT session_id FROM (` + onTouchedDays(TableAgentIterations) + `)
+			UNION SELECT session_id FROM main.agent_sessions
+				WHERE scratch_id IN (SELECT scratch_id FROM (` + onTouchedDays(TableScratchVMs) + `))`},
+	},
+	Rows: "(ecosystem, day) IN (SELECT ecosystem, day FROM touched_days)",
+	Views: []docdb.View{
+		{Table: TableAttempts, Query: onTouchedDays(TableAttempts)},
+		{Table: TableAgentIterations, Query: onTouchedDays(TableAgentIterations)},
+		{Table: TableScratchVMs, Query: onTouchedDays(TableScratchVMs)},
+		{Table: TableAgentSessions, Query: "SELECT * FROM main.agent_sessions WHERE session_id IN (SELECT session_id FROM touched_day_sessions)"},
 	},
 }
 
@@ -676,6 +725,7 @@ func Tables() []docdb.TableDef {
 				{Name: "model", Type: "TEXT", Expr: docdb.Raw("$.Usage.model")},
 				{Name: "created", Type: "TEXT", Expr: docdb.RawTime("$.Created")},
 			},
+			Indexes: [][]string{{"created"}},
 		},
 		{
 			Name: TableScratchVMs,
@@ -700,6 +750,7 @@ func Tables() []docdb.TableDef {
 					Expr: "CASE WHEN " + docdb.Raw("$.state") + " = 'deleted' AND created IS NOT NULL AND updated > created" +
 						" THEN round((julianday(updated) - julianday(created)) * 86400.0, 3) ELSE 0.0 END"},
 			},
+			Indexes: [][]string{{"created"}},
 		},
 		// TODO: Remove at the next SchemaVersion bump. Rollup leaves this
 		// table empty and it remains only to preserve the v1 shape.
@@ -797,7 +848,7 @@ func Tables() []docdb.TableDef {
 		},
 		{Name: TableCostObservations, Query: costObservationsQuery, Scope: &costObservationsScope, Indexes: [][]string{{"ecosystem", "package"}, {"source"}, {"timestamp"}}},
 		{Name: TableVersionStats, Query: versionStatsQuery, Scope: &packageScope, Indexes: [][]string{{"ecosystem", "package", "version"}, {"last_attempted_at"}}},
-		{Name: TableEcosystemDaily, Query: ecosystemDailyQuery, Indexes: [][]string{{"ecosystem", "day"}}},
+		{Name: TableEcosystemDaily, Query: ecosystemDailyQuery, Scope: &ecosystemDailyScope, Indexes: [][]string{{"ecosystem", "day"}}},
 		// coverage_weekly folds every week against every version, which only
 		// the whole build affords, and a week's figures can wait for it.
 		{Name: TableCoverageWeekly, Query: coverageWeeklyQuery, Scope: docdb.Unrefreshed, Indexes: [][]string{{"ecosystem", "week"}}},
