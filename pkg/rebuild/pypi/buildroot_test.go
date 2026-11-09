@@ -351,10 +351,12 @@ func TestMostCommonRootOfUnits(t *testing.T) {
 			}
 			roots := make([]string, 0, len(tc.units))
 			for _, u := range tc.units {
-				roots = append(roots, u.buildRoot(files))
+				if root := u.buildRoot(files); usableRoot(root) {
+					roots = append(roots, root)
+				}
 			}
-			if got := mostCommonRoot(roots); got != tc.want {
-				t.Errorf("mostCommonRoot() = %q, want %q", got, tc.want)
+			if got := mostCommon(roots); got != tc.want {
+				t.Errorf("mostCommon() = %q, want %q", got, tc.want)
 			}
 		})
 	}
@@ -420,10 +422,12 @@ func TestMostCommonRootOfRodataPaths(t *testing.T) {
 			}
 			roots := make([]string, 0, len(tc.paths))
 			for _, p := range tc.paths {
-				roots = append(roots, rodataBuildRoot(p, files))
+				if root := rodataBuildRoot(p, files); usableRoot(root) {
+					roots = append(roots, root)
+				}
 			}
-			if got := mostCommonRoot(roots); got != tc.want {
-				t.Errorf("mostCommonRoot() = %q, want %q", got, tc.want)
+			if got := mostCommon(roots); got != tc.want {
+				t.Errorf("mostCommon() = %q, want %q", got, tc.want)
 			}
 		})
 	}

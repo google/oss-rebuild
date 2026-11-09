@@ -89,9 +89,9 @@ type compileUnit struct {
 	CompDir string // working directory of the compiler (DW_AT_comp_dir)
 }
 
-// candidateRoots returns the candidate roots of the wheel's extension modules
-// from their DWARF compile units and from their .rodata source paths, recording
-// an error in skipped for each module or section that cannot be read.
+// candidateRoots returns the usable candidate roots of the wheel's extension
+// modules from their DWARF compile units and from their .rodata source paths,
+// recording an error in skipped for each module or section that cannot be read.
 func candidateRoots(zr *zip.Reader, files map[string]bool) (dwarfRoots, rodataRoots []string, skipped []error) {
 	for _, f := range zr.File {
 		if !isExtensionModule(f.Name) || f.UncompressedSize64 > maxModuleSize {
@@ -107,14 +107,18 @@ func candidateRoots(zr *zip.Reader, files map[string]bool) (dwarfRoots, rodataRo
 			skipped = append(skipped, errors.Wrapf(err, "reading debug info of %s", f.Name))
 		}
 		for _, u := range units {
-			dwarfRoots = append(dwarfRoots, u.buildRoot(files))
+			if root := u.buildRoot(files); usableRoot(root) {
+				dwarfRoots = append(dwarfRoots, root)
+			}
 		}
 		paths, err := moduleRodataPaths(ef)
 		if err != nil {
 			skipped = append(skipped, errors.Wrapf(err, "reading .rodata of %s", f.Name))
 		}
 		for _, p := range paths {
-			rodataRoots = append(rodataRoots, rodataBuildRoot(p, files))
+			if root := rodataBuildRoot(p, files); usableRoot(root) {
+				rodataRoots = append(rodataRoots, root)
+			}
 		}
 	}
 	return dwarfRoots, rodataRoots, skipped
@@ -230,20 +234,23 @@ func repoFiles(tree *git2.Tree) (map[string]bool, error) {
 	return files, nil
 }
 
-// mostCommonRoot returns the usable candidate root that appears most often,
-// breaking ties by the lexically smallest root.
-func mostCommonRoot(roots []string) string {
+// usableRoot reports whether root is a candidate build root outside the
+// dependency trees that is either checkoutDir or accepted by validateBuildRoot.
+func usableRoot(root string) bool {
+	return root != "" && !isDependencyTree(root) && (root == checkoutDir || validateBuildRoot(root) == nil)
+}
+
+// mostCommon returns the path that appears most often, breaking ties by the
+// lexically smallest path.
+func mostCommon(paths []string) string {
 	counts := make(map[string]int)
-	for _, root := range roots {
-		if root == "" || isDependencyTree(root) || (root != checkoutDir && validateBuildRoot(root) != nil) {
-			continue
-		}
-		counts[root]++
+	for _, p := range paths {
+		counts[p]++
 	}
 	var best string
-	for root, n := range counts {
-		if n > counts[best] || (n == counts[best] && root < best) {
-			best = root
+	for p, n := range counts {
+		if n > counts[best] || (n == counts[best] && p < best) {
+			best = p
 		}
 	}
 	return best

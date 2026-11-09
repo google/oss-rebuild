@@ -638,9 +638,9 @@ func inferBuildRoot(zr *zip.Reader, tree *git2.Tree, usesCibuildwheel bool) (str
 	if len(skipped) > 0 {
 		log.Printf("Skipped %d sections that could not be read while inferring the build root, first: %v", len(skipped), skipped[0])
 	}
-	root, source := mostCommonRoot(dwarfRoots), "DWARF"
+	root, source := mostCommon(dwarfRoots), "DWARF"
 	if root == "" {
-		root, source = mostCommonRoot(rodataRoots), ".rodata"
+		root, source = mostCommon(rodataRoots), ".rodata"
 	}
 	switch {
 	case root == checkoutDir:
