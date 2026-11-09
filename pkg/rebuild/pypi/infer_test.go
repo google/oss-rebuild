@@ -1170,3 +1170,110 @@ func TestInferBuildEnvPath(t *testing.T) {
 		})
 	}
 }
+
+func TestApplyConstraints(t *testing.T) {
+	for _, tc := range []struct {
+		name        string
+		reqs        []string
+		constraints []string
+		want        []string
+	}{
+		{
+			name:        "RefinesBareRequirement",
+			reqs:        []string{"setuptools==80.9.0", "cython"},
+			constraints: []string{"cython==3.1.4"},
+			want:        []string{"setuptools==80.9.0", "cython==3.1.4"},
+		},
+		{
+			name:        "IntersectsRangeAndParenthesizedRequirements",
+			reqs:        []string{"Cython>=3.0", "numpy(>=1.24,<2.0)"},
+			constraints: []string{"cython==3.0.11", "numpy<1.27"},
+			want:        []string{"Cython>=3.0,==3.0.11", "numpy>=1.24,<2.0,<1.27"},
+		},
+		{
+			name:        "PreservesExistingExactAndURLPins",
+			reqs:        []string{"cython==3.0.5", "mypy @ https://example.com/mypy.whl"},
+			constraints: []string{"cython==3.1.4", "mypy==1.10.0"},
+			want:        []string{"cython==3.0.5", "mypy @ https://example.com/mypy.whl"},
+		},
+		{
+			name:        "ConstraintAddsMarkerBeforeBaseFallback",
+			reqs:        []string{"cython", "numpy>=1.20; sys_platform == 'linux'"},
+			constraints: []string{"cython==3.1.4; python_version >= '3.9'", "numpy==1.26.4; python_version < '3.13'"},
+			want: []string{
+				"cython==3.1.4; python_version >= '3.9'",
+				"cython",
+				"numpy>=1.20,==1.26.4; (sys_platform == 'linux') and (python_version < '3.13')",
+				"numpy>=1.20; sys_platform == 'linux'",
+			},
+		},
+		{
+			name:        "AppendsUnlistedConstraintPackages",
+			reqs:        []string{"setuptools==80.9.0", "expandvars"},
+			constraints: []string{"cython==3.1.4"},
+			want:        []string{"setuptools==80.9.0", "expandvars", "cython==3.1.4"},
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			got := applyConstraints(tc.reqs, tc.constraints)
+			if diff := cmp.Diff(tc.want, got); diff != "" {
+				t.Errorf("applyConstraints(%v, %v) diff (-want +got):\n%s", tc.reqs, tc.constraints, diff)
+			}
+		})
+	}
+}
+
+func TestInferStrategyPlatformWheelCibuildwheelConstraints(t *testing.T) {
+	repo := must(gitxtest.CreateRepoFromYAML(`commits:
+  - id: release-commit
+    tag: v1.8.0
+    files:
+      pyproject.toml: |
+        [project]
+        name = "frozenlist"
+        version = "1.8.0"
+        [build-system]
+        requires = ["setuptools>=47", "expandvars"]
+        build-backend = "pep517_backend.hooks"
+        backend-path = ["packaging"]
+        [tool.cibuildwheel.environment]
+        PIP_CONSTRAINT = "requirements/cython.txt"
+      requirements/cython.txt: |
+        cython==3.1.4
+`, nil))
+	filename := "frozenlist-1.8.0-cp312-cp312-musllinux_1_2_x86_64.whl"
+	wheelURL := "https://files.pythonhosted.org/" + filename
+	wheelBuf := must(archivetest.ZipFile([]archive.ZipEntry{
+		{
+			FileHeader: &zip.FileHeader{Name: "frozenlist-1.8.0.dist-info/WHEEL"},
+			Body:       []byte("Wheel-Version: 1.0\nGenerator: setuptools (80.9.0)\nRoot-Is-Purelib: false\nTag: cp312-cp312-musllinux_1_2_x86_64\n"),
+		},
+		{
+			FileHeader: &zip.FileHeader{Name: "frozenlist-1.8.0.dist-info/METADATA"},
+			Body:       []byte("Metadata-Version: 2.1\nName: frozenlist\nVersion: 1.8.0\n"),
+		},
+	}))
+	releaseJSON := fmt.Sprintf(`{"info":{"name":"frozenlist","version":"1.8.0"},"urls":[{"filename":%q,"url":%q,"size":%d,"upload_time_iso_8601":"2026-05-01T00:00:00Z"}]}`, filename, wheelURL, wheelBuf.Len())
+	mux := rebuild.RegistryMux{PyPI: pypireg.HTTPRegistry{Client: &httpxtest.MockClient{
+		Calls: []httpxtest.Call{
+			{URL: "https://pypi.org/pypi/frozenlist/1.8.0/json", Response: &http.Response{StatusCode: 200, Body: httpxtest.Body(releaseJSON)}},
+			{URL: "https://pypi.org/pypi/frozenlist/1.8.0/json", Response: &http.Response{StatusCode: 200, Body: httpxtest.Body(releaseJSON)}},
+			{URL: wheelURL, Response: &http.Response{StatusCode: 200, Body: io.NopCloser(bytes.NewReader(wheelBuf.Bytes()))}},
+		},
+		URLValidator: httpxtest.NewURLValidator(t),
+	}}}
+	rcfg := &rebuild.RepoConfig{Repo: gitx.Repo{Repository: repo.Repository, Storer: repo.Storer}, URI: "https://github.com/aio-libs/frozenlist"}
+	target := rebuild.Target{Ecosystem: rebuild.PyPI, Package: "frozenlist", Version: "1.8.0", Artifact: filename}
+	strat, err := Rebuilder{}.InferStrategy(context.Background(), target, mux, rcfg, nil)
+	if err != nil {
+		t.Fatalf("InferStrategy() unexpected error: %v", err)
+	}
+	got, ok := strat.(*PlatformWheelBuild)
+	if !ok {
+		t.Fatalf("InferStrategy() returned %T, want *PlatformWheelBuild", strat)
+	}
+	want := []string{"setuptools==80.9.0", "expandvars", "cython==3.1.4"}
+	if diff := cmp.Diff(want, got.Requirements); diff != "" {
+		t.Errorf("PlatformWheelBuild.Requirements diff (-want +got):\n%s", diff)
+	}
+}

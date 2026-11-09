@@ -408,6 +408,147 @@ func mergeRequirements(reqs, buildReqs []string) []string {
 	return reqs
 }
 
+// applyConstraints intersects entries in reqs with matching constraints and
+// appends any remaining constraint packages not already present in reqs.
+// NOTE: pypi/install-deps in strategy.go runs a separate "pip install" per
+// entry without --upgrade. Constraints that add an environment marker are
+// emitted before the base requirement so that when the marker matches, the
+// constrained version installs first and satisfies the base check.
+func applyConstraints(reqs, constraints []string) []string {
+	if len(constraints) == 0 {
+		return reqs
+	}
+	seenConstraint := make(map[string]bool)
+	byName := make(map[string][]parsedRequirement)
+	for _, c := range constraints {
+		pc := parseRequirement(c)
+		key := pc.name + "\x00" + pc.spec + "\x00" + pc.marker
+		if pc.name != "" && !pc.isURL && pc.spec != "" && !seenConstraint[key] {
+			seenConstraint[key] = true
+			byName[pc.name] = append(byName[pc.name], pc)
+		}
+	}
+	out := make([]string, 0, len(reqs)+len(constraints))
+	for _, req := range reqs {
+		pr := parseRequirement(req)
+		matches := byName[pr.name]
+		if len(matches) == 0 || pr.isURL || isExactVersionPin(pr.spec) {
+			out = append(out, req)
+			continue
+		}
+		baseSpec := pr.spec
+		var conditional []parsedRequirement
+		for _, c := range matches {
+			if c.marker == "" || c.marker == pr.marker {
+				baseSpec = combineSpecs(baseSpec, c.spec)
+			} else {
+				conditional = append(conditional, c)
+			}
+		}
+		for _, c := range conditional {
+			out = append(out, formatRequirement(pr.head, combineSpecs(baseSpec, c.spec), combineMarkers(pr.marker, c.marker)))
+		}
+		if baseSpec == pr.spec {
+			out = append(out, req)
+		} else {
+			out = append(out, formatRequirement(pr.head, baseSpec, pr.marker))
+		}
+	}
+	// NOTE: Appending unlisted constraints deviates from cibuildwheel and pip,
+	// because non-isolated builds ("-n") skip get_requires_for_build_wheel and
+	// must pre-install dynamic build tools. A shared constraint file can
+	// therefore install an unused knownDynamicBuildPkg package. This case
+	// appears empirically uncommon, so we accept it rather than adding extra
+	// filtering complexity.
+	return mergeRequirements(out, constraints)
+}
+
+type parsedRequirement struct {
+	name   string
+	head   string
+	spec   string
+	marker string
+	isURL  bool
+}
+
+// parseRequirement splits a PEP 508 dependency specifier into its normalized
+// name, package-and-extras prefix, version specifier, and environment marker.
+// https://packaging.python.org/en/latest/specifications/dependency-specifiers/#grammar
+func parseRequirement(req string) parsedRequirement {
+	marker := requirementMarker(req)
+	body := stripRequirementMarker(req)
+	if strings.Contains(body, "@") {
+		return parsedRequirement{name: requirementName(req), head: body, marker: marker, isURL: true}
+	}
+	specIdx := strings.IndexAny(body, "=<>~!(")
+	if specIdx == -1 {
+		return parsedRequirement{name: requirementName(req), head: strings.TrimSpace(body), marker: marker}
+	}
+	head := strings.TrimSpace(body[:specIdx])
+	spec := strings.TrimSpace(body[specIdx:])
+	if strings.HasPrefix(spec, "(") && strings.HasSuffix(spec, ")") {
+		spec = strings.TrimSpace(spec[1 : len(spec)-1])
+	}
+	return parsedRequirement{name: requirementName(req), head: head, spec: spec, marker: marker}
+}
+
+func stripRequirementMarker(req string) string {
+	semi := strings.IndexByte(req, ';')
+	if at := strings.IndexByte(req, '@'); at != -1 && (semi == -1 || at < semi) {
+		if loc := urlMarkerSepPat.FindStringIndex(req[at:]); loc != nil {
+			return strings.TrimSpace(req[:at+loc[0]])
+		}
+		return strings.TrimSpace(req)
+	}
+	if semi != -1 {
+		return strings.TrimSpace(req[:semi])
+	}
+	return strings.TrimSpace(req)
+}
+
+// isExactVersionPin reports whether spec pins a single version via == or ===,
+// excluding wildcard prefixes such as ==3.0.*.
+func isExactVersionPin(spec string) bool {
+	for _, clause := range strings.Split(spec, ",") {
+		clause = strings.TrimSpace(clause)
+		if strings.HasPrefix(clause, "===") {
+			return true
+		}
+		if rest, ok := strings.CutPrefix(clause, "=="); ok && !strings.Contains(rest, "*") {
+			return true
+		}
+	}
+	return false
+}
+
+func formatRequirement(head, spec, marker string) string {
+	out := head + spec
+	if marker != "" {
+		out += "; " + marker
+	}
+	return out
+}
+
+func combineSpecs(a, b string) string {
+	if a == "" {
+		return b
+	}
+	if b == "" {
+		return a
+	}
+	return a + "," + b
+}
+
+func combineMarkers(a, b string) string {
+	if a == "" {
+		return b
+	}
+	if b == "" || a == b {
+		return a
+	}
+	return fmt.Sprintf("(%s) and (%s)", a, b)
+}
+
 func (Rebuilder) InferStrategy(ctx context.Context, t rebuild.Target, mux rebuild.RegistryMux, rcfg *rebuild.RepoConfig, hint rebuild.Strategy) (rebuild.Strategy, error) {
 	name, version := t.Package, t.Version
 	release, err := mux.PyPI.Release(ctx, name, version)
@@ -539,6 +680,11 @@ func inferBuild(ctx context.Context, t rebuild.Target, mux rebuild.RegistryMux, 
 		if err != nil {
 			return nil, errors.Wrapf(err, "determining target libc for wheel %s", a.Filename)
 		}
+		cibwReqs, err := extractCibuildwheelBuildRequirements(tree, dir, tags, highest.LibcImpl)
+		if err != nil {
+			return nil, errors.Wrap(err, "extracting cibuildwheel build requirements")
+		}
+		reqs = applyConstraints(reqs, cibwReqs)
 		sysDeps, err := extractCibuildwheelDependencies(tree, dir, tags, highest.LibcImpl)
 		if err != nil {
 			return nil, errors.Wrap(err, "extracting cibuildwheel dependencies")
