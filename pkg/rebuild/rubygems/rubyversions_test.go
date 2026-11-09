@@ -21,53 +21,73 @@ func TestRubyVersionForRubygems(t *testing.T) {
 		wantErr         bool
 	}{
 		{
-			name:            "exact match - Ruby 3.4.0 bundles 3.6.2",
+			name:            "ExactRuby340",
 			rubygemsVersion: "3.6.2",
 			want:            result{Ruby: "3.4.0", Exact: true},
 		},
 		{
-			name:            "exact match - Ruby 3.3.0 bundles 3.5.3",
+			name:            "ExactRuby330",
 			rubygemsVersion: "3.5.3",
 			want:            result{Ruby: "3.3.0", Exact: true},
 		},
 		{
-			name:            "exact match - Ruby 3.3.6 bundles 3.5.22",
+			name:            "ExactRuby336",
 			rubygemsVersion: "3.5.22",
 			want:            result{Ruby: "3.3.6", Exact: true},
 		},
 		{
-			name:            "exact match - Ruby 3.1.3 bundles 3.3.26",
+			name:            "ExactRuby313",
 			rubygemsVersion: "3.3.26",
 			want:            result{Ruby: "3.1.3", Exact: true},
 		},
 		{
-			name:            "exact match - Ruby 3.1.1 bundles 3.3.7",
+			name:            "ExactRuby311",
 			rubygemsVersion: "3.3.7",
 			want:            result{Ruby: "3.1.1", Exact: true},
 		},
 		{
-			name:            "non-bundled version falls back to series",
+			name:            "NonBundledFallsBackToSeries",
 			rubygemsVersion: "3.5.23",
 			want:            result{Ruby: "3.3.11", Exact: false},
 		},
 		{
-			name:            "non-bundled version in 3.4 series",
+			name:            "NonBundledIn34Series",
 			rubygemsVersion: "3.4.15",
 			want:            result{Ruby: "3.2.11", Exact: false},
 		},
 		{
-			name:            "dev version stripped and falls back",
+			name:            "DevVersionStrippedFallsBack",
 			rubygemsVersion: "3.6.0.dev",
-			want:            result{Ruby: "3.4.9", Exact: false},
+			want:            result{Ruby: "3.4.11", Exact: false},
 		},
 		{
-			name:            "pre version stripped",
+			name:            "ExactRuby406",
+			rubygemsVersion: "4.0.16",
+			want:            result{Ruby: "4.0.6", Exact: true},
+		},
+		{
+			name:            "NonBundledIn40Series",
+			rubygemsVersion: "4.0.23",
+			want:            result{Ruby: "4.0.7", Exact: false},
+		},
+		{
+			name:            "Series37HasNoBundlingRuby",
+			rubygemsVersion: "3.7.2",
+			want:            result{Ruby: "3.4.11", Exact: false},
+		},
+		{
+			name:            "SeriesNewerThanTableUsesNewestRuby",
+			rubygemsVersion: "4.1.0.dev",
+			want:            result{Ruby: "4.0.7", Exact: false},
+		},
+		{
+			name:            "PreVersionStripped",
 			rubygemsVersion: "3.5.0.pre1",
 			want:            result{Ruby: "3.3.11", Exact: false},
 		},
 		{
-			name:            "unknown series returns error",
-			rubygemsVersion: "9.9.9",
+			name:            "UnknownOlderSeriesReturnsError",
+			rubygemsVersion: "2.6.14",
 			wantErr:         true,
 		},
 	}

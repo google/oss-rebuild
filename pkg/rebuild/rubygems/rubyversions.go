@@ -4,6 +4,7 @@
 package rubygems
 
 import (
+	"strconv"
 	"strings"
 
 	"github.com/pkg/errors"
@@ -108,6 +109,17 @@ var rubyReleases = []rubyRelease{
 	{"3.4.7", "3.6.9"},
 	{"3.4.8", "3.6.9"},
 	{"3.4.9", "3.6.9"},
+	{"3.4.10", "3.6.9"},
+	{"3.4.11", "3.6.9"},
+	// Ruby 4.0.x
+	{"4.0.0", "4.0.3"},
+	{"4.0.1", "4.0.3"},
+	{"4.0.2", "4.0.6"},
+	{"4.0.3", "4.0.6"},
+	{"4.0.4", "4.0.10"},
+	{"4.0.5", "4.0.10"},
+	{"4.0.6", "4.0.16"},
+	{"4.0.7", "4.0.20"},
 }
 
 // rubygemsMajorMinorToRubyMajorMinor maps the RubyGems major.minor series
@@ -122,6 +134,9 @@ var rubygemsMajorMinorToRubyMajorMinor = map[string]string{
 	"3.4": "3.2",
 	"3.5": "3.3",
 	"3.6": "3.4",
+	// No Ruby release bundles RubyGems 3.7.
+	"3.7": "3.4",
+	"4.0": "4.0",
 }
 
 // rubyVersionForRubygems returns a Ruby version for the given RubyGems version.
@@ -148,7 +163,12 @@ func rubyVersionForRubygems(rubygemsVersion string) (rubyVersion string, exact b
 	rgMajorMinor := majorMinor(cleaned)
 	rubyMajorMinor, ok := rubygemsMajorMinorToRubyMajorMinor[rgMajorMinor]
 	if !ok {
-		return "", false, errors.Errorf("unknown RubyGems series %q", rgMajorMinor)
+		// A series newer than every mapped one predates its table entry, so
+		// the newest Ruby with an explicit RubyGems install is the closest.
+		if !newerThanMappedSeries(rgMajorMinor) {
+			return "", false, errors.Errorf("unknown RubyGems series %q", rgMajorMinor)
+		}
+		return rubyReleases[len(rubyReleases)-1].Ruby, false, nil
 	}
 
 	// Find the latest Ruby in this series.
@@ -194,4 +214,29 @@ func majorMinor(version string) string {
 		return version
 	}
 	return parts[0] + "." + parts[1]
+}
+
+// newerThanMappedSeries reports whether a "major.minor" series orders after
+// every series in rubygemsMajorMinorToRubyMajorMinor.
+func newerThanMappedSeries(series string) bool {
+	parse := func(s string) (major, minor int, ok bool) {
+		a, b, found := strings.Cut(s, ".")
+		if !found {
+			return 0, 0, false
+		}
+		major, err1 := strconv.Atoi(a)
+		minor, err2 := strconv.Atoi(b)
+		return major, minor, err1 == nil && err2 == nil
+	}
+	major, minor, ok := parse(series)
+	if !ok {
+		return false
+	}
+	for known := range rubygemsMajorMinorToRubyMajorMinor {
+		kmajor, kminor, _ := parse(known)
+		if major < kmajor || (major == kmajor && minor <= kminor) {
+			return false
+		}
+	}
+	return true
 }
