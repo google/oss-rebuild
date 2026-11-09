@@ -34,14 +34,17 @@
 //     ELF entries (up to `maxELFFileSize`) in the wheel zip archive. Each ELF
 //     file's own name is taken from `DT_SONAME` when present, falling back to
 //     its archive filename. For bundled files in `<pkg>.libs/` or
-//     `.libs_<pkg>/`, that name is added as a candidate. For shared objects
-//     outside `.libs/`, both the archive filename and `DT_SONAME` are recorded
-//     in `internalLibs` so intra-wheel links are ignored. Every ELF file's
-//     `DT_NEEDED` imports are also collected as candidates.
-//  2. Unbundling and SONAME normalization (`unbundledSoname`): Strips the
-//     `auditwheel` `-<8+ hex>` hash suffix (`auditwheelHashPat`) and collapses
-//     3-component `major.minor.patch` symlink target versions back to the
-//     major application binary interface (ABI) version (`sonameFullVersionPat`,
+//     `.libs_<pkg>/`, that name and its `DT_NEEDED` imports are added as
+//     candidates unless the member is wheel-born (re-bundled from another
+//     already-repaired wheel, in which case its hashed names are excluded
+//     and its imports are skipped). For shared objects outside `.libs/`, both
+//     the archive filename and `DT_SONAME` are recorded in `internalLibs` so
+//     intra-wheel links are ignored, while their `DT_NEEDED` imports are
+//     collected as candidates.
+//  2. Unbundling and SONAME normalization (`unbundledSoname`): Strips one or
+//     more `auditwheel` `-<8+ hex>` hash suffixes (`auditwheelHashPat`) and
+//     collapses 3-component `major.minor.patch` symlink target versions back to
+//     the major application binary interface (ABI) version (`sonameFullVersionPat`,
 //     turning `libcgraph-17278668.so.6.0.0` into `libcgraph.so.6`).
 //     Two-component versions such as `libssl.so.1.1` are kept intact because
 //     the minor number is part of the ABI SONAME.
@@ -107,7 +110,9 @@ var (
 	sharedLibNamePat = re.MustCompile(`\.so(?:\.\d+)*$`)
 	// auditwheel inserts an 8+ character hex hash right before the first dot in
 	// the grafted shared library filename (e.g. libcgraph-17278668.so.6.0.0 -> libcgraph.so.6.0.0).
-	auditwheelHashPat = re.MustCompile(`^([^.]+)-[0-9a-fA-F]{8,}\.`)
+	// Libraries re-bundled from another repaired wheel carry multiple hash suffixes
+	// (e.g. libgfortran-83c28eba-468e71e5.so.5.0.0 -> libgfortran.so.5.0.0).
+	auditwheelHashPat = re.MustCompile(`^([^.]+?)(?:-[0-9a-fA-F]{8,})+\.`)
 	// auditwheel names grafted files after the resolved symlink target, whereas
 	// package managers index the SONAME, which carries only the major version (e.g. libcgraph.so.6.0.0 -> libcgraph.so.6).
 	sonameFullVersionPat = re.MustCompile(`^(.+\.so\.\d+)\.\d+\.\d+$`)
@@ -178,6 +183,16 @@ func unbundledSoname(name string) string {
 	return sonameFullVersionPat.ReplaceAllString(unbundled, "$1")
 }
 
+// auditwheelHashCount returns the number of consecutive auditwheel hash
+// suffixes before the first dot in name.
+func auditwheelHashCount(name string) int {
+	m := auditwheelHashPat.FindStringSubmatch(name)
+	if m == nil {
+		return 0
+	}
+	return strings.Count(m[0][len(m[1]):len(m[0])-1], "-")
+}
+
 // formatLibraryDeps formats a normalized SONAME into runtime and development
 // package manager specifiers for the target libc family.
 // NOTE: Glibc specifiers assume a 64-bit target architecture, matching
@@ -199,18 +214,88 @@ func formatLibraryDeps(soname string, libc platform.LibcImpl) []string {
 	}
 }
 
+type parsedELFMember struct {
+	baseName string
+	soname   string   // DT_SONAME, or baseName when unset
+	bundled  bool     // in <pkg>.libs/ or .libs_<pkg>/
+	imported []string // DT_NEEDED entries
+}
+
+// wheelBornLibs tracks ".libs/" members that came from another pip-installed
+// wheel (such as scipy-openblas64 re-bundled into numpy) rather than a host
+// system package. Such libraries carry stacked auditwheel hashes (repaired once
+// in the origin wheel and again here), import another wheel-born library, or
+// import a single-hash name absent from this wheel's ".libs/" directory.
+// Excluded members drop out together with their imports because the rebuild
+// installs the origin wheel rather than compiling it.
+type wheelBornLibs struct {
+	excluded          map[string]bool // raw filenames and SONAMEs classified wheel-born
+	singleHashBundled map[string]bool // raw single-hash names bundled in this wheel
+}
+
+func (w *wheelBornLibs) recordBundled(names ...string) {
+	if slices.ContainsFunc(names, func(s string) bool { return auditwheelHashCount(s) >= 2 }) {
+		w.exclude(names...)
+		return
+	}
+	for _, s := range names {
+		if auditwheelHashCount(s) == 1 && !w.excluded[s] {
+			if w.singleHashBundled == nil {
+				w.singleHashBundled = make(map[string]bool)
+			}
+			w.singleHashBundled[s] = true
+		}
+	}
+}
+
+func (w *wheelBornLibs) exclude(names ...string) bool {
+	var added bool
+	for _, s := range names {
+		if !w.excluded[s] {
+			if w.excluded == nil {
+				w.excluded = make(map[string]bool)
+			}
+			w.excluded[s] = true
+			delete(w.singleHashBundled, s)
+			added = true
+		}
+	}
+	return added
+}
+
+func (w *wheelBornLibs) matches(m parsedELFMember) bool {
+	if w.excluded[m.baseName] || w.excluded[m.soname] {
+		return true
+	}
+	for _, imp := range m.imported {
+		n := auditwheelHashCount(imp)
+		if w.excluded[imp] || n >= 2 || (n == 1 && !w.singleHashBundled[imp]) {
+			return true
+		}
+	}
+	return false
+}
+
 // inferELFSystemDeps extracts shared library dependencies from ELF shared
 // objects in a wheel archive and formats them for the target libc's package
 // manager.
 func inferELFSystemDeps(zr *zip.Reader, libc platform.LibcImpl) ([]string, error) {
-	var rawCandidates []string
+	var members []parsedELFMember
 	internalLibs := make(map[string]bool)
+	var wheelBorn wheelBornLibs
 	for _, f := range zr.File {
-		if f.FileInfo().IsDir() || f.UncompressedSize64 > maxELFFileSize {
+		if f.FileInfo().IsDir() {
 			continue
 		}
 		baseName := path.Base(f.Name)
 		if !sharedLibNamePat.MatchString(strings.ToLower(baseName)) {
+			continue
+		}
+		bundled := isBundledLibPath(f.Name)
+		if bundled {
+			wheelBorn.recordBundled(baseName)
+		}
+		if f.UncompressedSize64 > maxELFFileSize {
 			continue
 		}
 		rc, err := f.Open()
@@ -226,22 +311,50 @@ func inferELFSystemDeps(zr *zip.Reader, libc platform.LibcImpl) ([]string, error
 		if err != nil {
 			continue
 		}
-		cand := baseName
+		soname := baseName
 		if sonames, err := ef.DynString(elf.DT_SONAME); err == nil && len(sonames) > 0 && sonames[0] != "" {
-			cand = sonames[0]
+			soname = sonames[0]
 		}
-		if isBundledLibPath(f.Name) {
-			rawCandidates = append(rawCandidates, cand)
+		if bundled {
+			wheelBorn.recordBundled(baseName, soname)
 		} else {
 			internalLibs[unbundledSoname(baseName)] = true
-			internalLibs[unbundledSoname(cand)] = true
+			internalLibs[unbundledSoname(soname)] = true
 		}
-		if imported, err := ef.ImportedLibraries(); err == nil {
-			rawCandidates = append(rawCandidates, imported...)
+		// NOTE: Ignore missing or unreadable dynamic sections so inference fails open.
+		imported, _ := ef.ImportedLibraries()
+		members = append(members, parsedELFMember{
+			baseName: baseName,
+			soname:   soname,
+			bundled:  bundled,
+			imported: imported,
+		})
+	}
+	for changed := true; changed; {
+		changed = false
+		for _, m := range members {
+			if m.bundled && wheelBorn.matches(m) && wheelBorn.exclude(m.baseName, m.soname) {
+				changed = true
+			}
 		}
+	}
+	var rawCandidates []string
+	for _, m := range members {
+		if m.bundled {
+			if wheelBorn.excluded[m.baseName] || wheelBorn.excluded[m.soname] {
+				continue
+			}
+			rawCandidates = append(rawCandidates, m.soname)
+		}
+		rawCandidates = append(rawCandidates, m.imported...)
 	}
 	var deps []string
 	for _, raw := range rawCandidates {
+		// NOTE: Match exact hashed names rather than unbundled SONAMEs so a
+		// host-grafted copy of the same library still emits system specifiers.
+		if wheelBorn.excluded[raw] {
+			continue
+		}
 		soname := unbundledSoname(raw)
 		if soname == "" || internalLibs[soname] || isBuiltinLibrary(soname) {
 			continue
