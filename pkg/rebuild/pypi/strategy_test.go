@@ -4,6 +4,7 @@
 package pypi
 
 import (
+	"strings"
 	"testing"
 	"time"
 
@@ -795,6 +796,78 @@ rm -rf the_dir/dist/repaired`,
 				OutputPath: "the_dir/dist/the_artifact",
 			},
 		},
+		{
+			"WithRust",
+			&PlatformWheelBuild{
+				Location:     defaultLocation,
+				PythonTag:    "cp312",
+				ABITag:       "cp312",
+				Requirements: []string{"setuptools-rust==1.9.0"},
+				PlatformTag:  "manylinux_2_17_x86_64.manylinux2014_x86_64",
+				RustVersion:  "1.78.0",
+			},
+			rebuild.Instructions{
+				Location: defaultLocation,
+				Source:   "git checkout --force 'the_ref'",
+				Deps: `for py in /opt/python/cp312-cp312/bin/python /opt/python/cp312-*/bin/python; do [ -x "$py" ] && break; done
+"$py" -m venv /deps
+/deps/bin/pip install build wheel
+/deps/bin/pip install 'setuptools-rust==1.9.0'
+wget -O rustup-init https://static.rust-lang.org/rustup/dist/x86_64-unknown-linux-gnu/rustup-init
+chmod +x rustup-init
+CARGO_HOME=/root/.cargo RUSTUP_HOME=/root/.rustup ./rustup-init -y --profile minimal --default-toolchain 1.78.0 --no-modify-path
+rm -f rustup-init`,
+				Build: `export CARGO_HOME=/root/.cargo RUSTUP_HOME=/root/.rustup RUSTUP_TOOLCHAIN=1.78.0 PATH=/root/.rustup/toolchains/1.78.0-x86_64-unknown-linux-gnu/bin:/root/.cargo/bin:$PATH
+/deps/bin/python3 -m build --wheel -n the_dir
+mkdir -p the_dir/dist/repaired
+AUDITWHEEL="/deps/bin/auditwheel"
+if [ ! -x "$AUDITWHEEL" ]; then
+  AUDITWHEEL="auditwheel"
+fi
+$AUDITWHEEL repair the_dir/dist/*.whl --plat manylinux_2_17_x86_64 -w the_dir/dist/repaired/
+rm -f the_dir/dist/*.whl
+mv the_dir/dist/repaired/*.whl the_dir/dist/the_artifact
+rm -rf the_dir/dist/repaired`,
+				Requires: rebuild.RequiredEnv{
+					BaseImage:  "quay.io/pypa/manylinux2014_x86_64",
+					SystemDeps: []string{"git", "wget"},
+				},
+				OutputPath: "the_dir/dist/the_artifact",
+			},
+		},
+		{
+			"WithCargoTarget",
+			&PlatformWheelBuild{
+				Location:     defaultLocation,
+				PythonTag:    "cp312",
+				ABITag:       "cp312",
+				Requirements: []string{"maturin==1.7.4"},
+				PlatformTag:  "musllinux_1_2_x86_64",
+				RustVersion:  "1.81.0",
+				CargoTarget:  true,
+			},
+			rebuild.Instructions{
+				Location: defaultLocation,
+				Source:   "git checkout --force 'the_ref'",
+				Deps: `for py in /opt/python/cp312-cp312/bin/python /opt/python/cp312-*/bin/python; do [ -x "$py" ] && break; done
+"$py" -m venv /deps
+/deps/bin/pip install build wheel
+/deps/bin/pip install 'maturin==1.7.4'
+wget -O rustup-init https://static.rust-lang.org/rustup/dist/x86_64-unknown-linux-musl/rustup-init
+chmod +x rustup-init
+CARGO_HOME=/root/.cargo RUSTUP_HOME=/root/.rustup ./rustup-init -y --profile minimal --default-toolchain 1.81.0 --no-modify-path
+rm -f rustup-init`,
+				Build: `export CARGO_HOME=/root/.cargo RUSTUP_HOME=/root/.rustup RUSTUP_TOOLCHAIN=1.81.0 PATH=/root/.rustup/toolchains/1.81.0-x86_64-unknown-linux-musl/bin:/root/.cargo/bin:$PATH
+export MATURIN_PEP517_ARGS='--target x86_64-unknown-linux-musl --compatibility musllinux_1_2'
+PATH=/deps/bin/:$PATH /deps/bin/python3 -m build --wheel -n the_dir
+[ -e the_dir/dist/the_artifact ] || mv the_dir/dist/*.whl the_dir/dist/the_artifact`,
+				Requires: rebuild.RequiredEnv{
+					BaseImage:  "quay.io/pypa/musllinux_1_2_x86_64",
+					SystemDeps: []string{"git", "wget"},
+				},
+				OutputPath: "the_dir/dist/the_artifact",
+			},
+		},
 	}
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
@@ -804,6 +877,25 @@ rm -rf the_dir/dist/repaired`,
 			}
 			if diff := cmp.Diff(inst, tc.want); diff != "" {
 				t.Errorf("Strategy%v.GenerateFor() returned diff (-got +want):\n%s", tc.strategy, diff)
+			}
+		})
+	}
+}
+
+func TestPlatformWheelBuildRustErrors(t *testing.T) {
+	for _, tc := range []struct {
+		name     string
+		strategy *PlatformWheelBuild
+		want     string
+	}{
+		{"FloatingVersion", &PlatformWheelBuild{PlatformTag: "manylinux_2_28_x86_64", RustVersion: "stable"}, "no Rust"},
+		{"InjectedVersion", &PlatformWheelBuild{PlatformTag: "manylinux_2_28_x86_64", RustVersion: "1.78.0; rm -rf /"}, "no Rust"},
+		{"NoX86_64", &PlatformWheelBuild{PlatformTag: "manylinux_2_28_aarch64", BaseImage: "quay.io/pypa/manylinux_2_28_aarch64", RustVersion: "1.78.0"}, "no Rust"},
+		{"CargoTargetWithoutRust", &PlatformWheelBuild{PlatformTag: "manylinux_2_28_x86_64", CargoTarget: true}, "requires a Rust version"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			if _, err := tc.strategy.ToWorkflow(); err == nil || !strings.Contains(err.Error(), tc.want) {
+				t.Errorf("ToWorkflow() = %v, want an error containing %q", err, tc.want)
 			}
 		})
 	}
@@ -900,6 +992,7 @@ func TestNeedsVenvOnPath(t *testing.T) {
 		{"UVBuild", []string{"uv-build==0.10.0"}, "1"},
 		{"MesonPython", []string{"meson-python>=0.15.0"}, "1"},
 		{"ScikitBuildCore", []string{"scikit-build-core==0.10.7"}, "1"},
+		{"Maturin", []string{"maturin==1.7.4"}, "1"},
 		{"SetuptoolsOnly", []string{"setuptools>=61", "wheel"}, ""},
 	} {
 		t.Run(tc.name, func(t *testing.T) {

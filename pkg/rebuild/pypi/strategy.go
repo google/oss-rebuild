@@ -70,9 +70,9 @@ func (b *PureWheelBuild) GenerateFor(t rebuild.Target, be rebuild.BuildEnv) (reb
 }
 
 // needsVenvOnPath flags backends that find their binary on PATH rather than
-// beside the interpreter, such as uv_build, meson, and ninja/cmake.
+// beside the interpreter, such as uv_build, maturin, meson, and ninja/cmake.
 func needsVenvOnPath(reqs []string) string {
-	if hasRequirement(reqs, "uv-build", "meson-python", "scikit-build-core") {
+	if hasRequirement(reqs, "uv-build", "meson-python", "scikit-build-core", "maturin") {
 		return "1"
 	}
 	return ""
@@ -148,6 +148,11 @@ type PlatformWheelBuild struct {
 	BuildRoot string `json:"build_root,omitempty" yaml:"build_root,omitempty"`
 	// BuildEnvPath is the isolated virtual environment path build dependencies are installed into, when set.
 	BuildEnvPath string `json:"build_env_path,omitempty" yaml:"build_env_path,omitempty"`
+	// RustVersion is the Rust toolchain installed for the build, when set.
+	RustVersion string `json:"rust_version,omitempty" yaml:"rust_version,omitempty"`
+	// CargoTarget builds with an explicit --target, which Cargo hashes into symbol
+	// names, and has maturin tag the wheel in place of auditwheel. It needs RustVersion.
+	CargoTarget bool `json:"cargo_target,omitempty" yaml:"cargo_target,omitempty"`
 }
 
 var _ rebuild.Strategy = &PlatformWheelBuild{}
@@ -167,7 +172,13 @@ const (
 	checkoutDir = "/src"
 	// venvDir is where the dependency steps create the virtual environment by default.
 	venvDir = "/deps"
+	// cargoHome and rustupHome are where pypi/install-rust installs a Rust toolchain.
+	cargoHome  = "/root/.cargo"
+	rustupHome = "/root/.rustup"
 )
+
+// rustVersionPat matches a pinned stable Rust release.
+var rustVersionPat = re.MustCompile(`^\d+\.\d+\.\d+$`)
 
 // buildPathPat matches absolute paths of characters that need no shell quoting.
 var buildPathPat = re.MustCompile(`^(/[A-Za-z0-9._+,@-]+)+$`)
@@ -210,6 +221,34 @@ func (b *PlatformWheelBuild) ToWorkflow() (*rebuild.WorkflowStrategy, error) {
 	if b.Location.Dir != "" {
 		distDir = b.Location.Dir + "/dist"
 	}
+	var rustDeps []flow.Step
+	var rustHost, maturinArgs string
+	if b.CargoTarget && b.RustVersion == "" {
+		return nil, errors.New("cargo target requires a Rust version")
+	}
+	if b.RustVersion != "" {
+		highest := platform.HighestLibcTagString(b.PlatformTag)
+		policy, ok := strings.CutSuffix(highest, "_x86_64")
+		if !ok || !rustVersionPat.MatchString(b.RustVersion) {
+			return nil, errors.Errorf("no Rust %q toolchain for %s", b.RustVersion, highest)
+		}
+		rustHost = "x86_64-unknown-linux-gnu"
+		if strings.HasPrefix(policy, "musllinux") {
+			rustHost = "x86_64-unknown-linux-musl"
+		}
+		rustDeps = []flow.Step{{
+			Uses: "pypi/install-rust",
+			With: map[string]string{
+				"version":    b.RustVersion,
+				"host":       rustHost,
+				"cargoHome":  cargoHome,
+				"rustupHome": rustupHome,
+			},
+		}}
+		if b.CargoTarget {
+			maturinArgs = "--target " + rustHost + " --compatibility " + policy
+		}
+	}
 	var onlyPlat string
 	// A single PEP 600 tag means upstream did not accept a higher policy. --only-plat
 	// stops auditwheel from prepending one.
@@ -227,7 +266,7 @@ func (b *PlatformWheelBuild) ToWorkflow() (*rebuild.WorkflowStrategy, error) {
 		Source: []flow.Step{{
 			Uses: "git-checkout",
 		}},
-		Deps: []flow.Step{{
+		Deps: append([]flow.Step{{
 			Uses: "pypi/deps/platform-wheel",
 			With: map[string]string{
 				"registryTime": registryTime,
@@ -236,7 +275,7 @@ func (b *PlatformWheelBuild) ToWorkflow() (*rebuild.WorkflowStrategy, error) {
 				"abiTag":       b.ABITag,
 				"venv":         venv,
 			},
-		}},
+		}}, rustDeps...),
 		Build: []flow.Step{{
 			Uses: "pypi/build/platform-wheel",
 			With: map[string]string{
@@ -249,6 +288,11 @@ func (b *PlatformWheelBuild) ToWorkflow() (*rebuild.WorkflowStrategy, error) {
 				// tag set, and the highest tag matches the build container policy.
 				"highestPlatformTag": platform.HighestLibcTagString(b.PlatformTag),
 				"onlyPlat":           onlyPlat,
+				"rustVersion":        b.RustVersion,
+				"rustHost":           rustHost,
+				"cargoHome":          cargoHome,
+				"rustupHome":         rustupHome,
+				"maturinArgs":        maturinArgs,
 			},
 		}},
 		OutputDir: distDir,
@@ -404,6 +448,10 @@ var toolkit = []*flow.Tool{
 		Name: "pypi/build/platform-wheel",
 		Steps: []flow.Step{{
 			Runs: textwrap.Dedent(`
+				{{if .With.rustVersion -}}
+				export CARGO_HOME={{.With.cargoHome}} RUSTUP_HOME={{.With.rustupHome}} RUSTUP_TOOLCHAIN={{.With.rustVersion}} PATH={{.With.rustupHome}}/toolchains/{{.With.rustVersion}}-{{.With.rustHost}}/bin:{{.With.cargoHome}}/bin:$PATH
+				{{if .With.maturinArgs}}export MATURIN_PEP517_ARGS='{{.With.maturinArgs}}'
+				{{end}}{{end -}}
 				{{if .With.buildRoot -}}
 				{{- /* NOTE: No -p on the root so the copy can't merge into an existing directory. */ -}}
 				mkdir -p $(dirname {{.With.buildRoot}})
@@ -413,7 +461,9 @@ var toolkit = []*flow.Tool{
 				{{else -}}
 				{{if .With.venvOnPath}}PATH={{.With.locator}}:$PATH {{end}}{{.With.locator}}python3 -m build --wheel -n{{if and (ne .With.dir ".") (ne .With.dir "")}} {{.With.dir}}{{end}}
 				{{end -}}
-				{{if .With.highestPlatformTag -}}
+				{{if .With.maturinArgs -}}
+				[ -e {{.With.distDir}}/{{.Target.Artifact}} ] || mv {{.With.distDir}}/*.whl {{.With.distDir}}/{{.Target.Artifact}}
+				{{- else if .With.highestPlatformTag -}}
 				mkdir -p {{.With.distDir}}/repaired
 				AUDITWHEEL="{{.With.locator}}auditwheel"
 				if [ ! -x "$AUDITWHEEL" ]; then
@@ -424,6 +474,18 @@ var toolkit = []*flow.Tool{
 				mv {{.With.distDir}}/repaired/*.whl {{.With.distDir}}/{{.Target.Artifact}}
 				rm -rf {{.With.distDir}}/repaired
 				{{- end -}}`)[1:],
+		}},
+	},
+	{
+		Name: "pypi/install-rust",
+		Steps: []flow.Step{{
+			// The installer does not affect the build, only the toolchain version does.
+			Runs: textwrap.Dedent(`
+				wget -O rustup-init https://static.rust-lang.org/rustup/dist/{{.With.host}}/rustup-init
+				chmod +x rustup-init
+				CARGO_HOME={{.With.cargoHome}} RUSTUP_HOME={{.With.rustupHome}} ./rustup-init -y --profile minimal --default-toolchain {{.With.version}} --no-modify-path
+				rm -f rustup-init`)[1:],
+			Needs: []string{"wget"},
 		}},
 	},
 }
