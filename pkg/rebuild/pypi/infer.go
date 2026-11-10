@@ -700,6 +700,9 @@ var (
 	// NOTE: Only opt-in names match. Variables such as CYTHON_TRACE and
 	// CYTHON_ANNOTATE change what gets compiled and must stay unset.
 	setupCythonGatePat = re.MustCompile(`os\.(?:getenv|environ\.get)\(\s*["']([A-Z_][A-Z0-9_]*_(?:USE_CYTHON|WITH_CYTHON|CYTHON_ABI3))["']`)
+	// setupMypycGatePat matches a setup.py environment variable that opts into
+	// compiling modules with mypyc, as MYPY_USE_MYPYC does.
+	setupMypycGatePat = re.MustCompile(`os\.(?:getenv|environ\.get)\(\s*["']([A-Z_][A-Z0-9_]*_USE_MYPYC)["']`)
 )
 
 // inferCythonRequirement pins Cython to the version the wheel's extension
@@ -744,6 +747,17 @@ func inferSetupBuildEnv(tree *git2.Tree, dir string, zr *zip.Reader, tags WheelT
 			env[m[1]] = "1"
 		}
 	}
+	if gates := setupMypycGatePat.FindAllStringSubmatch(src, -1); len(gates) > 0 && hasMypycModule(zr) {
+		// NOTE: Opting in without mypyc fails the build. Nothing in the wheel
+		// records the mypy version, so an unpinned mypy is not added either.
+		if ok, err := hasMypyc(tree, dir, reqs); err != nil {
+			return nil, err
+		} else if ok {
+			for _, m := range gates {
+				env[m[1]] = "1"
+			}
+		}
+	}
 	if len(env) == 0 {
 		return nil, nil
 	}
@@ -769,6 +783,29 @@ func readSetupPy(tree *git2.Tree, dir string, reqs []string) (string, error) {
 		return "", errors.Wrap(err, "reading setup.py")
 	}
 	return src, nil
+}
+
+// hasMypycModule reports whether the wheel has the shared library that mypyc
+// names "<group>__mypyc" and compiles all modules of a group into.
+func hasMypycModule(zr *zip.Reader) bool {
+	return slices.ContainsFunc(zr.File, func(f *zip.File) bool {
+		return isExtensionModule(f.Name) && strings.Contains(path.Base(f.Name), "__mypyc.")
+	})
+}
+
+// hasMypyc reports whether the build can import mypyc, from either a mypy
+// requirement or the source tree of mypy itself.
+func hasMypyc(tree *git2.Tree, dir string, reqs []string) (bool, error) {
+	if hasRequirement(reqs, "mypy") {
+		return true, nil
+	}
+	_, err := tree.File(path.Join(dir, "mypyc/build.py"))
+	if errors.Is(err, git2.ErrFileNotFound) {
+		return false, nil
+	} else if err != nil {
+		return false, errors.Wrap(err, "finding mypyc/build.py")
+	}
+	return true, nil
 }
 
 // wheelCythonVersion returns the Cython version that the wheel's extension
