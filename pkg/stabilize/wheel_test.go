@@ -152,3 +152,73 @@ func TestStableWheelRecord_Ordering(t *testing.T) {
 		t.Errorf("StableWheelRecord.Ordering = %d, want StageFinalize (%d)", StableWheelRecord.Ordering, StageFinalize)
 	}
 }
+
+func TestStableWheelCargoSBOM(t *testing.T) {
+	const sbom = "pkg-1.0.dist-info/sboms/pkg.cyclonedx.json"
+	for _, tc := range []struct {
+		name string
+		path string
+		body string
+		want string
+	}{
+		{
+			name: "removes serial number and timestamp",
+			path: sbom,
+			body: `{"bomFormat":"CycloneDX","serialNumber":"urn:uuid:21f726d0-d5ad-4680-8331-c78222240830","metadata":{"timestamp":"2026-09-20T17:35:18.339007685Z","tools":[{"vendor":"CycloneDX","name":"cargo-cyclonedx","version":"0.5.9"}]}}`,
+			want: `{"bomFormat":"CycloneDX","metadata":{"tools":[{"name":"cargo-cyclonedx","vendor":"CycloneDX","version":"0.5.9"}]}}`,
+		},
+		{
+			// Cargo omits the crate name when it matches the checkout directory's.
+			name: "strips the checkout path from package ID specs",
+			path: sbom,
+			body: `{"bomFormat":"CycloneDX","dependencies":[{"dependsOn":["path+file:///src#moka-py@0.5.0","path+file:///src/crates/core#0.5.0"],"ref":"path+file:///home/runner/work/moka-py/moka-py#0.5.0"}],"metadata":{"tools":[{"name":"cargo-cyclonedx"}]}}`,
+			want: `{"bomFormat":"CycloneDX","dependencies":[{"dependsOn":["path+file://#moka-py@0.5.0","path+file://#core@0.5.0"],"ref":"path+file://#moka-py@0.5.0"}],"metadata":{"tools":[{"name":"cargo-cyclonedx"}]}}`,
+		},
+		{
+			name: "strips the checkout path from file download URLs",
+			path: sbom,
+			body: `{"bomFormat":"CycloneDX","components":[{"purl":"pkg:cargo/rpic-core@0.11.3?download_url=file:///home/runner/work/rpic-lang/rpic-lang/crates/core"}],"metadata":{"tools":[{"name":"cargo-cyclonedx"}]}}`,
+			want: `{"bomFormat":"CycloneDX","components":[{"purl":"pkg:cargo/rpic-core@0.11.3?download_url=file://"}],"metadata":{"tools":[{"name":"cargo-cyclonedx"}]}}`,
+		},
+		{
+			name: "keeps registry references",
+			path: sbom,
+			body: `{"bomFormat":"CycloneDX","components":[{"bom-ref":"registry+https://github.com/rust-lang/crates.io-index#serde@1.0.219","purl":"pkg:cargo/serde@1.0.219"}],"metadata":{"tools":[{"name":"cargo-cyclonedx"}]}}`,
+			want: `{"bomFormat":"CycloneDX","components":[{"bom-ref":"registry+https://github.com/rust-lang/crates.io-index#serde@1.0.219","purl":"pkg:cargo/serde@1.0.219"}],"metadata":{"tools":[{"name":"cargo-cyclonedx"}]}}`,
+		},
+		{
+			name: "ignores SBOMs from other tools",
+			path: "pkg-1.0.dist-info/sboms/auditwheel.cdx.json",
+			body: `{"bomFormat": "CycloneDX", "serialNumber": "x", "metadata": {"tools": [{"name": "auditwheel"}]}}`,
+			want: `{"bomFormat": "CycloneDX", "serialNumber": "x", "metadata": {"tools": [{"name": "auditwheel"}]}}`,
+		},
+		{
+			name: "ignores other SBOM formats",
+			path: sbom,
+			body: `{"spdxVersion": "SPDX-2.3", "serialNumber": "x"}`,
+			want: `{"spdxVersion": "SPDX-2.3", "serialNumber": "x"}`,
+		},
+		{
+			name: "ignores JSON outside sboms",
+			path: "pkg/data.json",
+			body: `{"bomFormat": "CycloneDX", "serialNumber": "x"}`,
+			want: `{"bomFormat": "CycloneDX", "serialNumber": "x"}`,
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			var in bytes.Buffer
+			zw := zip.NewWriter(&in)
+			orDie((&archive.ZipEntry{FileHeader: &zip.FileHeader{Name: tc.path}, Body: []byte(tc.body)}).WriteTo(zw))
+			orDie(zw.Close())
+
+			var out bytes.Buffer
+			zr := must(zip.NewReader(bytes.NewReader(in.Bytes()), int64(in.Len())))
+			orDie(StabilizeZip(zr, zip.NewWriter(&out), NewContext(archive.ZipFormat).WithStabilizers([]Stabilizer{StableWheelCargoSBOM})))
+
+			zrOut := must(zip.NewReader(bytes.NewReader(out.Bytes()), int64(out.Len())))
+			if got := string(must(io.ReadAll(must(zrOut.File[0].Open())))); got != tc.want {
+				t.Errorf("SBOM body mismatch:\ngot:  %s\nwant: %s", got, tc.want)
+			}
+		})
+	}
+}
