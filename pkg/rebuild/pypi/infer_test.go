@@ -1283,6 +1283,10 @@ LIMITED_API = os.getenv("CHARSET_NORMALIZER_CYTHON_ABI3") == "1"
 		return zipEntry(name, string(elfWithRodata(rodata...)))
 	}
 	cythonModule := module("pkg/mod.cpython-312-x86_64-linux-gnu.so", "_cython_3_2_9")
+	const mypySetup = `if os.getenv("MYPY_USE_MYPYC", None) == "1":
+    USE_MYPYC = True
+`
+	mypycModule := module("group__mypyc.cpython-312-x86_64-linux-gnu.so")
 	tests := []struct {
 		name    string
 		files   gitxtest.FileContent
@@ -1332,6 +1336,29 @@ linetrace = os.environ.get("CYTHON_TRACE") == "1"
 			files:   gitxtest.FileContent{"setup.py": charsetNormalizerSetup},
 			modules: []archive.ZipEntry{cythonModule},
 			reqs:    []string{"setuptools", "flit_core>=3.12,<4"},
+		},
+		{
+			name:    "MypycFromSourceTree",
+			files:   gitxtest.FileContent{"setup.py": mypySetup, "mypyc/build.py": ""},
+			modules: []archive.ZipEntry{mypycModule},
+			want:    map[string]string{"MYPY_USE_MYPYC": "1"},
+		},
+		{
+			name:    "MypycFromRequirement",
+			files:   gitxtest.FileContent{"setup.py": mypySetup},
+			modules: []archive.ZipEntry{mypycModule},
+			reqs:    []string{"setuptools", "mypy[mypyc]>=1.15"},
+			want:    map[string]string{"MYPY_USE_MYPYC": "1"},
+		},
+		{
+			name:    "MypycUnavailable",
+			files:   gitxtest.FileContent{"setup.py": mypySetup},
+			modules: []archive.ZipEntry{mypycModule},
+		},
+		{
+			name:    "NoMypycModule",
+			files:   gitxtest.FileContent{"setup.py": mypySetup, "mypyc/build.py": ""},
+			modules: []archive.ZipEntry{module("pkg/mod.cpython-312-x86_64-linux-gnu.so", "libc.so.6")},
 		},
 	}
 	for _, tc := range tests {
