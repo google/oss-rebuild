@@ -5,9 +5,10 @@ package main
 
 import (
 	"flag"
-	"fmt"
 	"log"
+	"os"
 
+	"github.com/google/oss-rebuild/internal/marquee"
 	"github.com/google/oss-rebuild/tools/ctl/command/agentexport"
 	"github.com/google/oss-rebuild/tools/ctl/command/annotateinferencediff"
 	"github.com/google/oss-rebuild/tools/ctl/command/export"
@@ -35,7 +36,7 @@ var rootCmd = &cobra.Command{
 	Use:   "ctl",
 	Short: "A debugging tool for OSS-Rebuild",
 	Run: func(cmd *cobra.Command, args []string) {
-		fmt.Println(logo)
+		marquee.Rise(os.Stdout, logo)
 		cmd.Help()
 	},
 }
