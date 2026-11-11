@@ -4,8 +4,10 @@
 package pypi
 
 import (
+	"maps"
 	"path"
 	re "regexp"
+	"slices"
 	"strings"
 	"time"
 
@@ -153,6 +155,8 @@ type PlatformWheelBuild struct {
 	// CargoTarget builds with an explicit --target, which Cargo hashes into symbol
 	// names, and has maturin tag the wheel in place of auditwheel. It needs RustVersion.
 	CargoTarget bool `json:"cargo_target,omitempty" yaml:"cargo_target,omitempty"`
+	// BuildEnv holds environment variables exported during the wheel build.
+	BuildEnv map[string]string `json:"build_env,omitempty" yaml:"build_env,omitempty"`
 }
 
 var _ rebuild.Strategy = &PlatformWheelBuild{}
@@ -183,6 +187,13 @@ var rustVersionPat = re.MustCompile(`^\d+\.\d+\.\d+$`)
 // buildPathPat matches absolute paths of characters that need no shell quoting.
 var buildPathPat = re.MustCompile(`^(/[A-Za-z0-9._+,@-]+)+$`)
 
+// buildEnvNamePat and buildEnvValuePat match environment variable names and
+// values that need no escaping inside single-quoted shell exports.
+var (
+	buildEnvNamePat  = re.MustCompile(`^[A-Za-z_][A-Za-z0-9_]*$`)
+	buildEnvValuePat = re.MustCompile(`^[A-Za-z0-9_./:=+,@ -]*$`)
+)
+
 // validateBuildPath rejects paths that the build steps cannot use.
 func validateBuildPath(p string) error {
 	switch {
@@ -208,6 +219,15 @@ func (b *PlatformWheelBuild) ToWorkflow() (*rebuild.WorkflowStrategy, error) {
 	}
 	if err := validateBuildPath(b.BuildEnvPath); err != nil {
 		return nil, errors.Wrap(err, "validating build env path")
+	}
+	for _, k := range slices.Sorted(maps.Keys(b.BuildEnv)) {
+		v := b.BuildEnv[k]
+		if !buildEnvNamePat.MatchString(k) {
+			return nil, errors.Errorf("invalid build environment variable name %q", k)
+		}
+		if !buildEnvValuePat.MatchString(v) {
+			return nil, errors.Errorf("invalid build environment variable value %q for %s", v, k)
+		}
 	}
 	venv := venvDir
 	if b.BuildEnvPath != "" {
@@ -247,7 +267,19 @@ func (b *PlatformWheelBuild) ToWorkflow() (*rebuild.WorkflowStrategy, error) {
 		}}
 		if b.CargoTarget {
 			maturinArgs = "--target " + rustHost + " --compatibility " + policy
+			if extra := b.BuildEnv["MATURIN_PEP517_ARGS"]; extra != "" {
+				maturinArgs += " " + extra
+			}
 		}
+	}
+	buildEnv := b.BuildEnv
+	if _, ok := buildEnv["MATURIN_PEP517_ARGS"]; ok && b.CargoTarget {
+		buildEnv = maps.Clone(buildEnv)
+		delete(buildEnv, "MATURIN_PEP517_ARGS")
+	}
+	var buildEnvJSON string
+	if len(buildEnv) > 0 {
+		buildEnvJSON = flow.MustToJSON(buildEnv)
 	}
 	var onlyPlat string
 	// A single PEP 600 tag means upstream did not accept a higher policy. --only-plat
@@ -284,6 +316,7 @@ func (b *PlatformWheelBuild) ToWorkflow() (*rebuild.WorkflowStrategy, error) {
 				"buildRoot":  b.BuildRoot,
 				"locator":    venv + "/bin/",
 				"venvOnPath": needsVenvOnPath(b.Requirements),
+				"buildEnv":   buildEnvJSON,
 				// auditwheel repair --plat requires a single policy tag rather than a compressed
 				// tag set, and the highest tag matches the build container policy.
 				"highestPlatformTag": platform.HighestLibcTagString(b.PlatformTag),
@@ -452,6 +485,10 @@ var toolkit = []*flow.Tool{
 				export CARGO_HOME={{.With.cargoHome}} RUSTUP_HOME={{.With.rustupHome}} RUSTUP_TOOLCHAIN={{.With.rustVersion}} PATH={{.With.rustupHome}}/toolchains/{{.With.rustVersion}}-{{.With.rustHost}}/bin:{{.With.cargoHome}}/bin:$PATH
 				{{if .With.maturinArgs}}export MATURIN_PEP517_ARGS='{{.With.maturinArgs}}'
 				{{end}}{{end -}}
+				{{if .With.buildEnv -}}
+				{{range $k, $v := .With.buildEnv | fromJSON}}export {{$k}}='{{$v}}'
+				{{end -}}
+				{{end -}}
 				{{if .With.buildRoot -}}
 				{{- /* NOTE: No -p on the root so the copy can't merge into an existing directory. */ -}}
 				mkdir -p $(dirname {{.With.buildRoot}})

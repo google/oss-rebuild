@@ -1096,3 +1096,104 @@ func TestValidateBuildEnvPath(t *testing.T) {
 		})
 	}
 }
+
+func TestPlatformWheelBuildEnv(t *testing.T) {
+	loc := rebuild.Location{
+		Dir:  "the_dir",
+		Ref:  "the_ref",
+		Repo: "the_repo",
+	}
+	target := rebuild.Target{Ecosystem: rebuild.PyPI, Package: "the_package", Version: "the_version", Artifact: "the_artifact"}
+	be := rebuild.BuildEnv{HasRepo: true, TimewarpHost: "orange"}
+	tests := []struct {
+		name        string
+		rustVersion string
+		cargoTarget bool
+		buildEnv    map[string]string
+		wantBuild   string
+		wantErr     bool
+	}{
+		{
+			name: "SortedExports",
+			buildEnv: map[string]string{
+				"MYPY_USE_MYPYC":                "1",
+				"CHARSET_NORMALIZER_USE_CYTHON": "1",
+			},
+			wantBuild: `export CHARSET_NORMALIZER_USE_CYTHON='1'
+export MYPY_USE_MYPYC='1'
+/deps/bin/python3 -m build --wheel -n the_dir
+mkdir -p the_dir/dist/repaired
+AUDITWHEEL="/deps/bin/auditwheel"
+if [ ! -x "$AUDITWHEEL" ]; then
+  AUDITWHEEL="auditwheel"
+fi
+$AUDITWHEEL repair the_dir/dist/*.whl --plat manylinux_2_17_x86_64 --only-plat -w the_dir/dist/repaired/
+rm -f the_dir/dist/*.whl
+mv the_dir/dist/repaired/*.whl the_dir/dist/the_artifact
+rm -rf the_dir/dist/repaired`,
+		},
+		{
+			name:        "MaturinCargoTargetAppendsArgs",
+			rustVersion: "1.81.0",
+			cargoTarget: true,
+			buildEnv: map[string]string{
+				"CFLAGS":              "-O3",
+				"MATURIN_PEP517_ARGS": "--features extension-module",
+			},
+			wantBuild: `export CARGO_HOME=/root/.cargo RUSTUP_HOME=/root/.rustup RUSTUP_TOOLCHAIN=1.81.0 PATH=/root/.rustup/toolchains/1.81.0-x86_64-unknown-linux-gnu/bin:/root/.cargo/bin:$PATH
+export MATURIN_PEP517_ARGS='--target x86_64-unknown-linux-gnu --compatibility manylinux_2_17 --features extension-module'
+export CFLAGS='-O3'
+/deps/bin/python3 -m build --wheel -n the_dir
+[ -e the_dir/dist/the_artifact ] || mv the_dir/dist/*.whl the_dir/dist/the_artifact`,
+		},
+		{
+			name:     "InvalidName",
+			buildEnv: map[string]string{"1BAD_NAME": "1"},
+			wantErr:  true,
+		},
+		{
+			name:     "InvalidValueDollar",
+			buildEnv: map[string]string{"GOOD_NAME": "$HOME"},
+			wantErr:  true,
+		},
+		{
+			name:     "InvalidValueQuote",
+			buildEnv: map[string]string{"GOOD_NAME": "a'b"},
+			wantErr:  true,
+		},
+		{
+			name:     "InvalidValueBacktick",
+			buildEnv: map[string]string{"GOOD_NAME": "`id`"},
+			wantErr:  true,
+		},
+		{
+			name:     "InvalidValueNewline",
+			buildEnv: map[string]string{"GOOD_NAME": "1\nrm -rf /"},
+			wantErr:  true,
+		},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			s := &PlatformWheelBuild{
+				Location:     loc,
+				PythonTag:    "cp312",
+				ABITag:       "cp312",
+				Requirements: []string{"mypy"},
+				BuildEnv:     tc.buildEnv,
+				PlatformTag:  "manylinux_2_17_x86_64",
+				RustVersion:  tc.rustVersion,
+				CargoTarget:  tc.cargoTarget,
+			}
+			inst, err := s.GenerateFor(target, be)
+			if (err != nil) != tc.wantErr {
+				t.Fatalf("GenerateFor() error = %v, wantErr %v", err, tc.wantErr)
+			}
+			if tc.wantErr {
+				return
+			}
+			if diff := cmp.Diff(tc.wantBuild, inst.Build); diff != "" {
+				t.Errorf("GenerateFor() Build diff (-want +got):\n%s", diff)
+			}
+		})
+	}
+}

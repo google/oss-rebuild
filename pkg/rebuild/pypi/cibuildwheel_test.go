@@ -362,6 +362,162 @@ func TestExtractCibuildwheelDependencies(t *testing.T) {
 	}
 }
 
+func TestExtractCibuildwheelEnvironment(t *testing.T) {
+	tests := []struct {
+		name      string
+		searchDir string
+		tags      WheelTags
+		libc      platform.LibcImpl
+		files     gitxtest.FileContent
+		want      map[string]string
+	}{
+		{
+			name: "LxmlTableAndOrderedOverridesGlibc",
+			tags: WheelTags{Python: "cp312", ABI: "cp312"},
+			libc: platform.Glibc,
+			files: gitxtest.FileContent{
+				"pyproject.toml": textwrap.Dedent(`
+					[tool.cibuildwheel]
+					environment = {STATIC_DEPS = "true", ZLIB_VERSION = "1.3.2", LIBXML2_VERSION = "2.14.6", LIBXSLT_VERSION = "1.1.43"}
+					[[tool.cibuildwheel.overrides]]
+					select = "*linux_*"
+					environment.CFLAGS = "-O3 -g1 -pipe -fPIC -flto"
+					environment.AR = "gcc-ar"
+					environment.LDFLAGS = "-fPIC -flto"
+					[[tool.cibuildwheel.overrides]]
+					select = "*linux_x86_64"
+					environment.CFLAGS = "-O3 -g1 -pipe -fPIC -flto -march=core2 -mtune=generic"
+					[[tool.cibuildwheel.overrides]]
+					select = "*linux_aarch64"
+					environment.CFLAGS = "-O3 -g1 -pipe -fPIC -flto -march=armv8-a"`),
+			},
+			want: map[string]string{
+				"AR":              "gcc-ar",
+				"CFLAGS":          "-O3 -g1 -pipe -fPIC -flto -march=core2 -mtune=generic",
+				"LDFLAGS":         "-fPIC -flto",
+				"LIBXML2_VERSION": "2.14.6",
+				"LIBXSLT_VERSION": "1.1.43",
+				"STATIC_DEPS":     "true",
+				"ZLIB_VERSION":    "1.3.2",
+			},
+		},
+		{
+			name: "LinuxOverridesTopLevelAndMuslSelectorApplies",
+			tags: WheelTags{Python: "cp312", ABI: "cp312"},
+			libc: platform.Musl,
+			files: gitxtest.FileContent{
+				"pyproject.toml": textwrap.Dedent(`
+					[tool.cibuildwheel.environment]
+					CFLAGS = "-O2"
+					DISABLE_AVX2 = 1
+					ENABLE_FAST = true
+					[tool.cibuildwheel.linux.environment]
+					CFLAGS = "-O3 -g0"
+					CC = "clang"
+					[[tool.cibuildwheel.overrides]]
+					select = "*-manylinux*"
+					environment = {CYTHON_LIMITED_API = "false"}
+					[[tool.cibuildwheel.overrides]]
+					select = "*i686 *musllinux* *win32"
+					environment = {CYTHON_LIMITED_API = "true"}`),
+			},
+			want: map[string]string{
+				"CC":                 "clang",
+				"CFLAGS":             "-O3 -g0",
+				"CYTHON_LIMITED_API": "true",
+				"DISABLE_AVX2":       "1",
+				"ENABLE_FAST":        "true",
+			},
+		},
+		{
+			name: "OverridesFilterByWheelTags",
+			tags: WheelTags{Python: "cp311", ABI: "cp311"},
+			libc: platform.Glibc,
+			files: gitxtest.FileContent{
+				"pyproject.toml": textwrap.Dedent(`
+					[tool.cibuildwheel.environment]
+					LIMITED_API = "default"
+					[[tool.cibuildwheel.overrides]]
+					select = "cp311-*"
+					environment = {LIMITED_API = "0", TARGET_PY = "311"}
+					[[tool.cibuildwheel.overrides]]
+					select = "cp312-*"
+					environment = {LIMITED_API = "1", TARGET_PY = "312"}`),
+			},
+			want: map[string]string{
+				"LIMITED_API": "0",
+				"TARGET_PY":   "311",
+			},
+		},
+		{
+			name: "ShellStringSyntaxAndFilteredEntries",
+			tags: WheelTags{Python: "cp312", ABI: "cp312"},
+			libc: platform.Glibc,
+			files: gitxtest.FileContent{
+				"pyproject.toml": textwrap.Dedent(`
+					[tool.cibuildwheel]
+					environment = '''ZSTD_WARNINGS_AS_ERRORS=1 CFLAGS="-O3 -g0" EMPTY_DQ="" EMPTY_SQ='' EXPANDED="$VAR" PATH="$PATH:$HOME/.cargo/bin" CARGO_NET_GIT_FETCH_WITH_CLI="true" VCPKG_ROOT="{project}/vcpkg"'''
+					[tool.cibuildwheel.linux.environment]
+					PIP_CONSTRAINT = "requirements/cython.txt"
+					PIP_EXTRA_INDEX_URL = "https://example.com/simple"
+					UV_CONSTRAINT = "requirements/cython.txt"
+					LD_LIBRARY_PATH = "/project/.libs"
+					PKG_CONFIG_PATH = "/project/"
+					AUDITWHEEL_PLAT = "manylinux2014_x86_64"
+					RUNNER_OS = "Linux"
+					FORCE_COLOR = "1"
+					PYTHONUNBUFFERED = "1"
+					SKIMAGE_LINK_FLAGS = "-Wl,--strip-debug"
+					[[tool.cibuildwheel.overrides]]
+					select = "*iphoneos*"
+					environment = {FOO_IOS_ONLY = "1"}`),
+			},
+			want: map[string]string{
+				"CFLAGS":                  "-O3 -g0",
+				"EMPTY_DQ":                "",
+				"EMPTY_SQ":                "",
+				"SKIMAGE_LINK_FLAGS":      "-Wl,--strip-debug",
+				"ZSTD_WARNINGS_AS_ERRORS": "1",
+			},
+		},
+		{
+			name:      "SubdirectoryAndAllFilteredReturnsNil",
+			searchDir: "sub",
+			tags:      WheelTags{Python: "cp312", ABI: "cp312"},
+			libc:      platform.Glibc,
+			files: gitxtest.FileContent{
+				"pyproject.toml": textwrap.Dedent(`
+					[tool.cibuildwheel.environment]
+					STATIC_DEPS = "true"`),
+				"sub/pyproject.toml": textwrap.Dedent(`
+					[tool.cibuildwheel.environment]
+					PIP_CONSTRAINT = "constraints.txt"
+					PATH = "$HOME/.cargo/bin:$PATH"`),
+			},
+			want: nil,
+		},
+		{
+			name:  "MalformedPyprojectReturnsNil",
+			libc:  platform.Glibc,
+			files: gitxtest.FileContent{"pyproject.toml": "[tool.cibuildwheel\n"},
+			want:  nil,
+		},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			repo := must(gitxtest.CreateRepo([]gitxtest.Commit{{ID: "initial-commit", Files: tc.files}}, nil))
+			commit := must(repo.Repository.CommitObject(git2.Hash(repo.Commits["initial-commit"])))
+			got, err := extractCibuildwheelEnvironment(must(commit.Tree()), tc.searchDir, tc.tags, tc.libc)
+			if err != nil {
+				t.Fatalf("extractCibuildwheelEnvironment() unexpected error: %v", err)
+			}
+			if diff := cmp.Diff(tc.want, got); diff != "" {
+				t.Errorf("extractCibuildwheelEnvironment() diff (-want +got):\n%s", diff)
+			}
+		})
+	}
+}
+
 func TestParsePackageManagerCommands(t *testing.T) {
 	tests := []struct {
 		name   string
