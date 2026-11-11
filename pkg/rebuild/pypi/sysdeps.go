@@ -120,6 +120,7 @@ var (
 		"ld64.so.1",
 		"ld64.so.2",
 		"linux-vdso.so.1",
+		"libc.so", // musl
 		"libc.so.6",
 		"libm.so.6",
 		"libmvec.so.1",

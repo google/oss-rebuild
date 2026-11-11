@@ -115,6 +115,7 @@ func createTestELF(importedLibs []string, soname string) []byte {
 
 func TestInferELFSystemDeps(t *testing.T) {
 	extELF := createTestELF([]string{
+		"libc.so",
 		"libc.so.6",
 		"libgfortran-12345678.so.5.0.0",
 		"libcgraph-17278668.so.6.0.0",
