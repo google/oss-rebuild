@@ -731,17 +731,26 @@ func wheelCythonVersion(zr *zip.Reader) string {
 }
 
 // rustcStampPat matches the version a stable rustc records in .comment, as in
-// "rustc version 1.97.1 (8bab26f4f 2026-07-14)".
-var rustcStampPat = re.MustCompile(`rustc version (\d+\.\d+\.\d+) \(`)
+// "rustc version 1.97.1 (8bab26f4f 2026-07-14)", and the commit date a nightly
+// records, as in "rustc version 1.97.0-nightly (f53b654a8 2026-04-30)".
+var rustcStampPat = re.MustCompile(`rustc version (\d+\.\d+\.\d+)(?:-nightly \([0-9a-f]+ (\d{4}-\d{2}-\d{2})\)| \()`)
 
-// inferRustVersion returns the stable rustc version the wheel's extension modules
-// record, else the latest Rust release at upload time, or "" without Rust.
+// inferRustVersion returns the stable release or dated nightly the wheel's
+// extension modules record, else the latest Rust release at upload time, or ""
+// without Rust.
 func inferRustVersion(zr *zip.Reader, reqs []string, uploaded time.Time) (string, error) {
 	if !hasRequirement(reqs, "maturin", "setuptools-rust") {
 		return "", nil
 	}
 	if m := moduleSectionMatch(zr, ".comment", rustcStampPat); m != nil {
-		return string(m[1]), nil
+		if len(m[2]) == 0 {
+			return string(m[1]), nil
+		}
+		// NOTE: A nightly records the date of the commit it was built from, and
+		// the dated nightly channel publishes it the next day.
+		if day, err := time.Parse(time.DateOnly, string(m[2])); err == nil {
+			return "nightly-" + day.AddDate(0, 0, 1).Format(time.DateOnly), nil
+		}
 	}
 	return cratesio.RustVersionAt(uploaded)
 }
