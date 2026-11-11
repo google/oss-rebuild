@@ -554,9 +554,12 @@ func inferBuild(ctx context.Context, t rebuild.Target, mux rebuild.RegistryMux, 
 		if err != nil {
 			return nil, errors.Wrap(err, "extracting cibuildwheel specs")
 		}
-		buildRoot, buildEnvPath, err := inferBuildPaths(zr, tree, usesCibw)
+		buildRoot, buildEnvPath, mesonBuildDir, err := inferBuildPaths(zr, tree, dir, usesCibw)
 		if err != nil {
 			return nil, errors.Wrap(err, "inferring build paths")
+		}
+		if !hasRequirement(reqs, "meson-python") {
+			mesonBuildDir = ""
 		}
 		cythonReq, err := inferCythonRequirement(tree, dir, release.Name, zr, reqs)
 		if err != nil {
@@ -576,17 +579,18 @@ func inferBuild(ctx context.Context, t rebuild.Target, mux rebuild.RegistryMux, 
 				Ref:        ref,
 				Submodules: submodules,
 			},
-			PythonTag:    tags.Python,
-			ABITag:       tags.ABI,
-			PlatformTag:  tags.Platform,
-			Requirements: reqs,
-			SystemDeps:   sysDeps,
-			RegistryTime: a.UploadTime,
-			BaseImage:    inferBaseImage(platform.CibuildwheelPins, tags.Platform, a.UploadTime, cibwSpecs...),
-			BuildRoot:    buildRoot,
-			BuildEnvPath: buildEnvPath,
-			RustVersion:  rustVersion,
-			CargoTarget:  rustVersion != "" && maturinTakesTarget(reqs),
+			PythonTag:     tags.Python,
+			ABITag:        tags.ABI,
+			PlatformTag:   tags.Platform,
+			Requirements:  reqs,
+			SystemDeps:    sysDeps,
+			RegistryTime:  a.UploadTime,
+			BaseImage:     inferBaseImage(platform.CibuildwheelPins, tags.Platform, a.UploadTime, cibwSpecs...),
+			BuildRoot:     buildRoot,
+			BuildEnvPath:  buildEnvPath,
+			MesonBuildDir: mesonBuildDir,
+			RustVersion:   rustVersion,
+			CargoTarget:   rustVersion != "" && maturinTakesTarget(reqs),
 		}, nil
 	} else {
 		return &PureWheelBuild{
@@ -641,20 +645,23 @@ func inferBaseImage(pins platform.CibuildwheelPinTable, platformTag string, uplo
 }
 
 // inferBuildPaths returns the absolute path that upstream built the repository
-// at, or "" to build in the checkout, and the isolated build environment path
-// that upstream installed build dependencies into, or "" if the wheel records
-// none. The build root comes from, in order of precedence:
+// at, or "" to build in the checkout, the isolated build environment path that
+// upstream installed build dependencies into, or "" if the wheel records none,
+// and the meson-python build directory under the build root and package
+// directory, or "" if the wheel records none. The build root comes from, in
+// order of precedence:
 //  1. The root recorded in DWARF debug info.
 //  2. The root recorded in .rodata source paths.
 //  3. cibuildwheel's project directory, if the project's CI runs cibuildwheel.
 //
-// The build environment path comes from DWARF debug info, or else .rodata.
-func inferBuildPaths(zr *zip.Reader, tree *git2.Tree, usesCibuildwheel bool) (buildRoot, buildEnvPath string, err error) {
+// The build environment path and meson build directory come from DWARF debug
+// info, else .rodata, else packaged build sources.
+func inferBuildPaths(zr *zip.Reader, tree *git2.Tree, dir string, usesCibuildwheel bool) (buildRoot, buildEnvPath, mesonBuildDir string, err error) {
 	files, err := repoFiles(tree)
 	if err != nil {
-		return "", "", errors.Wrap(err, "listing repository files")
+		return "", "", "", errors.Wrap(err, "listing repository files")
 	}
-	dwarfPaths, rodataPaths, skipped := candidatePaths(zr, files)
+	dwarfPaths, rodataPaths, packagedPaths, skipped := candidatePaths(zr, files)
 	if len(skipped) > 0 {
 		log.Printf("Skipped %d sections that could not be read while inferring build paths, first: %v", len(skipped), skipped[0])
 	}
@@ -676,10 +683,23 @@ func inferBuildPaths(zr *zip.Reader, tree *git2.Tree, usesCibuildwheel bool) (bu
 	if buildEnvPath == "" {
 		buildEnvPath, source = mostCommon(rodataPaths.envPaths), ".rodata"
 	}
+	if buildEnvPath == "" {
+		buildEnvPath, source = mostCommon(packagedPaths.envPaths), "packaged sources"
+	}
 	if buildEnvPath != "" {
 		log.Printf("Using build env path %s from %s", buildEnvPath, source)
 	}
-	return buildRoot, buildEnvPath, nil
+	mesonBuildDir, source = dwarfPaths.mesonBuildDir(buildRoot, dir), "DWARF"
+	if mesonBuildDir == "" {
+		mesonBuildDir, source = rodataPaths.mesonBuildDir(buildRoot, dir), ".rodata"
+	}
+	if mesonBuildDir == "" {
+		mesonBuildDir, source = packagedPaths.mesonBuildDir(buildRoot, dir), "packaged sources"
+	}
+	if mesonBuildDir != "" {
+		log.Printf("Using meson build dir %s from %s", mesonBuildDir, source)
+	}
+	return buildRoot, buildEnvPath, mesonBuildDir, nil
 }
 
 var (

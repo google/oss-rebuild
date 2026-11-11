@@ -148,6 +148,8 @@ type PlatformWheelBuild struct {
 	BuildRoot string `json:"build_root,omitempty" yaml:"build_root,omitempty"`
 	// BuildEnvPath is the isolated virtual environment path build dependencies are installed into, when set.
 	BuildEnvPath string `json:"build_env_path,omitempty" yaml:"build_env_path,omitempty"`
+	// MesonBuildDir is the relative build directory passed via "-Cbuild-dir=" to meson-python, when set.
+	MesonBuildDir string `json:"meson_build_dir,omitempty" yaml:"meson_build_dir,omitempty"`
 	// RustVersion is the Rust toolchain installed for the build, when set.
 	RustVersion string `json:"rust_version,omitempty" yaml:"rust_version,omitempty"`
 	// CargoTarget builds with an explicit --target, which Cargo hashes into symbol
@@ -183,6 +185,27 @@ var rustVersionPat = re.MustCompile(`^\d+\.\d+\.\d+$`)
 // buildPathPat matches absolute paths of characters that need no shell quoting.
 var buildPathPat = re.MustCompile(`^(/[A-Za-z0-9._+,@-]+)+$`)
 
+// mesonBuildDirPat matches the temporary build directory names created by meson-python.
+var mesonBuildDirPat = re.MustCompile(`^\.mesonpy-[A-Za-z0-9_]{4,24}$`)
+
+func validateMesonBuildDir(dir string) error {
+	if dir != "" && !mesonBuildDirPat.MatchString(dir) {
+		return errors.Errorf("meson build dir %q does not match %s", dir, mesonBuildDirPat)
+	}
+	return nil
+}
+
+// interpreter returns the Python executable name for the build.
+// NOTE: Meson builds invoke "python" rather than "python3" because
+// DefaultIsolatedEnv runs "python" and meson-python records sys.executable in
+// its Meson native file.
+func (b *PlatformWheelBuild) interpreter() string {
+	if b.MesonBuildDir != "" || hasRequirement(b.Requirements, "meson-python") {
+		return "python"
+	}
+	return "python3"
+}
+
 // validateBuildPath rejects paths that the build steps cannot use.
 func validateBuildPath(p string) error {
 	switch {
@@ -208,6 +231,9 @@ func (b *PlatformWheelBuild) ToWorkflow() (*rebuild.WorkflowStrategy, error) {
 	}
 	if err := validateBuildPath(b.BuildEnvPath); err != nil {
 		return nil, errors.Wrap(err, "validating build env path")
+	}
+	if err := validateMesonBuildDir(b.MesonBuildDir); err != nil {
+		return nil, errors.Wrap(err, "validating meson build dir")
 	}
 	venv := venvDir
 	if b.BuildEnvPath != "" {
@@ -279,11 +305,13 @@ func (b *PlatformWheelBuild) ToWorkflow() (*rebuild.WorkflowStrategy, error) {
 		Build: []flow.Step{{
 			Uses: "pypi/build/platform-wheel",
 			With: map[string]string{
-				"dir":        b.Location.Dir,
-				"distDir":    distDir,
-				"buildRoot":  b.BuildRoot,
-				"locator":    venv + "/bin/",
-				"venvOnPath": needsVenvOnPath(b.Requirements),
+				"dir":           b.Location.Dir,
+				"distDir":       distDir,
+				"buildRoot":     b.BuildRoot,
+				"mesonBuildDir": b.MesonBuildDir,
+				"locator":       venv + "/bin/",
+				"interpreter":   b.interpreter(),
+				"venvOnPath":    needsVenvOnPath(b.Requirements),
 				// auditwheel repair --plat requires a single policy tag rather than a compressed
 				// tag set, and the highest tag matches the build container policy.
 				"highestPlatformTag": platform.HighestLibcTagString(b.PlatformTag),
@@ -457,9 +485,9 @@ var toolkit = []*flow.Tool{
 				mkdir -p $(dirname {{.With.buildRoot}})
 				mkdir {{.With.buildRoot}}
 				cp -a . {{.With.buildRoot}}
-				{{if .With.venvOnPath}}PATH={{.With.locator}}:$PATH {{end}}{{.With.locator}}python3 -m build --wheel -n --outdir {{.With.distDir}} {{.With.buildRoot}}{{if and (ne .With.dir ".") (ne .With.dir "")}}/{{.With.dir}}{{end}}
+				{{if .With.venvOnPath}}PATH={{.With.locator}}:$PATH {{end}}{{.With.locator}}{{.With.interpreter}} -m build --wheel -n{{if .With.mesonBuildDir}} -Cbuild-dir={{.With.mesonBuildDir}}{{end}} --outdir {{.With.distDir}} {{.With.buildRoot}}{{if and (ne .With.dir ".") (ne .With.dir "")}}/{{.With.dir}}{{end}}
 				{{else -}}
-				{{if .With.venvOnPath}}PATH={{.With.locator}}:$PATH {{end}}{{.With.locator}}python3 -m build --wheel -n{{if and (ne .With.dir ".") (ne .With.dir "")}} {{.With.dir}}{{end}}
+				{{if .With.venvOnPath}}PATH={{.With.locator}}:$PATH {{end}}{{.With.locator}}{{.With.interpreter}} -m build --wheel -n{{if .With.mesonBuildDir}} -Cbuild-dir={{.With.mesonBuildDir}}{{end}}{{if and (ne .With.dir ".") (ne .With.dir "")}} {{.With.dir}}{{end}}
 				{{end -}}
 				{{if .With.maturinArgs -}}
 				[ -e {{.With.distDir}}/{{.Target.Artifact}} ] || mv {{.With.distDir}}/*.whl {{.With.distDir}}/{{.Target.Artifact}}
