@@ -21,11 +21,13 @@ import (
 	"github.com/go-git/go-git/v5"
 	"github.com/go-git/go-git/v5/plumbing/transport"
 	"github.com/google/oss-rebuild/internal/gitx"
+	"github.com/google/oss-rebuild/internal/semver"
 	"github.com/google/oss-rebuild/internal/uri"
 	"github.com/google/oss-rebuild/internal/versionx"
 	pypiresolver "github.com/google/oss-rebuild/pkg/rebuild/pypi/parsing"
 	"github.com/google/oss-rebuild/pkg/rebuild/pypi/platform"
 	"github.com/google/oss-rebuild/pkg/rebuild/rebuild"
+	"github.com/google/oss-rebuild/pkg/registry/cratesio"
 	pypireg "github.com/google/oss-rebuild/pkg/registry/pypi"
 	"github.com/msuozzo/go-git2"
 	"github.com/pkg/errors"
@@ -563,6 +565,10 @@ func inferBuild(ctx context.Context, t rebuild.Target, mux rebuild.RegistryMux, 
 		if cythonReq != "" {
 			reqs = append(reqs, cythonReq)
 		}
+		rustVersion, err := inferRustVersion(zr, reqs, a.UploadTime)
+		if err != nil {
+			return nil, errors.Wrap(err, "inferring Rust version")
+		}
 		return &PlatformWheelBuild{
 			Location: rebuild.Location{
 				Repo:       rcfg.URI,
@@ -579,6 +585,8 @@ func inferBuild(ctx context.Context, t rebuild.Target, mux rebuild.RegistryMux, 
 			BaseImage:    inferBaseImage(platform.CibuildwheelPins, tags.Platform, a.UploadTime, cibwSpecs...),
 			BuildRoot:    buildRoot,
 			BuildEnvPath: buildEnvPath,
+			RustVersion:  rustVersion,
+			CargoTarget:  rustVersion != "" && maturinTakesTarget(reqs),
 		}, nil
 	} else {
 		return &PureWheelBuild{
@@ -716,6 +724,42 @@ func inferCythonRequirement(tree *git2.Tree, dir, pkg string, zr *zip.Reader, re
 // wheelCythonVersion returns the Cython version that the wheel's extension
 // modules record in .rodata, or "" if none does.
 func wheelCythonVersion(zr *zip.Reader) string {
+	if m := moduleSectionMatch(zr, ".rodata", cythonABIModulePat); m != nil {
+		return fmt.Sprintf("%s.%s.%s%s", m[1], m[2], m[3], m[4])
+	}
+	return ""
+}
+
+// rustcStampPat matches the version a stable rustc records in .comment, as in
+// "rustc version 1.97.1 (8bab26f4f 2026-07-14)".
+var rustcStampPat = re.MustCompile(`rustc version (\d+\.\d+\.\d+) \(`)
+
+// inferRustVersion returns the stable rustc version the wheel's extension modules
+// record, else the latest Rust release at upload time, or "" without Rust.
+func inferRustVersion(zr *zip.Reader, reqs []string, uploaded time.Time) (string, error) {
+	if !hasRequirement(reqs, "maturin", "setuptools-rust") {
+		return "", nil
+	}
+	if m := moduleSectionMatch(zr, ".comment", rustcStampPat); m != nil {
+		return string(m[1]), nil
+	}
+	return cratesio.RustVersionAt(uploaded)
+}
+
+// maturinTakesTarget reports whether reqs pin a maturin whose PEP 517 backend
+// accepts --target and --compatibility from MATURIN_PEP517_ARGS.
+// NOTE: The backend passes "--compatibility off". Before maturin 1.5, a second
+// --compatibility fails with "Expected only one platform tag but found 2".
+func maturinTakesTarget(reqs []string) bool {
+	return slices.ContainsFunc(reqs, func(r string) bool {
+		v, ok := strings.CutPrefix(r, "maturin==")
+		return ok && semver.Cmp(v, "1.5.0") >= 0
+	})
+}
+
+// moduleSectionMatch returns the submatches of pat in the named section of the
+// first wheel extension module where it matches, or nil if there is none.
+func moduleSectionMatch(zr *zip.Reader, section string, pat *re.Regexp) [][]byte {
 	for _, f := range zr.File {
 		if !isExtensionModule(f.Name) || f.UncompressedSize64 > maxModuleSize {
 			continue
@@ -724,7 +768,7 @@ func wheelCythonVersion(zr *zip.Reader) string {
 		if err != nil {
 			continue
 		}
-		sec := ef.Section(".rodata")
+		sec := ef.Section(section)
 		if sec == nil {
 			continue
 		}
@@ -732,11 +776,11 @@ func wheelCythonVersion(zr *zip.Reader) string {
 		if err != nil {
 			continue
 		}
-		if m := cythonABIModulePat.FindSubmatch(b); m != nil {
-			return fmt.Sprintf("%s.%s.%s%s", m[1], m[2], m[3], m[4])
+		if m := pat.FindSubmatch(b); m != nil {
+			return m
 		}
 	}
-	return ""
+	return nil
 }
 
 var (
@@ -793,6 +837,7 @@ var pdmBackendPat = re.MustCompile(`^Generator: pdm-backend \(([\d\.]+)\)`)
 var uvBuildPat = re.MustCompile(`^Generator: uv ([\d\.]+)`)
 var mesonPat = re.MustCompile(`^Generator: meson(?: \(?([\d\.]+)\)?)?\s*$`)
 var scikitBuildCorePat = re.MustCompile(`^Generator: scikit-build-core \(?([\d\.]+)\)?`)
+var maturinPat = re.MustCompile(`^Generator: maturin \(([\d\.]+)\)`)
 
 // getGenerator returns the pins identifying the wheel's build backend from its
 // Generator line. bdist_wheel names the wheel packaging tool, not setuptools,
@@ -829,6 +874,8 @@ func getGenerator(wheel, metadata []byte) (reqs []string, err error) {
 				return []string{}, nil
 			} else if matches := scikitBuildCorePat.FindSubmatch(line); matches != nil {
 				return []string{"scikit-build-core==" + string(matches[1])}, nil
+			} else if matches := maturinPat.FindSubmatch(line); matches != nil {
+				return []string{"maturin==" + string(matches[1])}, nil
 			} else {
 				return nil, errors.Errorf("unsupported generator: %s", value)
 			}

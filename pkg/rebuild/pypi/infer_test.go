@@ -7,6 +7,7 @@ import (
 	"archive/zip"
 	"bytes"
 	"context"
+	"debug/elf"
 	"errors"
 	"fmt"
 	"io"
@@ -687,6 +688,7 @@ func TestGetGenerator(t *testing.T) {
 		{wheel: "Wheel-Version: 1.0\nRoot-Is-Purelib: true\nTag: py3-none-any\nGenerator: hatchling 1.21.1\n", want: []string{"hatchling==1.21.1"}},
 		// The last line need not end in a newline.
 		{wheel: "Wheel-Version: 1.0\nGenerator: hatchling 1.21.1", want: []string{"hatchling==1.21.1"}},
+		{wheel: "Wheel-Version: 1.0\nGenerator: maturin (1.7.4)\nRoot-Is-Purelib: false\n", want: []string{"maturin==1.7.4"}},
 		{wheel: "Wheel-Version: 1.0\nRoot-Is-Purelib: true\nTag: py3-none-any\n", wantErr: true},
 	} {
 		got, err := getGenerator([]byte(tc.wheel), nil)
@@ -1215,5 +1217,56 @@ func TestInferCythonRequirement(t *testing.T) {
 				t.Errorf("inferCythonRequirement() = %q, want %q", got, tc.want)
 			}
 		})
+	}
+}
+
+func TestInferRustVersion(t *testing.T) {
+	// Rust 1.78.0 was the latest stable release on this date.
+	uploaded := time.Date(2024, time.June, 1, 0, 0, 0, 0, time.UTC)
+	comment := func(entries ...string) []byte {
+		return buildELF(elfSection{".comment", elf.SHT_PROGBITS, []byte(strings.Join(entries, "\x00") + "\x00")})
+	}
+	tests := []struct {
+		name   string
+		reqs   []string
+		module []byte
+		want   string
+	}{
+		{name: "Stamped", reqs: []string{"maturin==1.7.4"}, module: comment("GCC: (GNU) 10.2.1 20210130 (Red Hat 10.2.1-11)", "rustc version 1.75.0 (82e1608df 2023-12-21)"), want: "1.75.0"},
+		{name: "SetuptoolsRust", reqs: []string{"setuptools-rust>=1.5"}, module: comment("rustc version 1.75.0 (82e1608df 2023-12-21)"), want: "1.75.0"},
+		{name: "NightlyUsesRelease", reqs: []string{"maturin==1.7.4"}, module: comment("rustc version 1.80.0-nightly (ada5e2c7b 2024-05-31)"), want: "1.78.0"},
+		{name: "UnstampedUsesRelease", reqs: []string{"maturin==1.7.4"}, module: comment("GCC: (GNU) 10.2.1 20210130 (Red Hat 10.2.1-11)"), want: "1.78.0"},
+		{name: "NoRust", reqs: []string{"setuptools==80.9.0"}, module: comment("rustc version 1.75.0 (82e1608df 2023-12-21)")},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			zr := readWheel(t, zipEntry("pkg/_lib.cpython-312-x86_64-linux-gnu.so", string(tc.module)))
+			got, err := inferRustVersion(zr, tc.reqs, uploaded)
+			if err != nil {
+				t.Fatalf("inferRustVersion() returned error: %v", err)
+			}
+			if got != tc.want {
+				t.Errorf("inferRustVersion() = %q, want %q", got, tc.want)
+			}
+		})
+	}
+}
+
+func TestMaturinTakesTarget(t *testing.T) {
+	for _, tc := range []struct {
+		reqs []string
+		want bool
+	}{
+		{[]string{"maturin==1.5.0"}, true},
+		{[]string{"maturin==1.16.0"}, true},
+		{[]string{"maturin==1.4.0"}, false},
+		{[]string{"maturin==0.14.17"}, false},
+		// An unpinned maturin may resolve to any version.
+		{[]string{"maturin>=1.5,<2"}, false},
+		{[]string{"setuptools-rust==1.9.0"}, false},
+	} {
+		if got := maturinTakesTarget(tc.reqs); got != tc.want {
+			t.Errorf("maturinTakesTarget(%v) = %t, want %t", tc.reqs, got, tc.want)
+		}
 	}
 }
