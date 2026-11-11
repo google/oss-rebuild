@@ -61,7 +61,7 @@ By default, the instance storage bucket is public and can be used without GCP au
 Attestations can be fetched from GCS using the `gsutil` CLI. For example, you can access Google's OSS Rebuild attestations as follows:
 
 ```bash
-# Using gsutil
+# Using gcloud storage
 gcloud storage cat gs://google-rebuild-attestations/pypi/absl-py/2.0.0/absl_py-2.0.0-py3-none-any.whl/rebuild.intoto.jsonl
 ```
 
