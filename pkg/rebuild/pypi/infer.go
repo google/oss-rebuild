@@ -569,6 +569,10 @@ func inferBuild(ctx context.Context, t rebuild.Target, mux rebuild.RegistryMux, 
 		if err != nil {
 			return nil, errors.Wrap(err, "inferring Rust version")
 		}
+		buildEnv, err := inferSetupBuildEnv(tree, dir, zr, tags, reqs)
+		if err != nil {
+			return nil, errors.Wrap(err, "inferring setup.py build env")
+		}
 		return &PlatformWheelBuild{
 			Location: rebuild.Location{
 				Repo:       rcfg.URI,
@@ -580,6 +584,7 @@ func inferBuild(ctx context.Context, t rebuild.Target, mux rebuild.RegistryMux, 
 			ABITag:       tags.ABI,
 			PlatformTag:  tags.Platform,
 			Requirements: reqs,
+			BuildEnv:     buildEnv,
 			SystemDeps:   sysDeps,
 			RegistryTime: a.UploadTime,
 			BaseImage:    inferBaseImage(platform.CibuildwheelPins, tags.Platform, a.UploadTime, cibwSpecs...),
@@ -690,16 +695,81 @@ var (
 	// followed by a PEP 440 pre-release tag (a1, b2, rc1) and, from 3.1 on, by
 	// lowercase feature suffixes such as "limited" or "noamsend".
 	cythonABIModulePat = re.MustCompile(`_cython_(\d+)_(\d+)_(\d+)((?:a|b|rc)\d+)?(?:[a-z]|\b)`)
+	// setupCythonGatePat matches a setup.py environment variable that opts into
+	// compiling Cython extension modules, as CHARSET_NORMALIZER_USE_CYTHON does.
+	// NOTE: Only opt-in names match. Variables such as CYTHON_TRACE and
+	// CYTHON_ANNOTATE change what gets compiled and must stay unset.
+	setupCythonGatePat = re.MustCompile(`os\.(?:getenv|environ\.get)\(\s*["']([A-Z_][A-Z0-9_]*_(?:USE_CYTHON|WITH_CYTHON|CYTHON_ABI3))["']`)
+	// setupMypycGatePat matches a setup.py environment variable that opts into
+	// compiling modules with mypyc, as MYPY_USE_MYPYC does.
+	setupMypycGatePat = re.MustCompile(`os\.(?:getenv|environ\.get)\(\s*["']([A-Z_][A-Z0-9_]*_USE_MYPYC)["']`)
 )
 
 // inferCythonRequirement pins Cython to the version the wheel's extension
 // modules record when setup.py imports it, returning "" if setup.py does not
 // or no module records a version.
 func inferCythonRequirement(tree *git2.Tree, dir, pkg string, zr *zip.Reader, reqs []string) (string, error) {
+	// NOTE: Cython's own setup.py imports Cython from the source checkout.
+	if hasRequirement(reqs, "cython") || pypireg.NormalizedName(pkg) == "cython" {
+		return "", nil
+	}
+	src, err := readSetupPy(tree, dir, reqs)
+	if err != nil {
+		return "", err
+	}
+	if !setupCythonImportPat.MatchString(src) {
+		return "", nil
+	}
+	if v := wheelCythonVersion(zr); v != "" {
+		return "Cython==" + v, nil
+	}
+	return "", nil
+}
+
+// inferSetupBuildEnv returns the setup.py environment variables that opt into
+// compiling the extension modules of the wheel, or nil if none apply.
+// NOTE: The value "1" passes both the `== "1"` checks of charset-normalizer and
+// the {"1", "true", "yes"} membership check of fonttools.
+func inferSetupBuildEnv(tree *git2.Tree, dir string, zr *zip.Reader, tags WheelTags, reqs []string) (map[string]string, error) {
+	src, err := readSetupPy(tree, dir, reqs)
+	if err != nil || src == "" {
+		return nil, err
+	}
+	env := make(map[string]string)
+	// NOTE: Only a recorded Cython version proves that Cython compiled the
+	// modules, as other compilers also produce extension modules.
+	if gates := setupCythonGatePat.FindAllStringSubmatch(src, -1); len(gates) > 0 && wheelCythonVersion(zr) != "" {
+		for _, m := range gates {
+			// NOTE: The same setup.py builds the abi3 and the version-specific wheels.
+			if strings.HasSuffix(m[1], "_CYTHON_ABI3") && tags.ABI != "abi3" {
+				continue
+			}
+			env[m[1]] = "1"
+		}
+	}
+	if gates := setupMypycGatePat.FindAllStringSubmatch(src, -1); len(gates) > 0 && hasMypycModule(zr) {
+		// NOTE: Opting in without mypyc fails the build. Nothing in the wheel
+		// records the mypy version, so an unpinned mypy is not added either.
+		if ok, err := hasMypyc(tree, dir, reqs); err != nil {
+			return nil, err
+		} else if ok {
+			for _, m := range gates {
+				env[m[1]] = "1"
+			}
+		}
+	}
+	if len(env) == 0 {
+		return nil, nil
+	}
+	return env, nil
+}
+
+// readSetupPy returns the contents of dir/setup.py, or "" if the build does not
+// run setup.py or the file does not exist.
+func readSetupPy(tree *git2.Tree, dir string, reqs []string) (string, error) {
 	// NOTE: inferRequirements derives setuptools from the wheel's Generator header
-	// even when pyproject.toml selects flit_core, which ignores setup.py. Cython's
-	// own setup.py imports Cython from the source checkout.
-	if !hasRequirement(reqs, "setuptools") || hasRequirement(reqs, "flit-core", "cython") || pypireg.NormalizedName(pkg) == "cython" {
+	// even when pyproject.toml selects flit_core, which ignores setup.py.
+	if !hasRequirement(reqs, "setuptools") || hasRequirement(reqs, "flit-core") {
 		return "", nil
 	}
 	f, err := tree.File(path.Join(dir, "setup.py"))
@@ -712,13 +782,30 @@ func inferCythonRequirement(tree *git2.Tree, dir, pkg string, zr *zip.Reader, re
 	if err != nil {
 		return "", errors.Wrap(err, "reading setup.py")
 	}
-	if !setupCythonImportPat.MatchString(src) {
-		return "", nil
+	return src, nil
+}
+
+// hasMypycModule reports whether the wheel has the shared library that mypyc
+// names "<group>__mypyc" and compiles all modules of a group into.
+func hasMypycModule(zr *zip.Reader) bool {
+	return slices.ContainsFunc(zr.File, func(f *zip.File) bool {
+		return isExtensionModule(f.Name) && strings.Contains(path.Base(f.Name), "__mypyc.")
+	})
+}
+
+// hasMypyc reports whether the build can import mypyc, from either a mypy
+// requirement or the source tree of mypy itself.
+func hasMypyc(tree *git2.Tree, dir string, reqs []string) (bool, error) {
+	if hasRequirement(reqs, "mypy") {
+		return true, nil
 	}
-	if v := wheelCythonVersion(zr); v != "" {
-		return "Cython==" + v, nil
+	_, err := tree.File(path.Join(dir, "mypyc/build.py"))
+	if errors.Is(err, git2.ErrFileNotFound) {
+		return false, nil
+	} else if err != nil {
+		return false, errors.Wrap(err, "finding mypyc/build.py")
 	}
-	return "", nil
+	return true, nil
 }
 
 // wheelCythonVersion returns the Cython version that the wheel's extension

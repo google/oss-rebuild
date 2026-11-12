@@ -11,6 +11,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"maps"
 	"net/http"
 	"strings"
 	"testing"
@@ -1268,5 +1269,117 @@ func TestMaturinTakesTarget(t *testing.T) {
 		if got := maturinTakesTarget(tc.reqs); got != tc.want {
 			t.Errorf("maturinTakesTarget(%v) = %t, want %t", tc.reqs, got, tc.want)
 		}
+	}
+}
+
+func TestInferSetupBuildEnv(t *testing.T) {
+	const charsetNormalizerSetup = `USE_CYTHON = os.getenv("CHARSET_NORMALIZER_USE_CYTHON") == "1"
+LIMITED_API = os.getenv("CHARSET_NORMALIZER_CYTHON_ABI3") == "1"
+`
+	module := func(name string, rodata ...string) archive.ZipEntry {
+		return zipEntry(name, string(elfWithRodata(rodata...)))
+	}
+	cythonModule := module("pkg/mod.cpython-312-x86_64-linux-gnu.so", "_cython_3_2_9")
+	const mypySetup = `if os.getenv("MYPY_USE_MYPYC", None) == "1":
+    USE_MYPYC = True
+`
+	mypycModule := module("08ae81f72d5a2b5fa9e0__mypyc.cpython-312-x86_64-linux-gnu.so")
+	tests := []struct {
+		name    string
+		files   gitxtest.FileContent
+		modules []archive.ZipEntry
+		abi     string
+		reqs    []string
+		want    map[string]string
+	}{
+		{
+			name:    "VersionSpecificWheel",
+			files:   gitxtest.FileContent{"setup.py": charsetNormalizerSetup},
+			modules: []archive.ZipEntry{cythonModule},
+			want:    map[string]string{"CHARSET_NORMALIZER_USE_CYTHON": "1"},
+		},
+		{
+			name:    "ABI3Wheel",
+			files:   gitxtest.FileContent{"setup.py": charsetNormalizerSetup},
+			modules: []archive.ZipEntry{module("pkg/mod.abi3.so", "_cython_3_2_9limitednoamsend")},
+			abi:     "abi3",
+			want:    map[string]string{"CHARSET_NORMALIZER_USE_CYTHON": "1", "CHARSET_NORMALIZER_CYTHON_ABI3": "1"},
+		},
+		{
+			name: "EnvironGetWithLaterComparison",
+			files: gitxtest.FileContent{"setup.py": `env_with_cython = os.environ.get("FONTTOOLS_WITH_CYTHON")
+with_cython = True if env_with_cython in {"1", "true", "yes"} else None
+linetrace = os.environ.get("CYTHON_TRACE") == "1"
+`},
+			modules: []archive.ZipEntry{module("pkg/mod.cpython-312-x86_64-linux-musl.so", "_cython_3_3_0")},
+			want:    map[string]string{"FONTTOOLS_WITH_CYTHON": "1"},
+		},
+		{
+			name:    "NoCythonVersion",
+			files:   gitxtest.FileContent{"setup.py": charsetNormalizerSetup},
+			modules: []archive.ZipEntry{module("pkg/mod.cpython-312-x86_64-linux-gnu.so", "libc.so.6")},
+		},
+		{
+			name:    "NoGate",
+			files:   gitxtest.FileContent{"setup.py": "from Cython.Build import cythonize\n"},
+			modules: []archive.ZipEntry{cythonModule},
+		},
+		{
+			name:    "NoSetupPy",
+			modules: []archive.ZipEntry{cythonModule},
+		},
+		{
+			name:    "FlitCore",
+			files:   gitxtest.FileContent{"setup.py": charsetNormalizerSetup},
+			modules: []archive.ZipEntry{cythonModule},
+			reqs:    []string{"setuptools", "flit_core>=3.12,<4"},
+		},
+		{
+			name:    "MypycFromSourceTree",
+			files:   gitxtest.FileContent{"setup.py": mypySetup, "mypyc/build.py": ""},
+			modules: []archive.ZipEntry{mypycModule},
+			want:    map[string]string{"MYPY_USE_MYPYC": "1"},
+		},
+		{
+			name:    "MypycFromRequirement",
+			files:   gitxtest.FileContent{"setup.py": mypySetup},
+			modules: []archive.ZipEntry{mypycModule},
+			reqs:    []string{"setuptools", "mypy[mypyc]>=1.15"},
+			want:    map[string]string{"MYPY_USE_MYPYC": "1"},
+		},
+		{
+			name:    "MypycUnavailable",
+			files:   gitxtest.FileContent{"setup.py": mypySetup},
+			modules: []archive.ZipEntry{mypycModule},
+		},
+		{
+			name:    "NoMypycModule",
+			files:   gitxtest.FileContent{"setup.py": mypySetup, "mypyc/build.py": ""},
+			modules: []archive.ZipEntry{module("pkg/mod.cpython-312-x86_64-linux-gnu.so", "libc.so.6")},
+		},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			files := gitxtest.FileContent{"README.md": ""}
+			maps.Copy(files, tc.files)
+			repo := must(gitxtest.CreateRepo([]gitxtest.Commit{{ID: "initial", Files: files}}, nil))
+			tree := must(must(repo.Repository.CommitObject(git2.Hash(repo.Commits["initial"]))).Tree())
+			zr := readWheel(t, tc.modules...)
+			tags := WheelTags{Python: "cp312", ABI: "cp312", Platform: "manylinux_2_28_x86_64"}
+			if tc.abi != "" {
+				tags.ABI = tc.abi
+			}
+			reqs := []string{"setuptools==80.9.0"}
+			if tc.reqs != nil {
+				reqs = tc.reqs
+			}
+			got, err := inferSetupBuildEnv(tree, "", zr, tags, reqs)
+			if err != nil {
+				t.Fatalf("inferSetupBuildEnv() returned error: %v", err)
+			}
+			if diff := cmp.Diff(tc.want, got); diff != "" {
+				t.Errorf("inferSetupBuildEnv() diff (-want +got):\n%s", diff)
+			}
+		})
 	}
 }
