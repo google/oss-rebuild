@@ -164,9 +164,9 @@ func (Rebuilder) CloneRepo(ctx context.Context, t rebuild.Target, repoURI string
 }
 
 // findGitRef resolves the commit a release was built from: a tag naming the
-// version when one exists, else the commit whose tree matches the pure wheel
-// file blobs. A fallback that errors internally is logged and skipped, never
-// aborting the chain.
+// version when one exists, else the commit whose tree matches a release
+// archive's file blobs. A fallback that errors internally is logged and
+// skipped, never aborting the chain.
 func findGitRef(ctx context.Context, mux rebuild.RegistryMux, pkg, version string, release *pypireg.Release, rcfg *rebuild.RepoConfig) (string, error) {
 	tagHeuristic, err := rebuild.FindTagMatch(pkg, version, rcfg.Repository)
 	if err != nil {

@@ -4,6 +4,8 @@
 package gitscan
 
 import (
+	"archive/tar"
+	"bytes"
 	"context"
 	"testing"
 
@@ -79,5 +81,31 @@ commits:
 	}
 	if len(closest) != 0 || matched != 0 || total != 1 {
 		t.Errorf("Search = %v, %d/%d; want no commits, 0/1", closest, matched, total)
+	}
+}
+
+func TestBlobHashesFromTar(t *testing.T) {
+	var buf bytes.Buffer
+	tw := tar.NewWriter(&buf)
+	for _, h := range []*tar.Header{
+		{Name: "pkg-1.0/", Typeflag: tar.TypeDir},
+		{Name: "pkg-1.0/a.py", Typeflag: tar.TypeReg, Size: 5},
+		{Name: "pkg-1.0/b.py", Typeflag: tar.TypeSymlink, Linkname: "a.py"},
+	} {
+		if err := tw.WriteHeader(h); err != nil {
+			t.Fatal(err)
+		}
+		if h.Typeflag == tar.TypeReg {
+			tw.Write([]byte("print"))
+		}
+	}
+	tw.Close()
+	got, err := BlobHashesFromTar(tar.NewReader(&buf))
+	if err != nil {
+		t.Fatalf("BlobHashesFromTar() = %v", err)
+	}
+	// git hash-object of "print"
+	if want := plumbing.ComputeHash(plumbing.BlobObject, []byte("print")); len(got) != 1 || got[0] != want {
+		t.Errorf("BlobHashesFromTar() = %v, want [%v]", got, want)
 	}
 }

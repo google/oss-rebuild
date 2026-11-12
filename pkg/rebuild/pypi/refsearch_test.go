@@ -4,14 +4,18 @@
 package pypi
 
 import (
+	"archive/tar"
 	"archive/zip"
 	"bytes"
+	"compress/gzip"
 	"context"
+	"errors"
 	"fmt"
 	"testing"
 	"time"
 
 	"github.com/go-git/go-git/v5/plumbing"
+	"github.com/google/go-cmp/cmp"
 	"github.com/google/oss-rebuild/internal/gitx/gitxtest"
 	"github.com/google/oss-rebuild/pkg/archive"
 	"github.com/google/oss-rebuild/pkg/archive/archivetest"
@@ -69,10 +73,11 @@ func TestMatchArchiveBlobs(t *testing.T) {
 		zipEntry("acme-2.0.0.dist-info/METADATA", "Metadata-Version: 2.1\nName: acme\nVersion: 2.0.0"),
 	})
 	for _, tc := range []struct {
-		name    string
-		commits []gitxtest.Commit
-		version string
-		want    string // commit ID, or "" for a rejection
+		name     string
+		commits  []gitxtest.Commit
+		version  string
+		uploaded time.Time
+		want     string // commit ID, or "" for a rejection
 	}{
 		{
 			name: "unique best overlap",
@@ -105,6 +110,18 @@ func TestMatchArchiveBlobs(t *testing.T) {
 			},
 			version: "2.0.0",
 			want:    "r3",
+		},
+		{
+			// A commit made after the upload cannot have produced the wheel.
+			name: "version tie, latest confirming before upload",
+			commits: []gitxtest.Commit{
+				{ID: "r1", Time: day(1), Files: gitxtest.FileContent{"pyproject.toml": pyprojectTOML("acme", "1.0.0"), "acme/core.py": coreV2, "acme/util.py": util}},
+				{ID: "r2", Time: day(2), Parent: "r1", Files: gitxtest.FileContent{"pyproject.toml": pyprojectTOML("acme", "2.0.0")}},
+				{ID: "r3", Time: day(5), Parent: "r2", Files: gitxtest.FileContent{"README.md": "doc change\n"}},
+			},
+			version:  "2.0.0",
+			uploaded: day(3),
+			want:     "r2",
 		},
 		{
 			name: "version tie, earlier confirming",
@@ -160,7 +177,7 @@ func TestMatchArchiveBlobs(t *testing.T) {
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			repo := must(gitxtest.CreateRepo(tc.commits, nil))
-			ref, err := matchArchiveBlobs(ctx, hashes, "acme", tc.version, repo.Repository)
+			ref, err := matchArchiveBlobs(ctx, hashes, "acme", tc.version, tc.uploaded, repo.Repository)
 			if tc.want == "" {
 				if err == nil {
 					t.Errorf("matchArchiveBlobs = %q, nil error, want a rejection", ref)
@@ -178,7 +195,32 @@ func TestMatchArchiveBlobs(t *testing.T) {
 
 	// A blob set absent from the repo entirely is rejected by the scan.
 	repo := must(gitxtest.CreateRepo([]gitxtest.Commit{{ID: "v1", Files: gitxtest.FileContent{"acme/core.py": coreV1}}}, nil))
-	if _, err := matchArchiveBlobs(ctx, []plumbing.Hash{plumbing.ZeroHash}, "acme", "2.0.0", repo.Repository); err == nil {
+	if _, err := matchArchiveBlobs(ctx, []plumbing.Hash{plumbing.ZeroHash}, "acme", "2.0.0", time.Time{}, repo.Repository); err == nil {
 		t.Errorf("matchArchiveBlobs(no matching blobs) = nil error, want a rejection")
+	}
+}
+
+func TestArchiveBlobs(t *testing.T) {
+	want := []plumbing.Hash{plumbing.ComputeHash(plumbing.BlobObject, []byte("print"))}
+	var sdist bytes.Buffer
+	gz := gzip.NewWriter(&sdist)
+	tw := tar.NewWriter(gz)
+	if err := tw.WriteHeader(&tar.Header{Name: "acme-1.0/acme.py", Typeflag: tar.TypeReg, Size: 5}); err != nil {
+		t.Fatal(err)
+	}
+	must(tw.Write([]byte("print")))
+	if err := errors.Join(tw.Close(), gz.Close()); err != nil {
+		t.Fatal(err)
+	}
+	wheel := wheelZip(t, []archive.ZipEntry{
+		zipEntry("acme.py", "print"),
+		zipEntry("py.typed", ""),
+		zipEntry("acme-1.0.dist-info/licenses/LICENSE", "Apache License"),
+	})
+	for name, body := range map[string][]byte{"acme-1.0.tar.gz": sdist.Bytes(), "acme-1.0-py3-none-any.whl": wheel} {
+		got, err := archiveBlobs(name, body)
+		if err != nil || !cmp.Equal(got, want) {
+			t.Errorf("archiveBlobs(%s) = %v, %v, want %v", name, got, err, want)
+		}
 	}
 }
