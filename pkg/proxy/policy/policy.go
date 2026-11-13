@@ -67,10 +67,14 @@ func newRuleFromJson(rule json.RawMessage) (Rule, error) {
 	if err := json.Unmarshal(rule, &tmpmap); err != nil {
 		return nil, err
 	}
-	if _, ok := tmpmap["ruleType"]; !ok {
+	rawType, ok := tmpmap["ruleType"]
+	if !ok {
 		return nil, fmt.Errorf("rule_type not specified in Rule: %v", string(rule))
 	}
-	ruleType := tmpmap["ruleType"].(string)
+	ruleType, ok := rawType.(string)
+	if !ok {
+		return nil, fmt.Errorf("unexpected rule_type type in Rule: %v", string(rule))
+	}
 	if constructor, ok := ruleRegistry[ruleType]; !ok {
 		return nil, fmt.Errorf("unexpected rule_type specified: '%s'", ruleType)
 	} else {

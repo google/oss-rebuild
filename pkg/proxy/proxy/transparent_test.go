@@ -114,12 +114,22 @@ func TestApplyNetworkPolicy(t *testing.T) {
 }
 
 func TestPolicyEndpoint(t *testing.T) {
+	preservedPolicy := policy.Policy{
+		AnyOf: []policy.Rule{
+			&policy.URLMatchRule{
+				Host:      "host.com",
+				Path:      "/path",
+				PathMatch: policy.PrefixMatch,
+			},
+		},
+	}
 	tests := []struct {
-		name       string
-		method     string
-		body       []byte
-		wantPolicy policy.Policy
-		wantResp   int
+		name          string
+		initialPolicy policy.Policy
+		method        string
+		body          []byte
+		wantPolicy    policy.Policy
+		wantResp      int
 	}{
 		{
 			name:       "Empty PUT request creates empty policy",
@@ -143,33 +153,51 @@ func TestPolicyEndpoint(t *testing.T) {
 					]
 				}
 			}`),
-			wantPolicy: policy.Policy{
-				AnyOf: []policy.Rule{
-					&policy.URLMatchRule{
-						Host:      "host.com",
-						Path:      "/path",
-						PathMatch: policy.PrefixMatch,
-					},
-				},
-			},
-			wantResp: http.StatusOK,
+			wantPolicy: preservedPolicy,
+			wantResp:   http.StatusOK,
 		},
 		{
-			name:   "PUT request without rule_type returns StatusBadRequest",
-			method: http.MethodPut,
+			name:          "PUT request without rule_type returns StatusBadRequest and preserves policy",
+			initialPolicy: preservedPolicy,
+			method:        http.MethodPut,
 			body: []byte(`{
 				"Policy": {
 					"AnyOf": [
 						{
 							"host": "host.com",
 							"path": "/path",
-							"matchPathBy": "prefix",
+							"matchPathBy": "prefix"
 						}
 					]
 				}
 			}`),
-			wantPolicy: policy.Policy{},
+			wantPolicy: preservedPolicy,
 			wantResp:   http.StatusBadRequest,
+		},
+		{
+			name:          "PUT request with non-string ruleType returns StatusBadRequest and preserves policy",
+			initialPolicy: preservedPolicy,
+			method:        http.MethodPut,
+			body: []byte(`{
+				"Policy": {
+					"AnyOf": [
+						{
+							"host": "host.com",
+							"ruleType": 123
+						}
+					]
+				}
+			}`),
+			wantPolicy: preservedPolicy,
+			wantResp:   http.StatusBadRequest,
+		},
+		{
+			name:          "Empty PUT request resets policy",
+			initialPolicy: preservedPolicy,
+			method:        http.MethodPut,
+			body:          []byte(`{}`),
+			wantPolicy:    policy.Policy{},
+			wantResp:      http.StatusOK,
 		},
 		{
 			name:       "HEAD request returns StatusMethodNotAllowed",
@@ -221,19 +249,19 @@ func TestPolicyEndpoint(t *testing.T) {
 			wantResp:   http.StatusMethodNotAllowed,
 		},
 	}
-	proxyService := NewTransparentProxyService(NewTransparentProxyServer(false), nil, "enforce", TransparentProxyServiceOpts{
-		Policy: &policy.Policy{},
-	})
 	policy.RegisterRule("URLMatchRule", func() policy.Rule { return &policy.URLMatchRule{} })
-	mux := http.NewServeMux()
-	mux.HandleFunc("/policy", proxyService.policyHandler)
-	server := httptest.NewServer(mux)
-	defer server.Close()
-	url := server.URL + "/policy"
 
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
-			req, err := http.NewRequest(tc.method, url, bytes.NewBuffer(tc.body))
+			initPolicy := tc.initialPolicy
+			proxyService := NewTransparentProxyService(NewTransparentProxyServer(false), nil, "enforce", TransparentProxyServiceOpts{
+				Policy: &initPolicy,
+			})
+			mux := http.NewServeMux()
+			mux.HandleFunc("/policy", proxyService.policyHandler)
+			server := httptest.NewServer(mux)
+			defer server.Close()
+			req, err := http.NewRequest(tc.method, server.URL+"/policy", bytes.NewBuffer(tc.body))
 			if err != nil {
 				t.Errorf("Error creating request: %v", err)
 			}

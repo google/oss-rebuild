@@ -295,17 +295,20 @@ func (t *TransparentProxyService) policyHandler(w http.ResponseWriter, r *http.R
 	case http.MethodPut:
 		if r.Header.Get("Content-Type") != "application/json" {
 			http.Error(w, "Bad request received. Expected Content-Type: application/json", http.StatusBadRequest)
+			return
 		}
 
 		body, err := io.ReadAll(r.Body)
 		if err != nil {
 			http.Error(w, "Internal Error", http.StatusInternalServerError)
+			return
 		}
 
 		var p policy.Policy
 		err = json.Unmarshal(body, &p)
 		if err != nil {
 			http.Error(w, fmt.Sprintf("Error unmarshaling request body: %v", err), http.StatusBadRequest)
+			return
 		}
 		t.Policy = &p
 	default:
