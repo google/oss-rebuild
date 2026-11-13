@@ -95,7 +95,8 @@ func PeekClientHello(c net.Conn) (net.Conn, *ClientHelloMsg, error) {
 	if err != nil {
 		return nil, nil, err
 	}
-	if data[0] != typeClientHello {
+	// TODO: Reassemble ClientHellos split across multiple TLS records.
+	if len(data) == 0 || data[0] != typeClientHello {
 		return nil, nil, errors.New("tls: unexpected message")
 	}
 	m := newClientHelloMsg(data)

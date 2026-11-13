@@ -145,3 +145,23 @@ func TestPeekClientHello_NotHttp(t *testing.T) {
 		t.Fatalf("Expected handshake error, got %v", err)
 	}
 }
+
+func TestPeekClientHello_EmptyRecord(t *testing.T) {
+	server, client := net.Pipe()
+	defer client.Close()
+
+	serverErr := make(chan error, 1)
+	go func() {
+		defer server.Close()
+		_, _, err := PeekClientHello(server)
+		serverErr <- err
+	}()
+
+	// Send a 5-byte TLS handshake record header with length 0.
+	if _, err := client.Write([]byte{recordTypeHandshake, 0x03, 0x01, 0x00, 0x00}); err != nil {
+		t.Fatalf("Write failed: %v", err)
+	}
+	if err := <-serverErr; err == nil {
+		t.Fatalf("Expected error on empty TLS record, got nil")
+	}
+}
