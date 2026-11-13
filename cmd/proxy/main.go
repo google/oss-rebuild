@@ -9,14 +9,12 @@ import (
 	"encoding/json"
 	"flag"
 	"log"
-	"net/http"
 	"os"
 	"os/signal"
 	"strings"
 	"syscall"
 	"time"
 
-	"github.com/elazarl/goproxy"
 	"github.com/google/oss-rebuild/pkg/proxy/cert"
 	"github.com/google/oss-rebuild/pkg/proxy/docker"
 	"github.com/google/oss-rebuild/pkg/proxy/policy"
@@ -69,10 +67,7 @@ func main() {
 	proxyService := proxy.NewTransparentProxyService(p, ca, proxy.PolicyMode(*policyMode), proxy.TransparentProxyServiceOpts{
 		Policy: &pl,
 	})
-	proxyService.Proxy.OnRequest().DoFunc(
-		func(req *http.Request, ctx *goproxy.ProxyCtx) (*http.Request, *http.Response) {
-			return proxyService.ApplyNetworkPolicy(req, ctx)
-		})
+	proxyService.Proxy.OnRequest().DoFunc(proxyService.ApplyNetworkPolicy)
 	// Administrative endpoint.
 	go proxyService.ServeAdmin(*ctrlAddr)
 	// Start proxy server endpoints.
