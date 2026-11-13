@@ -18,6 +18,7 @@ import (
 	"net/url"
 	"regexp"
 	"sync"
+	"time"
 
 	"github.com/elazarl/goproxy"
 	"github.com/google/oss-rebuild/internal/proxy/handshake"
@@ -213,11 +214,15 @@ func (t *TransparentProxyService) ProxyTLS(addr string) {
 // serveTLS proxies a redirected TLS connection as a CONNECT to its SNI host.
 func (t *TransparentProxyService) serveTLS(c net.Conn) {
 	log.Println("Connection from ", c.RemoteAddr())
+	// Empirical bound: 10s covers ClientHello arrival without pinning idle connections.
+	c.SetReadDeadline(time.Now().Add(10 * time.Second))
 	conn, hello, err := handshake.PeekClientHello(c)
 	if err != nil {
 		log.Printf("Error accepting new connection - %v", err)
+		c.Close()
 		return
 	}
+	c.SetReadDeadline(time.Time{})
 	host := hello.ServerName
 	if host == "" {
 		log.Printf("Cannot support non-SNI enabled clients")
