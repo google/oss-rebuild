@@ -140,14 +140,30 @@ func createFile(fs dockerfs.Filesystem, content []byte, path string) error {
 	return fs.WriteFile(&dockerfs.File{Path: path, Metadata: *hdr, Contents: content})
 }
 
+func ensureHostConfig(img map[string]any, imageSpec []byte) (map[string]any, error) {
+	if img == nil {
+		return nil, errors.Errorf("unexpected null imageSpec\nBody: %s", string(imageSpec))
+	}
+	switch hostConfig := img["HostConfig"].(type) {
+	case map[string]any:
+		return hostConfig, nil
+	case nil:
+		m := make(map[string]any)
+		img["HostConfig"] = m
+		return m, nil
+	default:
+		return nil, errors.Errorf("unexpected type of HostConfig\nBody: %s", string(imageSpec))
+	}
+}
+
 func addBinding(imageSpec []byte, from, to, mode string) (newSpec []byte, err error) {
 	img := make(map[string]any)
 	if err = json.Unmarshal(imageSpec, &img); err != nil {
 		return nil, errors.Errorf("failed to unmarshal json: %s\nBody: %s", err, string(imageSpec))
 	}
-	hostConfig, ok := img["HostConfig"].(map[string]any)
-	if !ok {
-		return nil, errors.Errorf("unexpected type of HostConfig\nBody: %s", string(imageSpec))
+	hostConfig, err := ensureHostConfig(img, imageSpec)
+	if err != nil {
+		return nil, err
 	}
 	newBinding := strings.Join([]string{from, to, mode}, ":")
 	bindsObj, ok := hostConfig["Binds"]
@@ -172,13 +188,19 @@ func getNetwork(imageSpec []byte) (network string, err error) {
 	if err = json.Unmarshal(imageSpec, &img); err != nil {
 		return "", errors.Errorf("failed to unmarshal json: %s\nBody: %s", err, string(imageSpec))
 	}
+	if img["HostConfig"] == nil {
+		return "", errors.Wrap(iofs.ErrNotExist, "reading HostConfig")
+	}
 	hostConfig, ok := img["HostConfig"].(map[string]any)
 	if !ok {
 		return "", errors.Errorf("unexpected type of HostConfig\nBody: %s", string(imageSpec))
 	}
+	if hostConfig["NetworkMode"] == nil {
+		return "", errors.Wrap(iofs.ErrNotExist, "reading NetworkMode")
+	}
 	network, ok = hostConfig["NetworkMode"].(string)
 	if !ok {
-		return "", errors.Errorf("unexpected type of HostConfig\nBody: %s", string(imageSpec))
+		return "", errors.Errorf("unexpected type of HostConfig.NetworkMode\nBody: %s", string(imageSpec))
 	}
 	return network, nil
 }
@@ -188,11 +210,21 @@ func setNetwork(imageSpec []byte, network string) (newSpec []byte, err error) {
 	if err = json.Unmarshal(imageSpec, &img); err != nil {
 		return nil, errors.Errorf("failed to unmarshal json: %s\nBody: %s", err, string(imageSpec))
 	}
-	hostConfig, ok := img["HostConfig"].(map[string]any)
-	if !ok {
-		return nil, errors.Errorf("unexpected type of HostConfig\nBody: %s", string(imageSpec))
+	hostConfig, err := ensureHostConfig(img, imageSpec)
+	if err != nil {
+		return nil, err
 	}
 	hostConfig["NetworkMode"] = network
+	// NOTE: Docker 29 clients populate NetworkingConfig.EndpointsConfig even
+	// when --network is omitted, which conflicts with an overridden
+	// HostConfig.NetworkMode.
+	switch netCfg := img["NetworkingConfig"].(type) {
+	case map[string]any:
+		delete(netCfg, "EndpointsConfig")
+	case nil:
+	default:
+		return nil, errors.Errorf("unexpected type of NetworkingConfig\nBody: %s", string(imageSpec))
+	}
 	newSpec, err = json.Marshal(img)
 	if err != nil {
 		return nil, errors.Errorf("failed to re-marshal json: %s\nStruct: %s", err, img)
@@ -614,7 +646,7 @@ func (d *ContainerTruststorePatcher) proxyRequest(clientConn, serverConn net.Con
 		}
 		if d.networkOverride != "" {
 			network, err := getNetwork(newBody)
-			if err != nil {
+			if err != nil && !errors.Is(err, iofs.ErrNotExist) {
 				log.Fatalf("Failed to get network for request %s: %s", req.URL.Path, err)
 			}
 			log.Printf("Modifying network from %s to %s", network, d.networkOverride)

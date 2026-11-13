@@ -9,7 +9,9 @@ import (
 	"bytes"
 	"crypto/x509"
 	"encoding/base64"
+	"encoding/json"
 	"encoding/pem"
+	"errors"
 	"fmt"
 	"io"
 	"io/fs"
@@ -925,6 +927,42 @@ func TestPatchOnStartWithCustomFiles(t *testing.T) {
 	}
 }
 
+func TestNetworkOverrideOnCreate(t *testing.T) {
+	ctp, _ := NewContainerTruststorePatcher(CERT, ContainerTruststorePatcherOpts{NetworkOverride: "container:build"})
+	sock := tempSocketName(t)
+	l, err := net.Listen("unix", sock)
+	if err != nil {
+		t.Fatal(err)
+	}
+	bodies := make(chan []byte, 1)
+	go http.Serve(l, http.HandlerFunc(func(rw http.ResponseWriter, req *http.Request) {
+		b, _ := io.ReadAll(req.Body)
+		bodies <- b
+	}))
+	// Docker 29 clients omit NetworkMode and populate EndpointsConfig.
+	clientIn := setupProxy(t, sock, ctp)
+	req, err := http.NewRequest(http.MethodPost, "/containers/create?name=abc", asBody([]byte(`{"NetworkingConfig":{"EndpointsConfig":{"default":{}}}}`)))
+	orFail(t, err)
+	orFail(t, req.Write(clientIn))
+	got := <-bodies
+	resp, err := http.ReadResponse(bufio.NewReader(clientIn), req)
+	orFail(t, err)
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("Unexpected return code: want=%d got=%d", http.StatusOK, resp.StatusCode)
+	}
+	var spec struct {
+		HostConfig       struct{ NetworkMode string }
+		NetworkingConfig map[string]any
+	}
+	orFail(t, json.Unmarshal(got, &spec))
+	if spec.HostConfig.NetworkMode != "container:build" {
+		t.Errorf("Unexpected NetworkMode: want=container:build got=%s", spec.HostConfig.NetworkMode)
+	}
+	if _, ok := spec.NetworkingConfig["EndpointsConfig"]; ok {
+		t.Errorf("Unexpected EndpointsConfig in forwarded spec: %s", got)
+	}
+}
+
 func TestAddBinding(t *testing.T) {
 	for _, tc := range [](struct {
 		Body []byte
@@ -933,6 +971,8 @@ func TestAddBinding(t *testing.T) {
 		Mode string
 		Want []byte
 	}){
+		{[]byte(`{}`), "a", "b", "ro", []byte(`{"HostConfig":{"Binds":["a:b:ro"]}}`)},
+		{[]byte(`{"HostConfig":null}`), "a", "b", "ro", []byte(`{"HostConfig":{"Binds":["a:b:ro"]}}`)},
 		{[]byte(`{"HostConfig":{}}`), "a", "b", "ro", []byte(`{"HostConfig":{"Binds":["a:b:ro"]}}`)},
 		{[]byte(`{"HostConfig":{"Binds":[]}}`), "a", "b", "ro", []byte(`{"HostConfig":{"Binds":["a:b:ro"]}}`)},
 		{[]byte(`{"HostConfig":{"Binds":["1:2:ro"]}}`), "a", "b", "ro", []byte(`{"HostConfig":{"Binds":["1:2:ro","a:b:ro"]}}`)},
@@ -949,10 +989,11 @@ func TestAddBinding(t *testing.T) {
 
 func TestGetNetwork(t *testing.T) {
 	testCases := []struct {
-		name        string
-		imageSpec   []byte
-		wantNetwork string
-		wantErr     bool
+		name         string
+		imageSpec    []byte
+		wantNetwork  string
+		wantErr      bool
+		wantNotExist bool
 	}{
 		{
 			name:        "Valid network mode",
@@ -960,9 +1001,22 @@ func TestGetNetwork(t *testing.T) {
 			wantNetwork: "bridge",
 		},
 		{
-			name:      "Missing NetworkMode",
-			imageSpec: []byte(`{"HostConfig": {}}`),
-			wantErr:   true,
+			name:         "Missing HostConfig",
+			imageSpec:    []byte(`{}`),
+			wantErr:      true,
+			wantNotExist: true,
+		},
+		{
+			name:         "Missing NetworkMode",
+			imageSpec:    []byte(`{"HostConfig": {}}`),
+			wantErr:      true,
+			wantNotExist: true,
+		},
+		{
+			name:         "Null spec",
+			imageSpec:    []byte(`null`),
+			wantErr:      true,
+			wantNotExist: true,
 		},
 		{
 			name:      "Invalid JSON",
@@ -977,6 +1031,9 @@ func TestGetNetwork(t *testing.T) {
 			if (err != nil) != tc.wantErr {
 				t.Errorf("getNetwork() error = %v, wantErr %v", err, tc.wantErr)
 				return
+			}
+			if errors.Is(err, fs.ErrNotExist) != tc.wantNotExist {
+				t.Errorf("getNetwork() error = %v, wantNotExist %v", err, tc.wantNotExist)
 			}
 			if gotNetwork != tc.wantNetwork {
 				t.Errorf("getNetwork() = %v, want %v", gotNetwork, tc.wantNetwork)
@@ -1004,6 +1061,24 @@ func TestSetNetwork(t *testing.T) {
 			imageSpec:  []byte(`{"HostConfig": {}}`),
 			newNetwork: "host",
 			wantSpec:   []byte(`{"HostConfig":{"NetworkMode":"host"}}`),
+		},
+		{
+			name:       "Missing HostConfig",
+			imageSpec:  []byte(`{}`),
+			newNetwork: "host",
+			wantSpec:   []byte(`{"HostConfig":{"NetworkMode":"host"}}`),
+		},
+		{
+			name:       "Clears stale EndpointsConfig",
+			imageSpec:  []byte(`{"HostConfig":{"NetworkMode":"default"},"NetworkingConfig":{"EndpointsConfig":{"default":{}}}}`),
+			newNetwork: "container:build",
+			wantSpec:   []byte(`{"HostConfig":{"NetworkMode":"container:build"},"NetworkingConfig":{}}`),
+		},
+		{
+			name:       "Null spec",
+			imageSpec:  []byte(`null`),
+			newNetwork: "host",
+			wantErr:    true,
 		},
 		{
 			name:       "Invalid JSON",
