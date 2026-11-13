@@ -14,6 +14,7 @@ import (
 	"io/fs"
 	"log"
 	"net/http"
+	"net/url"
 	"path/filepath"
 	"strings"
 	"time"
@@ -32,6 +33,15 @@ const (
 type Filesystem struct {
 	Client    httpx.BasicClient
 	Container string
+}
+
+func (c Filesystem) archiveRequest(method, path string, body io.Reader) (*http.Request, error) {
+	u := url.URL{
+		Path:     "/containers/" + c.Container + "/archive",
+		RawPath:  "/containers/" + url.PathEscape(c.Container) + "/archive",
+		RawQuery: url.Values{"path": {path}}.Encode(),
+	}
+	return http.NewRequest(method, u.String(), body)
 }
 
 // daemonError maps the Docker daemon's documented error statuses to fs
@@ -65,7 +75,7 @@ func (c Filesystem) Open(path string) (*File, error) {
 	if !filepath.IsAbs(path) {
 		return nil, fs.ErrInvalid
 	}
-	req, err := http.NewRequest(http.MethodGet, "/containers/"+c.Container+"/archive?path="+path, http.NoBody)
+	req, err := c.archiveRequest(http.MethodGet, path, http.NoBody)
 	if err != nil {
 		return nil, errors.Wrap(err, "building request")
 	}
@@ -103,7 +113,7 @@ func (c Filesystem) Stat(path string) (*FileInfo, error) {
 	if !filepath.IsAbs(path) {
 		return nil, fs.ErrInvalid
 	}
-	req, err := http.NewRequest(http.MethodHead, "/containers/"+c.Container+"/archive?path="+path, http.NoBody)
+	req, err := c.archiveRequest(http.MethodHead, path, http.NoBody)
 	if err != nil {
 		return nil, errors.Wrap(err, "building request")
 	}
@@ -222,7 +232,7 @@ func (c Filesystem) Resolve(f *File) (*File, error) {
 // WriteFile writes the contents of the file back to the Docker container.
 func (c Filesystem) WriteFile(f *File) error {
 	log.Printf("WriteFile for file: %s", f.Path)
-	req, err := http.NewRequest(http.MethodPut, "/containers/"+c.Container+"/archive?path="+filepath.Dir(f.Path), nil)
+	req, err := c.archiveRequest(http.MethodPut, filepath.Dir(f.Path), nil)
 	if err != nil {
 		return errors.Wrap(err, "request building error")
 	}
