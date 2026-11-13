@@ -107,6 +107,36 @@ func TestApplyOnURLMatchRule(t *testing.T) {
 			wantResp: http.StatusOK,
 		},
 		{
+			name: "host policy rule with suffix match still enforces path on exact host",
+			policy: Policy{
+				AnyOf: []Rule{
+					URLMatchRule{
+						Host:      "host.com",
+						HostMatch: SuffixMatch,
+						Path:      "/path",
+						PathMatch: PrefixMatch,
+					},
+				},
+			},
+			url:      "https://host.com/other",
+			wantResp: http.StatusForbidden,
+		},
+		{
+			name: "empty host with suffix match still enforces path",
+			policy: Policy{
+				AnyOf: []Rule{
+					URLMatchRule{
+						Host:      "",
+						HostMatch: SuffixMatch,
+						Path:      "/path",
+						PathMatch: PrefixMatch,
+					},
+				},
+			},
+			url:      "https://host.com/other",
+			wantResp: http.StatusForbidden,
+		},
+		{
 			name: "host policy rule matches url domain suffix",
 			policy: Policy{
 				AnyOf: []Rule{

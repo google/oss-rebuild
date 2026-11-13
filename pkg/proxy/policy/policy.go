@@ -141,12 +141,12 @@ func (rule URLMatchRule) Allows(req *http.Request) bool {
 	case SuffixMatch:
 		// Special case: match any.
 		if rule.Host == "" {
-			return true
+			break
 		}
 
-		// Check for an exact match first (see below).
+		// Match exact domain before checking dot-delimited subdomain suffixes.
 		if url.Hostname() == rule.Host {
-			return true
+			break
 		}
 
 		// Avoid matching partial domain names and only match full domain parts.
