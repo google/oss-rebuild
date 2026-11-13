@@ -14,6 +14,8 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"reflect"
+	"slices"
+	"sync"
 	"testing"
 	"time"
 
@@ -360,9 +362,11 @@ func TestServeTLS(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer ln.Close()
+	dc := new(deadlineConn)
 	go func() {
 		if c, err := ln.Accept(); err == nil {
-			proxyService.serveTLS(c)
+			dc.Conn = c
+			proxyService.serveTLS(dc)
 		}
 	}()
 	roots := x509.NewCertPool()
@@ -387,6 +391,52 @@ func TestServeTLS(t *testing.T) {
 	if body, err := io.ReadAll(resp.Body); err != nil || string(body) != "ok" {
 		t.Errorf("body = %q, %v, want %q", body, err, "ok")
 	}
+	if got := dc.readDeadlines(); len(got) < 2 || got[0].IsZero() || !got[1].IsZero() {
+		t.Errorf("read deadlines = %v, want a ClientHello deadline then a reset", got)
+	}
+}
+
+func TestServeTLSClosesOnBadClientHello(t *testing.T) {
+	proxyService := NewTransparentProxyService(NewTransparentProxyServer(false), nil, DisabledMode, TransparentProxyServiceOpts{SkipLogging: true})
+	server, client := net.Pipe()
+	defer client.Close()
+	dc := &deadlineConn{Conn: server}
+	served := make(chan struct{})
+	go func() {
+		defer close(served)
+		proxyService.serveTLS(dc)
+	}()
+	if _, err := client.Write([]byte("GET / HTTP/1.1\r\n\r\n")); err != nil {
+		t.Fatal(err)
+	}
+	client.SetReadDeadline(time.Now().Add(3 * time.Second))
+	if _, err := client.Read(make([]byte, 1)); err != io.EOF {
+		t.Errorf("Read after a bad ClientHello = %v, want io.EOF", err)
+	}
+	<-served
+	if got := dc.readDeadlines(); len(got) != 1 || got[0].IsZero() {
+		t.Errorf("read deadlines = %v, want only the ClientHello deadline", got)
+	}
+}
+
+// deadlineConn records the read deadlines set on a conn.
+type deadlineConn struct {
+	net.Conn
+	mx        sync.Mutex
+	deadlines []time.Time
+}
+
+func (c *deadlineConn) SetReadDeadline(t time.Time) error {
+	c.mx.Lock()
+	c.deadlines = append(c.deadlines, t)
+	c.mx.Unlock()
+	return c.Conn.SetReadDeadline(t)
+}
+
+func (c *deadlineConn) readDeadlines() []time.Time {
+	c.mx.Lock()
+	defer c.mx.Unlock()
+	return slices.Clone(c.deadlines)
 }
 
 func TestRejectUnhandledConnectPort(t *testing.T) {
