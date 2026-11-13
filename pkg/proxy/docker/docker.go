@@ -531,12 +531,20 @@ func (d *ContainerTruststorePatcher) Proxy(srvAddr, dockerAddr string) {
 	if strings.HasPrefix(address, "unix://") {
 		network = "unix"
 		address = strings.TrimPrefix(address, "unix://")
+		if err := os.Remove(address); err != nil && !errors.Is(err, iofs.ErrNotExist) {
+			log.Fatal(err)
+		}
 	} else if strings.HasPrefix(address, "tcp://") {
 		address = strings.TrimPrefix(address, "tcp://")
 	}
 	tl, err := net.Listen(network, address)
 	if err != nil {
 		log.Fatal(err)
+	}
+	if network == "unix" {
+		if err := os.Chmod(address, 0660); err != nil {
+			log.Fatal(err)
+		}
 	}
 	go func() {
 		for {
@@ -553,7 +561,7 @@ func (d *ContainerTruststorePatcher) Proxy(srvAddr, dockerAddr string) {
 		if err != nil {
 			log.Fatal(err)
 		}
-		if err := os.Chmod(ul.Addr().String(), iofs.ModeSocket|0660); err != nil {
+		if err := os.Chmod(ul.Addr().String(), 0660); err != nil {
 			log.Fatal(err)
 		}
 		go func() {
