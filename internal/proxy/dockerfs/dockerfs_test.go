@@ -226,6 +226,32 @@ func TestResolve(t *testing.T) {
 	}
 }
 
+func TestResolveChainedSymlinks(t *testing.T) {
+	sym1Stat := FileInfo{name: "ca-bundle.crt", mode: fs.ModePerm | fs.ModeSymlink, size: 40, modTime: someTime, LinkTarget: "/etc/pki/ca-trust/extracted/pem/tls-ca-bundle.pem"}
+	sym1Tar := makeOpen(t, sym1Stat, "", sym1Stat.LinkTarget)
+	sym2Stat := FileInfo{name: "tls-ca-bundle.pem", mode: fs.ModePerm | fs.ModeSymlink, size: 20, modTime: someTime, LinkTarget: "../certs.pem"}
+	sym2Tar := makeOpen(t, sym2Stat, "", sym2Stat.LinkTarget)
+	wantContents := "-----BEGIN CERTIFICATE-----\n"
+	wantStat := FileInfo{name: "certs.pem", mode: fs.ModePerm, size: int64(len(wantContents)), modTime: someTime}
+	targetTar := makeOpen(t, wantStat, wantContents, "")
+	f := Filesystem{Client: &httpxtest.MockClient{
+		Calls: []httpxtest.Call{
+			{Method: "GET", URL: "/containers/abc/archive?path=/etc/pki/tls/certs/ca-bundle.crt", Response: &http.Response{StatusCode: http.StatusOK, Body: io.NopCloser(bytes.NewReader(sym1Tar))}},
+			{Method: "GET", URL: "/containers/abc/archive?path=/etc/pki/ca-trust/extracted/pem/tls-ca-bundle.pem", Response: &http.Response{StatusCode: http.StatusOK, Body: io.NopCloser(bytes.NewReader(sym2Tar))}},
+			{Method: "GET", URL: "/containers/abc/archive?path=/etc/pki/ca-trust/extracted/certs.pem", Response: &http.Response{StatusCode: http.StatusOK, Body: io.NopCloser(bytes.NewReader(targetTar))}},
+		},
+		URLValidator: httpxtest.NewURLValidator(t),
+	}, Container: "abc"}
+	got := must(f.Open("/etc/pki/tls/certs/ca-bundle.crt"))
+	got = must(f.Resolve(got))
+	if got.Path != "/etc/pki/ca-trust/extracted/certs.pem" {
+		t.Fatalf("Unexpected resolved path: want=/etc/pki/ca-trust/extracted/certs.pem got=%s", got.Path)
+	}
+	if string(got.Contents) != wantContents {
+		t.Fatalf("Unexpected resolved contents: want=%s got=%s", wantContents, string(got.Contents))
+	}
+}
+
 func TestWriteFile(t *testing.T) {
 	wantContents := "NAME=\"Alpine Linux\"\nID=alpine\nVERSION_ID=3.16.0\n"
 	wantStat := FileInfo{name: "release", mode: fs.ModePerm, size: int64(len(wantContents)), modTime: someTime}
