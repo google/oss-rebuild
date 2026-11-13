@@ -170,14 +170,19 @@ func (t *TransparentProxyService) ProxyTLS(addr string) {
 		log.Fatalf("Error listening for https connections - %v", err)
 	}
 	var inflightRequests sync.WaitGroup
+	acceptDone := make(chan struct{})
+	defer close(acceptDone)
 	t.mx.Lock()
 	t.shutdownFuncs = append(t.shutdownFuncs, func(ctx context.Context) error {
-		errChan := make(chan error)
+		errChan := make(chan error, 1)
 		go func() {
 			if err := ln.Close(); err != nil {
 				errChan <- err
 				return
 			}
+			// NOTE: An Add from a zero count must happen before Wait, so let the
+			// accept loop exit first.
+			<-acceptDone
 			log.Println("Waiting for in-flight requests to complete...")
 			inflightRequests.Wait()
 			errChan <- nil
@@ -185,7 +190,7 @@ func (t *TransparentProxyService) ProxyTLS(addr string) {
 		select {
 		case <-ctx.Done():
 			return ctx.Err()
-		case <-errChan:
+		case err := <-errChan:
 			return err
 		}
 	})
@@ -200,9 +205,7 @@ func (t *TransparentProxyService) ProxyTLS(addr string) {
 			log.Printf("Error accepting new connection - %v", err)
 			continue
 		}
-		inflightRequests.Add(1)
-		defer inflightRequests.Done()
-		go t.serveTLS(c)
+		inflightRequests.Go(func() { t.serveTLS(c) })
 	}
 }
 
