@@ -22,7 +22,6 @@ import (
 )
 
 func TestApplyNetworkPolicy(t *testing.T) {
-	proxyService := TransparentProxyService{}
 	tests := []struct {
 		name     string
 		mode     PolicyMode
@@ -98,8 +97,10 @@ func TestApplyNetworkPolicy(t *testing.T) {
 
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
-			proxyService.Mode = tc.mode
-			proxyService.Policy = &tc.policy
+			proxyService := NewTransparentProxyService(NewTransparentProxyServer(false), nil, tc.mode, TransparentProxyServiceOpts{
+				Policy:      &tc.policy,
+				SkipLogging: true,
+			})
 			req := httptest.NewRequest(http.MethodGet, tc.url, nil)
 
 			_, gotResp := proxyService.ApplyNetworkPolicy(req, nil)

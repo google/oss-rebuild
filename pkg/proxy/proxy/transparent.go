@@ -322,11 +322,14 @@ func (t *TransparentProxyService) policyHandler(w http.ResponseWriter, r *http.R
 }
 
 // Check that the requested url is allowed by the network policy.
-func (proxy TransparentProxyService) ApplyNetworkPolicy(req *http.Request, ctx *goproxy.ProxyCtx) (*http.Request, *http.Response) {
-	if proxy.Mode == DisabledMode {
+func (t *TransparentProxyService) ApplyNetworkPolicy(req *http.Request, ctx *goproxy.ProxyCtx) (*http.Request, *http.Response) {
+	if t.Mode == DisabledMode {
 		return req, nil
 	}
-	return proxy.Policy.Apply(req, ctx)
+	t.mx.Lock()
+	pol := t.Policy
+	t.mx.Unlock()
+	return pol.Apply(req, ctx)
 }
 
 // eatConnectResponseWriter drops the goproxy response to the HTTP CONNECT tunnel creation.
