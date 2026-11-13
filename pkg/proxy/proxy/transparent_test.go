@@ -15,6 +15,7 @@ import (
 	"net/http/httptest"
 	"reflect"
 	"testing"
+	"time"
 
 	"github.com/google/oss-rebuild/pkg/proxy/cert"
 	"github.com/google/oss-rebuild/pkg/proxy/policy"
@@ -307,5 +308,54 @@ func TestServeTLS(t *testing.T) {
 	defer resp.Body.Close()
 	if body, err := io.ReadAll(resp.Body); err != nil || string(body) != "ok" {
 		t.Errorf("body = %q, %v, want %q", body, err, "ok")
+	}
+}
+
+func TestRejectUnhandledConnectPort(t *testing.T) {
+	srv := httptest.NewServer(NewTransparentProxyServer(false))
+	defer srv.Close()
+	// An unrejected CONNECT dials its target before replying, so the target
+	// must be live for the reject case to see a 200.
+	backend, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatalf("Listen: %v", err)
+	}
+	defer backend.Close()
+	for _, tc := range []struct {
+		name       string
+		target     string
+		wantReject bool
+	}{
+		{name: "RejectUnhandledPort", target: backend.Addr().String(), wantReject: true},
+		{name: "AllowHTTPSPort", target: "127.0.0.1:443", wantReject: false},
+		{name: "AllowIPv6HTTPPort", target: "[::1]:80", wantReject: false},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			c, err := net.Dial("tcp", srv.Listener.Addr().String())
+			if err != nil {
+				t.Fatalf("Dial: %v", err)
+			}
+			defer c.Close()
+			c.SetDeadline(time.Now().Add(3 * time.Second))
+			if _, err := c.Write([]byte("CONNECT " + tc.target + " HTTP/1.1\r\nHost: " + tc.target + "\r\n\r\n")); err != nil {
+				t.Fatalf("Write: %v", err)
+			}
+			resp, err := http.ReadResponse(bufio.NewReader(c), nil)
+			if err == nil {
+				defer resp.Body.Close()
+			}
+			if tc.wantReject {
+				if err == nil && resp.StatusCode == http.StatusOK {
+					t.Fatalf("CONNECT %s = 200 OK, want rejection", tc.target)
+				}
+				return
+			}
+			if err != nil {
+				t.Fatalf("CONNECT %s error = %v, want 200 OK", tc.target, err)
+			}
+			if resp.StatusCode != http.StatusOK {
+				t.Fatalf("CONNECT %s = %d, want 200 OK", tc.target, resp.StatusCode)
+			}
+		})
 	}
 }

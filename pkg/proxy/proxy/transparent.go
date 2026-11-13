@@ -67,10 +67,11 @@ func NewTransparentProxyServer(verbose bool) *goproxy.ProxyHttpServer {
 	var alwaysMitmHTTP goproxy.FuncHttpsHandler = func(host string, ctx *goproxy.ProxyCtx) (*goproxy.ConnectAction, string) {
 		return goproxy.HTTPMitmConnect, host
 	}
-	t.OnRequest(goproxy.ReqHostMatches(regexp.MustCompile("^[^:]*(:80)?$"))).
+	t.OnRequest(goproxy.ReqHostMatches(regexp.MustCompile(`^([^:]+|\[[^\]]+\])(:80)?$`))).
 		HandleConnect(alwaysMitmHTTP)
 	t.OnRequest(goproxy.ReqHostMatches(regexp.MustCompile("^.*:" + tlsPort + "$"))).
 		HandleConnect(goproxy.AlwaysMitm)
+	t.OnRequest().HandleConnect(goproxy.AlwaysReject)
 	return t
 }
 
