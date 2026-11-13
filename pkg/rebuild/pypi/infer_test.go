@@ -1234,7 +1234,10 @@ func TestInferRustVersion(t *testing.T) {
 	}{
 		{name: "Stamped", reqs: []string{"maturin==1.7.4"}, module: comment("GCC: (GNU) 10.2.1 20210130 (Red Hat 10.2.1-11)", "rustc version 1.75.0 (82e1608df 2023-12-21)"), want: "1.75.0"},
 		{name: "SetuptoolsRust", reqs: []string{"setuptools-rust>=1.5"}, module: comment("rustc version 1.75.0 (82e1608df 2023-12-21)"), want: "1.75.0"},
-		{name: "NightlyUsesRelease", reqs: []string{"maturin==1.7.4"}, module: comment("rustc version 1.80.0-nightly (ada5e2c7b 2024-05-31)"), want: "1.78.0"},
+		{name: "Nightly", reqs: []string{"maturin==1.7.4"}, module: comment("rustc version 1.80.0-nightly (ada5e2c7b 2024-05-31)"), want: "nightly-2024-06-01"},
+		{name: "UndatedNightlyUsesRelease", reqs: []string{"maturin==1.7.4"}, module: comment("rustc version 1.80.0-nightly"), want: "1.78.0"},
+		{name: "BetaUsesRelease", reqs: []string{"maturin==1.7.4"}, module: comment("rustc version 1.80.0-beta.3 (ada5e2c7b 2024-05-31)"), want: "1.78.0"},
+		{name: "DistroStamp", reqs: []string{"setuptools-rust>=1.5"}, module: comment("rustc version 1.75.0 (Fedora 1.75.0-1.fc39)"), want: "1.75.0"},
 		{name: "UnstampedUsesRelease", reqs: []string{"maturin==1.7.4"}, module: comment("GCC: (GNU) 10.2.1 20210130 (Red Hat 10.2.1-11)"), want: "1.78.0"},
 		{name: "NoRust", reqs: []string{"setuptools==80.9.0"}, module: comment("rustc version 1.75.0 (82e1608df 2023-12-21)")},
 	}

@@ -177,8 +177,8 @@ const (
 	rustupHome = "/root/.rustup"
 )
 
-// rustVersionPat matches a pinned stable Rust release.
-var rustVersionPat = re.MustCompile(`^\d+\.\d+\.\d+$`)
+// rustVersionPat matches a pinned stable Rust release or dated nightly.
+var rustVersionPat = re.MustCompile(`^(\d+\.\d+\.\d+|nightly-\d{4}-\d{2}-\d{2})$`)
 
 // buildPathPat matches absolute paths of characters that need no shell quoting.
 var buildPathPat = re.MustCompile(`^(/[A-Za-z0-9._+,@-]+)+$`)
