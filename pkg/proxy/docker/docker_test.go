@@ -22,6 +22,7 @@ import (
 	"strings"
 	"sync"
 	"testing"
+	"time"
 )
 
 var PEM = []byte(`-----BEGIN CERTIFICATE-----
@@ -205,6 +206,24 @@ func TestProxyNormalReq(t *testing.T) {
 	if resp.StatusCode != http.StatusOK {
 		t.Fatalf("Unexpected return code: want=%d got=%d", http.StatusOK, resp.StatusCode)
 	}
+}
+
+func TestProxyReplacesStaleSocket(t *testing.T) {
+	sock := tempSocketName(t)
+	// Skipping the unlink on close leaves a stale socket file behind.
+	stale, err := net.Listen("unix", sock)
+	orFail(t, err)
+	stale.(*net.UnixListener).SetUnlinkOnClose(false)
+	orFail(t, stale.Close())
+	ctp, _ := NewContainerTruststorePatcher(CERT, ContainerTruststorePatcherOpts{})
+	go ctp.Proxy("unix://"+sock, tempSocketName(t))
+	for range 100 {
+		if fi, err := os.Stat(sock); err == nil && fi.Mode().Perm() == 0660 {
+			return
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+	t.Fatalf("Proxy socket %s never reached mode 0660", sock)
 }
 
 func TestPatchOnStart(t *testing.T) {
