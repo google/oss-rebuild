@@ -50,7 +50,8 @@ func (cc *CachedClient) Do(req *http.Request) (*http.Response, error) {
 	if req.Method != http.MethodGet && req.Method != http.MethodHead {
 		return cc.BasicClient.Do(req)
 	}
-	respBytes, err := cc.ch.Get(req.URL.String())
+	key := req.Method + " " + req.URL.String()
+	respBytes, err := cc.ch.Get(key)
 	if err == cache.ErrNotExist { // Cache not set
 		resp, err := cc.BasicClient.Do(req)
 		if err != nil {
@@ -62,7 +63,7 @@ func (cc *CachedClient) Do(req *http.Request) (*http.Response, error) {
 			return nil, err
 		}
 		if isServer := (resp.StatusCode >= 500 && resp.StatusCode <= 599); !isServer {
-			cc.ch.Set(req.URL.String(), func() ([]byte, error) { return foo.Bytes(), nil })
+			cc.ch.Set(key, func() ([]byte, error) { return foo.Bytes(), nil })
 		}
 		respBytes = foo.Bytes()
 	} else if err != nil {
