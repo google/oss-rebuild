@@ -13,6 +13,7 @@ import (
 	"io"
 	"maps"
 	"net/http"
+	"path"
 	"strings"
 	"testing"
 	"time"
@@ -834,7 +835,7 @@ func TestInferBaseImage(t *testing.T) {
 }
 
 func TestInferStrategyPlatformWheelSystemDeps(t *testing.T) {
-	repo := must(gitxtest.CreateRepoFromYAML(`commits:
+	pygraphvizYAML := `commits:
   - id: release-commit
     tag: v1.14
     files:
@@ -856,57 +857,105 @@ func TestInferStrategyPlatformWheelSystemDeps(t *testing.T) {
         [[tool.cibuildwheel.overrides]]
         select = "pp*-musllinux*"
         before-all = "apk add pypy-only-dev"
-`, nil))
+`
 	tests := []struct {
-		name     string
-		filename string
-		wheelTag string
-		soName   string
-		want     []string
+		name        string
+		pkg         string
+		version     string
+		repoYAML    string
+		filename    string
+		wheelFiles  []archive.ZipEntry
+		wantSysDeps []string
+		wantEnv     map[string]string
 	}{
 		{
 			name:     "MusllinuxStandardABI",
+			pkg:      "pygraphviz",
+			version:  "1.14",
+			repoYAML: pygraphvizYAML,
 			filename: "pygraphviz-1.14-cp310-cp310-musllinux_1_2_x86_64.whl",
-			wheelTag: "cp310-cp310-musllinux_1_2_x86_64",
-			soName:   "pygraphviz/_graphviz.cpython-310-x86_64-linux-musl.so",
-			want:     []string{"graphviz-dev", "so:libcgraph.so.6", "pc:libcgraph"},
+			wheelFiles: []archive.ZipEntry{
+				zipEntry("pygraphviz-1.14.dist-info/WHEEL", "Wheel-Version: 1.0\nGenerator: setuptools (70.0.0)\nRoot-Is-Purelib: false\nTag: cp310-cp310-musllinux_1_2_x86_64\n"),
+				zipEntry("pygraphviz-1.14.dist-info/METADATA", "Metadata-Version: 2.1\nName: pygraphviz\nVersion: 1.14\n"),
+				{
+					FileHeader: &zip.FileHeader{Name: "pygraphviz/_graphviz.cpython-310-x86_64-linux-musl.so"},
+					Body:       createTestELF([]string{"libc.so.6", "libcgraph-17278668.so.6.0.0"}, ""),
+				},
+			},
+			wantSysDeps: []string{"graphviz-dev", "so:libcgraph.so.6", "pc:libcgraph"},
 		},
 		{
 			name:     "ManylinuxFreeThreadedABI",
+			pkg:      "pygraphviz",
+			version:  "1.14",
+			repoYAML: pygraphvizYAML,
 			filename: "pygraphviz-1.14-cp313-cp313t-manylinux_2_28_x86_64.whl",
-			wheelTag: "cp313-cp313t-manylinux_2_28_x86_64",
-			soName:   "pygraphviz/_graphviz.cpython-313t-x86_64-linux-gnu.so",
-			want:     []string{"graphviz-devel", "python3-freethreading-devel", "libcgraph.so.6()(64bit)", "/usr/lib64/libcgraph.so"},
+			wheelFiles: []archive.ZipEntry{
+				zipEntry("pygraphviz-1.14.dist-info/WHEEL", "Wheel-Version: 1.0\nGenerator: setuptools (70.0.0)\nRoot-Is-Purelib: false\nTag: cp313-cp313t-manylinux_2_28_x86_64\n"),
+				zipEntry("pygraphviz-1.14.dist-info/METADATA", "Metadata-Version: 2.1\nName: pygraphviz\nVersion: 1.14\n"),
+				{
+					FileHeader: &zip.FileHeader{Name: "pygraphviz/_graphviz.cpython-313t-x86_64-linux-gnu.so"},
+					Body:       createTestELF([]string{"libc.so.6", "libcgraph-17278668.so.6.0.0"}, ""),
+				},
+			},
+			wantSysDeps: []string{"graphviz-devel", "python3-freethreading-devel", "libcgraph.so.6()(64bit)", "/usr/lib64/libcgraph.so"},
+		},
+		{
+			name:    "ClangMypycAppendsCompiler",
+			pkg:     "mypycpkg",
+			version: "1.0",
+			repoYAML: `commits:
+  - id: release-commit
+    tag: v1.0
+    files:
+      pyproject.toml: |
+        [project]
+        name = "mypycpkg"
+        version = "1.0"
+        [build-system]
+        requires = ["hatchling>=1.27.0"]
+        build-backend = "hatchling.build"
+        [tool.hatch.build.targets.wheel.hooks.mypyc]
+        enable-by-default = false
+        dependencies = ["hatch-mypyc>=0.16.0"]
+`,
+			filename: "mypycpkg-1.0-cp312-cp312-musllinux_1_2_x86_64.whl",
+			wheelFiles: []archive.ZipEntry{
+				zipEntry("mypycpkg-1.0.dist-info/WHEEL", "Wheel-Version: 1.0\nGenerator: hatchling 1.27.0\nRoot-Is-Purelib: false\nTag: cp312-cp312-musllinux_1_2_x86_64\n"),
+				zipEntry("mypycpkg-1.0.dist-info/METADATA", "Metadata-Version: 2.1\nName: mypycpkg\nVersion: 1.0\n"),
+				{
+					FileHeader: &zip.FileHeader{Name: "mypycpkg/_native.cpython-312-x86_64-linux-musl.so"},
+					Body:       createTestELF([]string{"libc.so.6", "libcgraph-17278668.so.6.0.0"}, ""),
+				},
+				{
+					FileHeader: &zip.FileHeader{Name: "a1b2c3__mypyc.cpython-312-x86_64-linux-musl.so"},
+					Body:       buildELF(elfSection{".comment", elf.SHT_PROGBITS, []byte("\x00GCC: (GNU) 14.2.1\x00clang version 19.1.7\x00")}),
+				},
+			},
+			wantSysDeps: []string{"so:libcgraph.so.6", "pc:libcgraph", "clang"},
+			wantEnv: map[string]string{
+				"HATCH_BUILD_HOOK_ENABLE_MYPYC": "1",
+				"CC":                            "clang",
+			},
 		},
 	}
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
+			repo := must(gitxtest.CreateRepoFromYAML(tc.repoYAML, nil))
 			wheelURL := "https://files.pythonhosted.org/" + tc.filename
-			wheelBuf := must(archivetest.ZipFile([]archive.ZipEntry{
-				{
-					FileHeader: &zip.FileHeader{Name: "pygraphviz-1.14.dist-info/WHEEL"},
-					Body:       []byte("Wheel-Version: 1.0\nGenerator: setuptools (70.0.0)\nRoot-Is-Purelib: false\nTag: " + tc.wheelTag + "\n"),
-				},
-				{
-					FileHeader: &zip.FileHeader{Name: "pygraphviz-1.14.dist-info/METADATA"},
-					Body:       []byte("Metadata-Version: 2.1\nName: pygraphviz\nVersion: 1.14\n"),
-				},
-				{
-					FileHeader: &zip.FileHeader{Name: tc.soName},
-					Body:       createTestELF([]string{"libc.so.6", "libcgraph-17278668.so.6.0.0"}, ""),
-				},
-			}))
-			releaseJSON := fmt.Sprintf(`{"info":{"name":"pygraphviz","version":"1.14"},"urls":[{"filename":%q,"url":%q,"size":%d,"upload_time_iso_8601":"2026-05-01T00:00:00Z"}]}`, tc.filename, wheelURL, wheelBuf.Len())
+			wheelBuf := must(archivetest.ZipFile(tc.wheelFiles))
+			releaseJSON := fmt.Sprintf(`{"info":{"name":%q,"version":%q},"urls":[{"filename":%q,"url":%q,"size":%d,"upload_time_iso_8601":"2026-05-01T00:00:00Z"}]}`, tc.pkg, tc.version, tc.filename, wheelURL, wheelBuf.Len())
+			releaseURL := fmt.Sprintf("https://pypi.org/pypi/%s/%s/json", tc.pkg, tc.version)
 			mux := rebuild.RegistryMux{PyPI: pypireg.HTTPRegistry{Client: &httpxtest.MockClient{
 				Calls: []httpxtest.Call{
-					{URL: "https://pypi.org/pypi/pygraphviz/1.14/json", Response: &http.Response{StatusCode: 200, Body: httpxtest.Body(releaseJSON)}},
-					{URL: "https://pypi.org/pypi/pygraphviz/1.14/json", Response: &http.Response{StatusCode: 200, Body: httpxtest.Body(releaseJSON)}},
+					{URL: releaseURL, Response: &http.Response{StatusCode: 200, Body: httpxtest.Body(releaseJSON)}},
+					{URL: releaseURL, Response: &http.Response{StatusCode: 200, Body: httpxtest.Body(releaseJSON)}},
 					{URL: wheelURL, Response: &http.Response{StatusCode: 200, Body: io.NopCloser(bytes.NewReader(wheelBuf.Bytes()))}},
 				},
 				URLValidator: httpxtest.NewURLValidator(t),
 			}}}
-			rcfg := &rebuild.RepoConfig{Repo: gitx.Repo{Repository: repo.Repository, Storer: repo.Storer}, URI: "https://github.com/pygraphviz/pygraphviz"}
-			target := rebuild.Target{Ecosystem: rebuild.PyPI, Package: "pygraphviz", Version: "1.14", Artifact: tc.filename}
+			rcfg := &rebuild.RepoConfig{Repo: gitx.Repo{Repository: repo.Repository, Storer: repo.Storer}, URI: "https://github.com/example/" + tc.pkg}
+			target := rebuild.Target{Ecosystem: rebuild.PyPI, Package: tc.pkg, Version: tc.version, Artifact: tc.filename}
 			strat, err := Rebuilder{}.InferStrategy(context.Background(), target, mux, rcfg, nil)
 			if err != nil {
 				t.Fatalf("InferStrategy() unexpected error: %v", err)
@@ -915,8 +964,11 @@ func TestInferStrategyPlatformWheelSystemDeps(t *testing.T) {
 			if !ok {
 				t.Fatalf("InferStrategy() returned %T, want *PlatformWheelBuild", strat)
 			}
-			if diff := cmp.Diff(tc.want, got.SystemDeps); diff != "" {
+			if diff := cmp.Diff(tc.wantSysDeps, got.SystemDeps); diff != "" {
 				t.Errorf("PlatformWheelBuild.SystemDeps diff (-want +got):\n%s", diff)
+			}
+			if diff := cmp.Diff(tc.wantEnv, got.BuildEnv); diff != "" {
+				t.Errorf("PlatformWheelBuild.BuildEnv diff (-want +got):\n%s", diff)
 			}
 		})
 	}
@@ -1551,5 +1603,154 @@ func TestInferStrategyHatchlingOptInHooks(t *testing.T) {
 	}
 	if diff := cmp.Diff(wantReqs, got.Requirements); diff != "" {
 		t.Errorf("PlatformWheelBuild.Requirements diff (-want +got):\n%s", diff)
+	}
+}
+
+func TestInferMypycBuildEnv(t *testing.T) {
+	const setupReadsDebugEnv = "import os\nfrom mypyc.build import mypycify\ndebug_level = os.getenv('MYPYC_DEBUG_LEVEL', '1')\n"
+	gccDebugMypycModule := func(name string) archive.ZipEntry {
+		return zipEntry(name, string(buildELF(
+			elfSection{".comment", elf.SHT_PROGBITS, []byte("GCC: (GNU) 14.2.1\x00")},
+			elfSection{".debug_info", elf.SHT_PROGBITS, []byte{0}},
+		)))
+	}
+	cython329DebugModule := func(name string) archive.ZipEntry {
+		return zipEntry(name, string(buildELF(
+			elfSection{".rodata", elf.SHT_PROGBITS, []byte("_cython_3_2_9\x00")},
+			elfSection{".debug_info", elf.SHT_PROGBITS, []byte{0}},
+		)))
+	}
+	clangStrippedMypycModule := func(name string) archive.ZipEntry {
+		return zipEntry(name, string(buildELF(
+			elfSection{".comment", elf.SHT_PROGBITS, []byte("\x00GCC: (GNU) 14.2.1\x00clang version 19.1.7\x00")},
+		)))
+	}
+	gccStrippedMypycModule := func(name string) archive.ZipEntry {
+		return zipEntry(name, string(buildELF(
+			elfSection{".comment", elf.SHT_PROGBITS, []byte("GCC: (GNU) 14.2.1\x00")},
+		)))
+	}
+	clangDebugMypycModule := func(name string) archive.ZipEntry {
+		return zipEntry(name, string(buildELF(
+			elfSection{".comment", elf.SHT_PROGBITS, []byte("Alpine clang version 20.1.8\x00")},
+			elfSection{".debug_info", elf.SHT_PROGBITS, []byte{0}},
+		)))
+	}
+	tests := []struct {
+		name        string
+		dir         string
+		setupPy     string
+		wheelFiles  []archive.ZipEntry
+		reqs        []string
+		wantEnv     map[string]string
+		wantSysDeps []string
+	}{
+		{
+			name:    "DefaultGCCWithDebugSections",
+			setupPy: setupReadsDebugEnv,
+			wheelFiles: []archive.ZipEntry{
+				gccDebugMypycModule("a1b2c3__mypyc.cpython-312-x86_64-linux-gnu.so"),
+			},
+			reqs: []string{"setuptools==84.0.0"},
+		},
+		{
+			name:    "SetupPyReadsDebugLevelAndStrippedClang",
+			setupPy: setupReadsDebugEnv,
+			wheelFiles: []archive.ZipEntry{
+				clangStrippedMypycModule("a1b2c3__mypyc.cpython-312-x86_64-linux-gnu.so"),
+			},
+			reqs: []string{"setuptools==84.0.0"},
+			wantEnv: map[string]string{
+				"CC":                "clang",
+				"MYPYC_DEBUG_LEVEL": "0",
+			},
+			wantSysDeps: []string{"clang"},
+		},
+		{
+			name:    "SetupPyWithoutDebugLevelEnvOmitsDebugVar",
+			setupPy: "# MYPYC_DEBUG_LEVEL is not forwarded here\nfrom mypyc.build import mypycify\next_modules = mypycify(['mod.py'])\n",
+			wheelFiles: []archive.ZipEntry{
+				gccStrippedMypycModule("a1b2c3__mypyc.cpython-312-x86_64-linux-gnu.so"),
+			},
+			reqs: []string{"setuptools==84.0.0"},
+		},
+		{
+			name: "HatchlingClangStrippedEmitsCompilerOnly",
+			wheelFiles: []archive.ZipEntry{
+				clangStrippedMypycModule("a1b2c3__mypyc.cpython-312-x86_64-linux-gnu.so"),
+			},
+			reqs:        []string{"hatchling==1.27.0"},
+			wantEnv:     map[string]string{"CC": "clang"},
+			wantSysDeps: []string{"clang"},
+		},
+		{
+			name:    "ClangWithDebugSectionsRetainsDefaultDebugLevel",
+			setupPy: setupReadsDebugEnv,
+			wheelFiles: []archive.ZipEntry{
+				clangDebugMypycModule("group__mypyc.cpython-312-x86_64-linux-musl.so"),
+			},
+			reqs:        []string{"setuptools==84.0.0"},
+			wantEnv:     map[string]string{"CC": "clang"},
+			wantSysDeps: []string{"clang"},
+		},
+		{
+			name:    "ZdebugSectionRetainsDefaultDebugLevel",
+			setupPy: setupReadsDebugEnv,
+			wheelFiles: []archive.ZipEntry{
+				zipEntry("group__mypyc.cpython-312-x86_64-linux-gnu.so", string(buildELF(
+					elfSection{".comment", elf.SHT_PROGBITS, []byte("GCC: (GNU) 14.2.1\x00")},
+					elfSection{".zdebug_info", elf.SHT_PROGBITS, []byte{0}},
+				))),
+			},
+			reqs: []string{"setuptools==84.0.0"},
+		},
+		{
+			name:    "MixedCythonDebugAndStrippedMypycEmitsDebugLevelZero",
+			dir:     "sub",
+			setupPy: setupReadsDebugEnv,
+			wheelFiles: []archive.ZipEntry{
+				cython329DebugModule("pkg/_kernel.cpython-312-x86_64-linux-gnu.so"),
+				gccStrippedMypycModule("0123abcd__mypyc.cpython-312-x86_64-linux-gnu.so"),
+			},
+			reqs:    []string{"setuptools==84.0.0"},
+			wantEnv: map[string]string{"MYPYC_DEBUG_LEVEL": "0"},
+		},
+		{
+			name:    "UnparseableMypycELFOmitsDebugLevelZero",
+			setupPy: setupReadsDebugEnv,
+			wheelFiles: []archive.ZipEntry{
+				zipEntry("a1b2c3__mypyc.cpython-312-x86_64-linux-gnu.so", "not-an-elf"),
+			},
+			reqs: []string{"setuptools==84.0.0"},
+		},
+		{
+			name:    "FlitCoreIgnored",
+			setupPy: setupReadsDebugEnv,
+			wheelFiles: []archive.ZipEntry{
+				clangStrippedMypycModule("a1b2c3__mypyc.cpython-312-x86_64-linux-gnu.so"),
+			},
+			reqs: []string{"setuptools<=67.7.2", "flit_core==3.9.0"},
+		},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			files := gitxtest.FileContent{"README.md": ""}
+			if tc.setupPy != "" {
+				files[path.Join(tc.dir, "setup.py")] = tc.setupPy
+			}
+			repo := must(gitxtest.CreateRepo([]gitxtest.Commit{{ID: "initial", Files: files}}, nil))
+			tree := must(must(repo.Repository.CommitObject(git2.Hash(repo.Commits["initial"]))).Tree())
+			zr := readWheel(t, tc.wheelFiles...)
+			gotEnv, gotSysDeps, err := inferMypycBuildEnv(tree, tc.dir, zr, tc.reqs)
+			if err != nil {
+				t.Fatalf("inferMypycBuildEnv() unexpected error: %v", err)
+			}
+			if diff := cmp.Diff(tc.wantEnv, gotEnv); diff != "" {
+				t.Errorf("inferMypycBuildEnv() env diff (-want +got):\n%s", diff)
+			}
+			if diff := cmp.Diff(tc.wantSysDeps, gotSysDeps); diff != "" {
+				t.Errorf("inferMypycBuildEnv() sysDeps diff (-want +got):\n%s", diff)
+			}
+		})
 	}
 }
