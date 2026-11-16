@@ -6,14 +6,18 @@ package pypi
 import (
 	"archive/zip"
 	"bytes"
+	"compress/flate"
 	"debug/dwarf"
 	"debug/elf"
 	"encoding/binary"
+	"io"
+	"os"
 	"slices"
 	"testing"
 
 	"github.com/google/go-cmp/cmp"
 	"github.com/google/oss-rebuild/pkg/archive"
+	"github.com/pkg/errors"
 )
 
 type elfSection struct {
@@ -101,6 +105,72 @@ func readWheel(t *testing.T, entries ...archive.ZipEntry) *zip.Reader {
 	t.Helper()
 	whl := wheelZip(t, entries)
 	return must(zip.NewReader(bytes.NewReader(whl), int64(len(whl))))
+}
+
+// readPaddedWheel returns a wheel holding a single module that starts with
+// module and is zero-padded to size bytes.
+func readPaddedWheel(t *testing.T, name string, module []byte, size int64) *zip.Reader {
+	t.Helper()
+	t.Setenv("TMPDIR", t.TempDir())
+	var buf bytes.Buffer
+	zw := zip.NewWriter(&buf)
+	zw.RegisterCompressor(zip.Deflate, func(out io.Writer) (io.WriteCloser, error) {
+		return flate.NewWriter(out, flate.BestSpeed)
+	})
+	w := must(zw.CreateHeader(&zip.FileHeader{Name: name, Method: zip.Deflate}))
+	if _, err := w.Write(module); err != nil {
+		t.Fatalf("writing module: %v", err)
+	}
+	if _, err := io.CopyN(w, zeroReader{}, size-int64(len(module))); err != nil {
+		t.Fatalf("padding module: %v", err)
+	}
+	if err := zw.Close(); err != nil {
+		t.Fatalf("closing wheel: %v", err)
+	}
+	return must(zip.NewReader(bytes.NewReader(buf.Bytes()), int64(buf.Len())))
+}
+
+type zeroReader struct{}
+
+func (zeroReader) Read(p []byte) (int, error) {
+	clear(p)
+	return len(p), nil
+}
+
+func TestOpenELFStreamed(t *testing.T) {
+	for _, tc := range []struct {
+		name    string
+		module  []byte
+		wantErr error
+	}{
+		{
+			name:   "ValidModuleUnlinksTempFile",
+			module: elfWithUnits(compileUnit{Name: "pkg/_speedups.c", CompDir: "/project"}),
+		},
+		{
+			name:    "MalformedModuleReturnsErrNotELF",
+			module:  []byte("\x7fELF\x02\x01"),
+			wantErr: errNotELF,
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			zr := readPaddedWheel(t, "pkg/_speedups.abi3.so", tc.module, maxInMemoryModuleSize+1<<20)
+			ef, err := openELF(zr.File[0])
+			if !errors.Is(err, tc.wantErr) {
+				t.Fatalf("openELF() error = %v, want %v", err, tc.wantErr)
+			}
+			if ef != nil {
+				ef.Close()
+			}
+			entries, err := os.ReadDir(os.Getenv("TMPDIR"))
+			if err != nil {
+				t.Fatalf("reading TMPDIR: %v", err)
+			}
+			if len(entries) != 0 {
+				t.Errorf("TMPDIR has %d leftover entries, want 0", len(entries))
+			}
+		})
+	}
 }
 
 func TestCandidatePaths(t *testing.T) {

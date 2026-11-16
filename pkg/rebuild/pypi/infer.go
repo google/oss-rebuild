@@ -7,6 +7,7 @@ import (
 	"archive/zip"
 	"bytes"
 	"context"
+	"debug/elf"
 	"fmt"
 	"io"
 	"io/fs"
@@ -715,19 +716,21 @@ func inferCythonRequirement(tree *git2.Tree, dir, pkg string, zr *zip.Reader, re
 	if !setupCythonImportPat.MatchString(src) {
 		return "", nil
 	}
-	if v := wheelCythonVersion(zr); v != "" {
-		return "Cython==" + v, nil
+	v, err := wheelCythonVersion(zr)
+	if err != nil || v == "" {
+		return "", err
 	}
-	return "", nil
+	return "Cython==" + v, nil
 }
 
 // wheelCythonVersion returns the Cython version that the wheel's extension
 // modules record in .rodata, or "" if none does.
-func wheelCythonVersion(zr *zip.Reader) string {
-	if m := moduleSectionMatch(zr, ".rodata", cythonABIModulePat); m != nil {
-		return fmt.Sprintf("%s.%s.%s%s", m[1], m[2], m[3], m[4])
+func wheelCythonVersion(zr *zip.Reader) (string, error) {
+	m, err := moduleSectionMatch(zr, ".rodata", cythonABIModulePat)
+	if err != nil || m == nil {
+		return "", err
 	}
-	return ""
+	return fmt.Sprintf("%s.%s.%s%s", m[1], m[2], m[3], m[4]), nil
 }
 
 // rustcStampPat matches the version a stable rustc records in .comment, as in
@@ -742,7 +745,11 @@ func inferRustVersion(zr *zip.Reader, reqs []string, uploaded time.Time) (string
 	if !hasRequirement(reqs, "maturin", "setuptools-rust") {
 		return "", nil
 	}
-	if m := moduleSectionMatch(zr, ".comment", rustcStampPat); m != nil {
+	m, err := moduleSectionMatch(zr, ".comment", rustcStampPat)
+	if err != nil {
+		return "", err
+	}
+	if m != nil {
 		if len(m[2]) == 0 {
 			return string(m[1]), nil
 		}
@@ -767,29 +774,40 @@ func maturinTakesTarget(reqs []string) bool {
 }
 
 // moduleSectionMatch returns the submatches of pat in the named section of the
-// first wheel extension module where it matches, or nil if there is none.
-func moduleSectionMatch(zr *zip.Reader, section string, pat *re.Regexp) [][]byte {
+// first wheel extension module where it matches, or nil, nil if there is none.
+func moduleSectionMatch(zr *zip.Reader, section string, pat *re.Regexp) ([][]byte, error) {
 	for _, f := range zr.File {
 		if !isExtensionModule(f.Name) || f.UncompressedSize64 > maxModuleSize {
 			continue
 		}
 		ef, err := openELF(f)
+		if errors.Is(err, errNotELF) {
+			continue
+		}
 		if err != nil {
-			continue
+			return nil, errors.Wrapf(err, "reading %s in wheel", f.Name)
 		}
-		sec := ef.Section(section)
-		if sec == nil {
-			continue
-		}
-		b, err := sec.Data()
-		if err != nil {
-			continue
-		}
-		if m := pat.FindSubmatch(b); m != nil {
-			return m
+		m := sectionMatch(ef, section, pat)
+		ef.Close()
+		if m != nil {
+			return m, nil
 		}
 	}
-	return nil
+	return nil, nil
+}
+
+// sectionMatch returns the submatches of pat in the named section of ef, or nil
+// if the section is missing, unreadable, or does not match.
+func sectionMatch(ef *elf.File, section string, pat *re.Regexp) [][]byte {
+	sec := ef.Section(section)
+	if sec == nil {
+		return nil
+	}
+	b, err := sec.Data()
+	if err != nil {
+		return nil
+	}
+	return pat.FindSubmatch(b)
 }
 
 var (
