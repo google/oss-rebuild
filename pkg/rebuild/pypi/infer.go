@@ -571,7 +571,7 @@ func inferBuild(ctx context.Context, t rebuild.Target, mux rebuild.RegistryMux, 
 		if err != nil {
 			return nil, errors.Wrap(err, "inferring Hatchling opt-in hooks")
 		}
-		mypycEnv, mypycSysDeps, err := inferMypycBuildEnv(tree, dir, zr, reqs)
+		mypycEnv, mypycSysDeps, err := inferMypycBuildEnv(tree, dir, zr, highest.LibcImpl, reqs)
 		if err != nil {
 			return nil, errors.Wrap(err, "inferring mypyc build env")
 		}
@@ -581,7 +581,7 @@ func inferBuild(ctx context.Context, t rebuild.Target, mux rebuild.RegistryMux, 
 			} else {
 				maps.Copy(buildEnv, mypycEnv)
 			}
-			sysDeps = appendUnique(sysDeps, mypycSysDeps...)
+			sysDeps = mergeMypycSystemDeps(sysDeps, mypycSysDeps)
 		}
 		rustVersion, err := inferRustVersion(zr, reqs, a.UploadTime)
 		if err != nil {
@@ -713,6 +713,9 @@ var (
 	cythonABIModulePat = re.MustCompile(`_cython_(\d+)_(\d+)_(\d+)((?:a|b|rc)\d+)?(?:[a-z]|\b)`)
 	// extraMarkerPat matches Requires-Dist markers that apply only to an extra.
 	extraMarkerPat = re.MustCompile(`\bextra\b`)
+	// mypycClangVersionPat matches the X.Y.Z release in a clang .comment string, as
+	// in "clang version 20.1.8 (20.1.8-1.module_el8...)".
+	mypycClangVersionPat = re.MustCompile(`clang version (\d+\.\d+\.\d+)\b`)
 )
 
 // inferCythonRequirement pins Cython to the version the wheel's extension
@@ -877,7 +880,7 @@ func pinCythonRequirement(req, cythonVersion string) string {
 // inferMypycBuildEnv returns any BuildEnv variables and SystemDeps compiler
 // packages needed to match the compiler and debug-info stripping observed in
 // zr's __mypyc shared libraries, or nil when defaults match.
-func inferMypycBuildEnv(tree *git2.Tree, dir string, zr *zip.Reader, reqs []string) (buildEnv map[string]string, sysDeps []string, err error) {
+func inferMypycBuildEnv(tree *git2.Tree, dir string, zr *zip.Reader, libc platform.LibcImpl, reqs []string) (buildEnv map[string]string, sysDeps []string, err error) {
 	// NOTE: inferRequirements derives a setuptools ceiling from the wheel's
 	// Generator header even when pyproject.toml selects flit_core.
 	isSetuptools := hasRequirement(reqs, "setuptools") && !hasRequirement(reqs, "flit-core")
@@ -889,10 +892,7 @@ func inferMypycBuildEnv(tree *git2.Tree, dir string, zr *zip.Reader, reqs []stri
 	buildEnv = make(map[string]string)
 	if info.hasClang {
 		buildEnv["CC"] = "clang"
-		// NOTE: SystemDeps installs the distro repo's current clang, which may differ
-		// from the upstream version because Alpine and AlmaLinux AppStream do not
-		// retain superseded clang releases and .comment can omit the RPM release.
-		sysDeps = []string{"clang"}
+		sysDeps = []string{info.clangSystemDep(libc)}
 	}
 	// NOTE: mypyc.build.mypycify takes debug_level as a keyword argument (appending
 	// "-g0" after sysconfig CFLAGS) and ignores the environment. hatch-mypyc passes
@@ -913,10 +913,56 @@ func inferMypycBuildEnv(tree *git2.Tree, dir string, zr *zip.Reader, reqs []stri
 	return buildEnv, sysDeps, nil
 }
 
+// mergeMypycSystemDeps merges mypycDeps into sysDeps, replacing any unpinned
+// clang toolchain or companion packages from cibuildwheel hooks when mypycDeps
+// pins "clang-<X.Y.Z>*" so the package manager does not also resolve the
+// latest clang stream.
+func mergeMypycSystemDeps(sysDeps, mypycDeps []string) []string {
+	out := slices.Clone(sysDeps)
+	for _, dep := range mypycDeps {
+		if isClangPin(dep) {
+			if idx := slices.IndexFunc(out, isUnpinnedClangDep); idx >= 0 && !slices.Contains(out, dep) {
+				out[idx] = dep
+			}
+			out = slices.DeleteFunc(out, isUnpinnedClangDep)
+		}
+		out = appendUnique(out, dep)
+	}
+	return out
+}
+
+func isUnpinnedClangDep(dep string) bool {
+	switch dep {
+	case "clang", "llvm-toolset", "clang-libs", "clang-devel", "clang-tools-extra":
+		return true
+	default:
+		return false
+	}
+}
+
 type mypycModuleInfo struct {
-	inspected bool // at least one __mypyc ELF parsed
-	hasClang  bool
-	hasDebug  bool
+	inspected    bool // at least one __mypyc ELF parsed
+	hasClang     bool
+	clangVersion string // X.Y.Z release from .comment, or "" when unversioned
+	hasDebug     bool
+}
+
+// clangSystemDep pins "clang-<X.Y.Z>*" on glibc manylinux images because
+// AlmaLinux AppStream retains older clang module RPMs alongside newer streams
+// whose transitive gcc-toolset dependency shifts clang's selected C runtime.
+// The trailing "*" matches any RPM release, which .comment can omit.
+// NOTE: Alpine musllinux repositories carry a single clang release per image,
+// and custom or pre-release builds can omit an X.Y.Z version in .comment. Both
+// fall back to unpinned "clang", installing the repository's current release.
+func (i mypycModuleInfo) clangSystemDep(libc platform.LibcImpl) string {
+	if libc == platform.Glibc && i.clangVersion != "" {
+		return "clang-" + i.clangVersion + "*"
+	}
+	return "clang"
+}
+
+func isClangPin(dep string) bool {
+	return strings.HasPrefix(dep, "clang-") && strings.HasSuffix(dep, "*")
 }
 
 func (i mypycModuleInfo) debugStripped() bool {
@@ -932,7 +978,7 @@ func inspectMypycModules(zr *zip.Reader) mypycModuleInfo {
 		if !isMypycModule(f.Name) || f.UncompressedSize64 > maxModuleSize {
 			continue
 		}
-		if info.hasClang && info.hasDebug {
+		if info.clangVersion != "" && info.hasDebug {
 			break
 		}
 		ef, err := openELF(f)
@@ -946,6 +992,11 @@ func inspectMypycModules(zr *zip.Reader) mypycModuleInfo {
 		if sec := ef.Section(".comment"); sec != nil {
 			if b, err := sec.Data(); err == nil && bytes.Contains(b, []byte("clang version ")) {
 				info.hasClang = true
+				if info.clangVersion == "" {
+					if m := mypycClangVersionPat.FindSubmatch(b); m != nil {
+						info.clangVersion = string(m[1])
+					}
+				}
 			}
 		}
 		if slices.ContainsFunc(ef.Sections, func(sec *elf.Section) bool {

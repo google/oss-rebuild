@@ -938,6 +938,44 @@ func TestInferStrategyPlatformWheelSystemDeps(t *testing.T) {
 				"CC":                            "clang",
 			},
 		},
+		{
+			name:    "ClangMypycPinsVersionOnGlibcManylinux",
+			pkg:     "mypy",
+			version: "2.3.1",
+			repoYAML: `commits:
+  - id: release-commit
+    tag: v2.3.1
+    files:
+      pyproject.toml: |
+        [project]
+        name = "mypy"
+        version = "2.3.1"
+        [build-system]
+        requires = ["setuptools>=61", "mypy_extensions>=1.0.0"]
+        build-backend = "setuptools.build_meta"
+        [tool.cibuildwheel.linux]
+        before-all = "yum install -y clang"
+      setup.py: |
+        import os
+        from setuptools import setup
+        debug_level = os.getenv("MYPYC_DEBUG_LEVEL", "1")
+        setup()
+`,
+			filename: "mypy-2.3.1-cp312-cp312-manylinux_2_28_x86_64.whl",
+			wheelFiles: []archive.ZipEntry{
+				zipEntry("mypy-2.3.1.dist-info/WHEEL", "Wheel-Version: 1.0\nGenerator: setuptools (80.9.0)\nRoot-Is-Purelib: false\nTag: cp312-cp312-manylinux_2_28_x86_64\n"),
+				zipEntry("mypy-2.3.1.dist-info/METADATA", "Metadata-Version: 2.1\nName: mypy\nVersion: 2.3.1\n"),
+				{
+					FileHeader: &zip.FileHeader{Name: "group__mypyc.cpython-312-x86_64-linux-gnu.so"},
+					Body:       buildELF(elfSection{".comment", elf.SHT_PROGBITS, []byte("\x00GCC: (GNU) 15.2.1\x00clang version 21.1.8 (21.1.8-1.module_el8.10.0+4172+b6b13d75)\x00")}),
+				},
+			},
+			wantSysDeps: []string{"clang-21.1.8*"},
+			wantEnv: map[string]string{
+				"CC":                "clang",
+				"MYPYC_DEBUG_LEVEL": "0",
+			},
+		},
 	}
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
@@ -1641,6 +1679,7 @@ func TestInferMypycBuildEnv(t *testing.T) {
 		dir         string
 		setupPy     string
 		wheelFiles  []archive.ZipEntry
+		libc        platform.LibcImpl // "" defaults to platform.Glibc
 		reqs        []string
 		wantEnv     map[string]string
 		wantSysDeps []string
@@ -1664,7 +1703,7 @@ func TestInferMypycBuildEnv(t *testing.T) {
 				"CC":                "clang",
 				"MYPYC_DEBUG_LEVEL": "0",
 			},
-			wantSysDeps: []string{"clang"},
+			wantSysDeps: []string{"clang-19.1.7*"},
 		},
 		{
 			name:    "SetupPyWithoutDebugLevelEnvOmitsDebugVar",
@@ -1681,7 +1720,31 @@ func TestInferMypycBuildEnv(t *testing.T) {
 			},
 			reqs:        []string{"hatchling==1.27.0"},
 			wantEnv:     map[string]string{"CC": "clang"},
+			wantSysDeps: []string{"clang-19.1.7*"},
+		},
+		{
+			name: "UnversionedClangCommentFallsBackToBareClang",
+			wheelFiles: []archive.ZipEntry{
+				zipEntry("group__mypyc.cpython-312-x86_64-linux-gnu.so", string(buildELF(
+					elfSection{".comment", elf.SHT_PROGBITS, []byte("\x00clang version trunk\x00")},
+				))),
+			},
+			reqs:        []string{"hatchling==1.27.0"},
+			wantEnv:     map[string]string{"CC": "clang"},
 			wantSysDeps: []string{"clang"},
+		},
+		{
+			name: "SecondMypycModuleSuppliesClangVersion",
+			wheelFiles: []archive.ZipEntry{
+				zipEntry("first__mypyc.cpython-312-x86_64-linux-gnu.so", string(buildELF(
+					elfSection{".comment", elf.SHT_PROGBITS, []byte("\x00clang version trunk\x00")},
+					elfSection{".debug_info", elf.SHT_PROGBITS, []byte{0}},
+				))),
+				clangStrippedMypycModule("second__mypyc.cpython-312-x86_64-linux-gnu.so"),
+			},
+			reqs:        []string{"hatchling==1.27.0"},
+			wantEnv:     map[string]string{"CC": "clang"},
+			wantSysDeps: []string{"clang-19.1.7*"},
 		},
 		{
 			name:    "ClangWithDebugSectionsRetainsDefaultDebugLevel",
@@ -1689,6 +1752,7 @@ func TestInferMypycBuildEnv(t *testing.T) {
 			wheelFiles: []archive.ZipEntry{
 				clangDebugMypycModule("group__mypyc.cpython-312-x86_64-linux-musl.so"),
 			},
+			libc:        platform.Musl,
 			reqs:        []string{"setuptools==84.0.0"},
 			wantEnv:     map[string]string{"CC": "clang"},
 			wantSysDeps: []string{"clang"},
@@ -1741,7 +1805,11 @@ func TestInferMypycBuildEnv(t *testing.T) {
 			repo := must(gitxtest.CreateRepo([]gitxtest.Commit{{ID: "initial", Files: files}}, nil))
 			tree := must(must(repo.Repository.CommitObject(git2.Hash(repo.Commits["initial"]))).Tree())
 			zr := readWheel(t, tc.wheelFiles...)
-			gotEnv, gotSysDeps, err := inferMypycBuildEnv(tree, tc.dir, zr, tc.reqs)
+			libc := platform.Glibc
+			if tc.libc != "" {
+				libc = tc.libc
+			}
+			gotEnv, gotSysDeps, err := inferMypycBuildEnv(tree, tc.dir, zr, libc, tc.reqs)
 			if err != nil {
 				t.Fatalf("inferMypycBuildEnv() unexpected error: %v", err)
 			}
@@ -1750,6 +1818,53 @@ func TestInferMypycBuildEnv(t *testing.T) {
 			}
 			if diff := cmp.Diff(tc.wantSysDeps, gotSysDeps); diff != "" {
 				t.Errorf("inferMypycBuildEnv() sysDeps diff (-want +got):\n%s", diff)
+			}
+		})
+	}
+}
+
+func TestMergeMypycSystemDeps(t *testing.T) {
+	for _, tc := range []struct {
+		name      string
+		sysDeps   []string
+		mypycDeps []string
+		want      []string
+	}{
+		{
+			name:      "ReplacesUnpinnedClangInPlace",
+			sysDeps:   []string{"clang", "gcc"},
+			mypycDeps: []string{"clang-17.0.6*"},
+			want:      []string{"clang-17.0.6*", "gcc"},
+		},
+		{
+			name:      "ReplacesLLVMToolsetAndCompanionPackages",
+			sysDeps:   []string{"llvm-toolset", "clang-devel", "gcc"},
+			mypycDeps: []string{"clang-20.1.8*"},
+			want:      []string{"clang-20.1.8*", "gcc"},
+		},
+		{
+			name:      "AppendsPinnedClangWhenAbsent",
+			sysDeps:   []string{"gcc"},
+			mypycDeps: []string{"clang-21.1.8*"},
+			want:      []string{"gcc", "clang-21.1.8*"},
+		},
+		{
+			name:      "DeduplicatesWhenPinAlreadyPresent",
+			sysDeps:   []string{"clang", "clang-17.0.6*"},
+			mypycDeps: []string{"clang-17.0.6*"},
+			want:      []string{"clang-17.0.6*"},
+		},
+		{
+			name:      "DeduplicatesBareClang",
+			sysDeps:   []string{"clang", "gcc"},
+			mypycDeps: []string{"clang"},
+			want:      []string{"clang", "gcc"},
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			got := mergeMypycSystemDeps(tc.sysDeps, tc.mypycDeps)
+			if diff := cmp.Diff(tc.want, got); diff != "" {
+				t.Errorf("mergeMypycSystemDeps() diff (-want +got):\n%s", diff)
 			}
 		})
 	}
