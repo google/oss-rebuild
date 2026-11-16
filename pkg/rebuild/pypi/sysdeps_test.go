@@ -221,3 +221,26 @@ func TestInferELFSystemDeps(t *testing.T) {
 		})
 	}
 }
+
+func TestInferELFSystemDepsLargeModule(t *testing.T) {
+	module := createTestELF([]string{"libc.so.6", "libssl.so.3"}, "")
+	for _, tc := range []struct {
+		name string
+		size int64
+		want []string
+	}{
+		{name: "StreamedAboveInMemorySize", size: maxInMemoryModuleSize + 1<<20, want: []string{"libssl.so.3()(64bit)", "/usr/lib64/libssl.so"}},
+		{name: "SkippedAboveMaxSize", size: maxModuleSize + 1<<20, want: nil},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			zr := readPaddedWheel(t, "lancedb/_lancedb.abi3.so", module, tc.size)
+			got, err := inferELFSystemDeps(zr, platform.Glibc)
+			if err != nil {
+				t.Fatalf("inferELFSystemDeps() unexpected error: %v", err)
+			}
+			if diff := cmp.Diff(tc.want, got); diff != "" {
+				t.Errorf("inferELFSystemDeps() diff (-want +got):\n%s", diff)
+			}
+		})
+	}
+}

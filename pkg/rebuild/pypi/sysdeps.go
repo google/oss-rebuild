@@ -31,7 +31,7 @@
 // `inferELFSystemDeps` recovers the upstream system package specifiers in four
 // steps:
 //  1. Candidate collection (`isBundledLibPath`): Scans `.so` and `.so.<ver>`
-//     ELF entries (up to `maxELFFileSize`) in the wheel zip archive. Each ELF
+//     ELF entries (up to `maxModuleSize`) in the wheel zip archive. Each ELF
 //     file's own name is taken from `DT_SONAME` when present, falling back to
 //     its archive filename. For bundled files in `<pkg>.libs/` or
 //     `.libs_<pkg>/`, that name is added as a candidate. For shared objects
@@ -87,10 +87,8 @@ package pypi
 
 import (
 	"archive/zip"
-	"bytes"
 	"debug/elf"
 	"fmt"
-	"io"
 	"path"
 	re "regexp"
 	"slices"
@@ -99,8 +97,6 @@ import (
 	"github.com/google/oss-rebuild/pkg/rebuild/pypi/platform"
 	"github.com/pkg/errors"
 )
-
-const maxELFFileSize = 128 << 20 // 128 MiB
 
 var (
 	// sharedLibNamePat matches shared object filenames (.so or .so.<numeric-version>).
@@ -206,25 +202,19 @@ func inferELFSystemDeps(zr *zip.Reader, libc platform.LibcImpl) ([]string, error
 	var rawCandidates []string
 	internalLibs := make(map[string]bool)
 	for _, f := range zr.File {
-		if f.FileInfo().IsDir() || f.UncompressedSize64 > maxELFFileSize {
+		if f.FileInfo().IsDir() || f.UncompressedSize64 > maxModuleSize {
 			continue
 		}
 		baseName := path.Base(f.Name)
 		if !sharedLibNamePat.MatchString(strings.ToLower(baseName)) {
 			continue
 		}
-		rc, err := f.Open()
-		if err != nil {
-			return nil, errors.Wrapf(err, "opening %s in wheel", f.Name)
+		ef, err := openELF(f)
+		if errors.Is(err, errNotELF) {
+			continue
 		}
-		data, err := io.ReadAll(rc)
-		rc.Close()
 		if err != nil {
 			return nil, errors.Wrapf(err, "reading %s in wheel", f.Name)
-		}
-		ef, err := elf.NewFile(bytes.NewReader(data))
-		if err != nil {
-			continue
 		}
 		cand := baseName
 		if sonames, err := ef.DynString(elf.DT_SONAME); err == nil && len(sonames) > 0 && sonames[0] != "" {
@@ -239,6 +229,7 @@ func inferELFSystemDeps(zr *zip.Reader, libc platform.LibcImpl) ([]string, error
 		if imported, err := ef.ImportedLibraries(); err == nil {
 			rawCandidates = append(rawCandidates, imported...)
 		}
+		ef.Close()
 	}
 	var deps []string
 	for _, raw := range rawCandidates {

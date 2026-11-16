@@ -78,6 +78,7 @@ import (
 	"debug/dwarf"
 	"debug/elf"
 	"io"
+	"os"
 	"path"
 	re "regexp"
 	"slices"
@@ -87,10 +88,18 @@ import (
 	"github.com/pkg/errors"
 )
 
-// maxModuleSize bounds the extension modules that are read into memory to
-// parse their ELF sections. It admits common extension modules while skipping
-// the largest libraries, such as those of torch.
-const maxModuleSize = 256 << 20
+// Empirical bounds for parsing the ELF sections of wheel modules. Modules up to
+// maxInMemoryModuleSize are read into memory. Larger ones up to maxModuleSize,
+// such as unstripped polars and lancedb extensions, stream through a temporary
+// file. Anything larger is skipped.
+// NOTE: Where "/tmp" is backed by tmpfs, the temporary file and the sections
+// that DWARF and .rodata parsing load into the heap both count against the
+// container memory limit. The 512 MiB bound is sized for the inference
+// services, and in-process callers with smaller limits accept that peak.
+const (
+	maxInMemoryModuleSize = 256 << 20
+	maxModuleSize         = 512 << 20
+)
 
 type compileUnit struct {
 	Name    string // primary source file as passed to the compiler (DW_AT_name)
@@ -147,6 +156,7 @@ func candidatePaths(zr *zip.Reader, files map[string]bool) (dwarfPaths, rodataPa
 		}
 		dwarfPaths.envPaths = append(dwarfPaths.envPaths, envPaths...)
 		paths, envPaths, err := moduleRodata(ef)
+		ef.Close()
 		if err != nil {
 			skipped = append(skipped, errors.Wrapf(err, "reading .rodata of %s", f.Name))
 		}
@@ -169,13 +179,19 @@ func isExtensionModule(name string) bool {
 
 var errNotELF = errors.New("not an ELF file")
 
-// openELF parses f as an ELF file, returning errNotELF if f is not an ELF file.
+// openELF parses f as an ELF file, returning errNotELF if f is not a well-formed
+// ELF file. Callers must Close the returned file to release the temporary file
+// that backs modules larger than maxInMemoryModuleSize. The Close error can be
+// ignored because the file is only read.
 func openELF(f *zip.File) (*elf.File, error) {
 	rc, err := f.Open()
 	if err != nil {
 		return nil, errors.Wrap(err, "opening module")
 	}
 	defer rc.Close()
+	if f.UncompressedSize64 > maxInMemoryModuleSize {
+		return openStreamedELF(rc)
+	}
 	b, err := io.ReadAll(rc)
 	if err != nil {
 		return nil, errors.Wrap(err, "reading module")
@@ -185,7 +201,34 @@ func openELF(f *zip.File) (*elf.File, error) {
 	}
 	ef, err := elf.NewFile(bytes.NewReader(b))
 	if err != nil {
-		return nil, errors.Wrap(err, "parsing ELF")
+		return nil, errors.Wrapf(errNotELF, "parsing ELF: %v", err)
+	}
+	return ef, nil
+}
+
+// openStreamedELF copies r to a temporary file and parses the ELF file there.
+func openStreamedELF(r io.Reader) (*elf.File, error) {
+	tmp, err := os.CreateTemp("", "oss-rebuild-elf-*")
+	if err != nil {
+		return nil, errors.Wrap(err, "creating temporary file")
+	}
+	// NOTE: Unlinking right after elf.Open keeps the data readable through its
+	// descriptor until the caller closes the ELF file, per POSIX unlink semantics.
+	defer os.Remove(tmp.Name())
+	_, err = io.Copy(tmp, r)
+	if closeErr := tmp.Close(); err == nil {
+		err = closeErr
+	}
+	if err != nil {
+		return nil, errors.Wrap(err, "streaming module")
+	}
+	ef, err := elf.Open(tmp.Name())
+	var pathErr *os.PathError
+	if errors.As(err, &pathErr) {
+		return nil, errors.Wrap(err, "reopening temporary file")
+	}
+	if err != nil {
+		return nil, errors.Wrapf(errNotELF, "parsing ELF: %v", err)
 	}
 	return ef, nil
 }

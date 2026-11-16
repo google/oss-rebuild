@@ -1255,6 +1255,31 @@ func TestInferRustVersion(t *testing.T) {
 	}
 }
 
+func TestInferRustVersionLargeModule(t *testing.T) {
+	// Rust 1.78.0 was the latest stable release on this date.
+	uploaded := time.Date(2024, time.June, 1, 0, 0, 0, 0, time.UTC)
+	module := buildELF(elfSection{".comment", elf.SHT_PROGBITS, []byte("rustc version 1.75.0 (82e1608df 2023-12-21)\x00")})
+	for _, tc := range []struct {
+		name string
+		size int64
+		want string
+	}{
+		{name: "StreamedAboveInMemorySize", size: maxInMemoryModuleSize + 1<<20, want: "1.75.0"},
+		{name: "SkippedAboveMaxSize", size: maxModuleSize + 1<<20, want: "1.78.0"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			zr := readPaddedWheel(t, "polars/_plr.abi3.so", module, tc.size)
+			got, err := inferRustVersion(zr, []string{"maturin==1.7.4"}, uploaded)
+			if err != nil {
+				t.Fatalf("inferRustVersion() returned error: %v", err)
+			}
+			if got != tc.want {
+				t.Errorf("inferRustVersion() = %q, want %q", got, tc.want)
+			}
+		})
+	}
+}
+
 func TestMaturinTakesTarget(t *testing.T) {
 	for _, tc := range []struct {
 		reqs []string
