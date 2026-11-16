@@ -19,6 +19,7 @@ import (
 	gcs "cloud.google.com/go/storage"
 	"github.com/fatih/color"
 	"github.com/google/oss-rebuild/internal/iterx"
+	"github.com/google/oss-rebuild/internal/marquee"
 	"github.com/google/oss-rebuild/pkg/attestation"
 	"github.com/google/oss-rebuild/pkg/kmsdsse"
 	"github.com/google/oss-rebuild/pkg/rebuild/rebuild"
@@ -47,7 +48,7 @@ var rootCmd = &cobra.Command{
 	Use:   "oss-rebuild [subcommand]",
 	Short: "A CLI tool for OSS Rebuild",
 	Run: func(cmd *cobra.Command, args []string) {
-		fmt.Println(logo)
+		marquee.Spin(os.Stdout, logo)
 		cmd.Help()
 	},
 }
