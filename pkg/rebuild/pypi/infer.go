@@ -565,6 +565,11 @@ func inferBuild(ctx context.Context, t rebuild.Target, mux rebuild.RegistryMux, 
 		if cythonReq != "" {
 			reqs = append(reqs, cythonReq)
 		}
+		var buildEnv map[string]string
+		buildEnv, reqs, err = inferHatchlingOptInHooks(tree, dir, zr, reqs)
+		if err != nil {
+			return nil, errors.Wrap(err, "inferring Hatchling opt-in hooks")
+		}
 		rustVersion, err := inferRustVersion(zr, reqs, a.UploadTime)
 		if err != nil {
 			return nil, errors.Wrap(err, "inferring Rust version")
@@ -585,6 +590,7 @@ func inferBuild(ctx context.Context, t rebuild.Target, mux rebuild.RegistryMux, 
 			BaseImage:    inferBaseImage(platform.CibuildwheelPins, tags.Platform, a.UploadTime, cibwSpecs...),
 			BuildRoot:    buildRoot,
 			BuildEnvPath: buildEnvPath,
+			BuildEnv:     buildEnv,
 			RustVersion:  rustVersion,
 			CargoTarget:  rustVersion != "" && maturinTakesTarget(reqs),
 		}, nil
@@ -690,6 +696,8 @@ var (
 	// followed by a PEP 440 pre-release tag (a1, b2, rc1) and, from 3.1 on, by
 	// lowercase feature suffixes such as "limited" or "noamsend".
 	cythonABIModulePat = re.MustCompile(`_cython_(\d+)_(\d+)_(\d+)((?:a|b|rc)\d+)?(?:[a-z]|\b)`)
+	// extraMarkerPat matches Requires-Dist markers that apply only to an extra.
+	extraMarkerPat = re.MustCompile(`\bextra\b`)
 )
 
 // inferCythonRequirement pins Cython to the version the wheel's extension
@@ -728,6 +736,118 @@ func wheelCythonVersion(zr *zip.Reader) string {
 		return fmt.Sprintf("%s.%s.%s%s", m[1], m[2], m[3], m[4])
 	}
 	return ""
+}
+
+// inferHatchlingOptInHooks sets HATCH_BUILD_HOOK_ENABLE_<NAME>=1 and merges
+// hook and runtime requirements for pyproject.toml wheel hooks with
+// enable-by-default = false so Hatchling compiles the wheel's extensions.
+func inferHatchlingOptInHooks(tree *git2.Tree, dir string, zr *zip.Reader, reqs []string) (env map[string]string, updatedReqs []string, err error) {
+	if tree == nil || zr == nil || !hasRequirement(reqs, "hatchling") || !hasExtensionModule(zr) {
+		return nil, reqs, nil
+	}
+	hooks, err := pypiresolver.ExtractHatchWheelHooks(tree, dir)
+	if err != nil {
+		return nil, nil, errors.Wrap(err, "extracting hatch wheel hooks")
+	}
+	cythonVersion := wheelCythonVersion(zr)
+	nativeHooks := map[string]bool{
+		"mypyc":  hasMypycModule(zr),
+		"cython": cythonVersion != "",
+		// Custom hatch_build.py hooks leave no distinct marker in the wheel, so
+		// shipping extension modules is used heuristically as evidence that the hook ran.
+		"custom": true,
+	}
+	env = make(map[string]string)
+	var extraReqs []string
+	pinExistingCython := false
+	for _, hook := range hooks {
+		if hook.EnableByDefault || !nativeHooks[hook.Name] {
+			continue
+		}
+		env["HATCH_BUILD_HOOK_ENABLE_"+strings.ToUpper(hook.Name)] = "1"
+		for _, dep := range hook.Dependencies {
+			extraReqs = append(extraReqs, pinCythonRequirement(dep, cythonVersion))
+		}
+		if hook.Name == "cython" && !hasRequirement(hook.Dependencies, "cython") {
+			extraReqs = append(extraReqs, "Cython=="+cythonVersion)
+		}
+		if cythonVersion != "" && (hook.Name == "cython" || hook.Name == "custom") {
+			pinExistingCython = true
+		}
+		if hook.RequireRuntimeDependencies {
+			extraReqs = append(extraReqs, wheelRuntimeRequirements(zr)...)
+		}
+	}
+	if len(env) == 0 {
+		return nil, reqs, nil
+	}
+	updatedReqs = slices.Clone(reqs)
+	if pinExistingCython {
+		for i, req := range updatedReqs {
+			updatedReqs[i] = pinCythonRequirement(req, cythonVersion)
+		}
+	}
+	return env, mergeRequirements(updatedReqs, extraReqs), nil
+}
+
+// wheelRuntimeRequirements returns the Requires-Dist entries from the RFC 822
+// headers of the wheel's top-level METADATA. Vendored dist-info directories,
+// body text after the blank header separator and extra-only markers are skipped.
+func wheelRuntimeRequirements(zr *zip.Reader) []string {
+	for _, f := range zr.File {
+		if !strings.HasSuffix(f.Name, ".dist-info/METADATA") || path.Dir(path.Dir(f.Name)) != "." {
+			continue
+		}
+		data, err := getFile(f.Name, zr)
+		if err != nil {
+			continue
+		}
+		var reqs []string
+		for _, rawLine := range strings.Split(string(data), "\n") {
+			if strings.TrimRight(rawLine, "\r") == "" {
+				break
+			}
+			after, ok := strings.CutPrefix(rawLine, "Requires-Dist:")
+			if !ok {
+				continue
+			}
+			req := strings.TrimSpace(after)
+			if req == "" || extraMarkerPat.MatchString(requirementMarker(req)) {
+				continue
+			}
+			reqs = append(reqs, req)
+		}
+		return reqs
+	}
+	return nil
+}
+
+func hasExtensionModule(zr *zip.Reader) bool {
+	return slices.ContainsFunc(zr.File, func(f *zip.File) bool {
+		return isExtensionModule(f.Name)
+	})
+}
+
+// hasMypycModule reports whether the wheel has the shared library that mypyc
+// names "<group>__mypyc" and compiles all modules of a group into.
+func hasMypycModule(zr *zip.Reader) bool {
+	return slices.ContainsFunc(zr.File, func(f *zip.File) bool {
+		return isExtensionModule(f.Name) && strings.Contains(path.Base(f.Name), "__mypyc.")
+	})
+}
+
+// pinCythonRequirement replaces req's version constraint with cythonVersion
+// unless req already pins an exact version. Wildcards like "==3.2.*" are not
+// exact, and an "==" inside the marker does not constrain the version.
+func pinCythonRequirement(req, cythonVersion string) string {
+	spec, _, _ := strings.Cut(req, ";")
+	if cythonVersion == "" || requirementName(req) != "cython" || (strings.Contains(spec, "==") && !strings.Contains(spec, "*")) {
+		return req
+	}
+	if marker := requirementMarker(req); marker != "" {
+		return "Cython==" + cythonVersion + "; " + marker
+	}
+	return "Cython==" + cythonVersion
 }
 
 // rustcStampPat matches the version a stable rustc records in .comment, as in
