@@ -11,6 +11,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"maps"
 	"net/http"
 	"strings"
 	"testing"
@@ -1191,6 +1192,7 @@ func TestInferCythonRequirement(t *testing.T) {
 		{name: "NoSetupPy", module: elfWithRodata("_cython_3_2_4")},
 		{name: "CythonAlreadyRequired", setupPy: importsCython, module: elfWithRodata("_cython_3_2_4"), reqs: []string{"setuptools", "Cython>=3"}},
 		{name: "FlitCore", setupPy: importsCython, module: elfWithRodata("_cython_3_2_4"), reqs: []string{"setuptools", "flit_core>=3.12,<4"}},
+		{name: "HatchlingWithSetuptoolsCustomHook", setupPy: importsCython, module: elfWithRodata("_cython_3_2_4"), reqs: []string{"hatchling==1.27.0", "setuptools==80.9.0"}, want: "Cython==3.2.4"},
 		{name: "CythonItself", pkg: "Cython", setupPy: importsCython, module: elfWithRodata("_cython_3_2_4")},
 	}
 	for _, tc := range tests {
@@ -1271,5 +1273,283 @@ func TestMaturinTakesTarget(t *testing.T) {
 		if got := maturinTakesTarget(tc.reqs); got != tc.want {
 			t.Errorf("maturinTakesTarget(%v) = %t, want %t", tc.reqs, got, tc.want)
 		}
+	}
+}
+
+func TestInferHatchlingOptInHooks(t *testing.T) {
+	module := func(name string, rodata ...string) archive.ZipEntry {
+		return zipEntry(name, string(elfWithRodata(rodata...)))
+	}
+	cython329Module := func(name string) archive.ZipEntry {
+		return module(name, "_cython_3_2_9")
+	}
+	plainModule := func(name string) archive.ZipEntry {
+		return module(name, "libc.so.6")
+	}
+	tests := []struct {
+		name         string
+		files        gitxtest.FileContent
+		wheelEntries []archive.ZipEntry
+		reqs         []string
+		wantEnv      map[string]string
+		wantReqs     []string
+		wantErr      bool
+	}{
+		{
+			name: "MypycHookWithRuntimeDependenciesFromMetadata",
+			files: gitxtest.FileContent{
+				"pyproject.toml": `[build-system]
+requires = ["hatchling>=1.27.0"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel.hooks.mypyc]
+enable-by-default = false
+dependencies = ["hatch-mypyc>=0.16.0", "mypy==1.20.2"]
+require-runtime-dependencies = true
+`,
+			},
+			wheelEntries: []archive.ZipEntry{
+				plainModule("a1b2c3__mypyc.cpython-312-x86_64-linux-gnu.so"),
+				zipEntry("black/_vendor/vendored-1.0.dist-info/METADATA", "Metadata-Version: 2.4\nName: vendored\nRequires-Dist: ignored-vendored-dep>=1.0\n"),
+				zipEntry("black-26.5.1.dist-info/METADATA", "Metadata-Version: 2.4\n"+
+					"Name: black\n"+
+					"Requires-Dist: click>=8.0.0\n"+
+					"Requires-Dist: pathspec>=1.0.0\n"+
+					"Requires-Dist: tomli>=1.1.0; python_version < '3.11'\n"+
+					"Requires-Dist: colorama>=0.4.3; extra == 'colorama'\n"+
+					"Requires-Dist: uvloop>=0.15.2; (sys_platform != 'win32') and extra == 'uvloop'\n"+
+					"\n"+
+					"Requires-Dist: ignored-readme-body-line>=1.0\n"),
+			},
+			reqs:    []string{"hatchling==1.27.0"},
+			wantEnv: map[string]string{"HATCH_BUILD_HOOK_ENABLE_MYPYC": "1"},
+			wantReqs: []string{
+				"hatchling==1.27.0",
+				"hatch-mypyc>=0.16.0",
+				"mypy==1.20.2",
+				"click>=8.0.0",
+				"pathspec>=1.0.0",
+				"tomli>=1.1.0; python_version < '3.11'",
+			},
+		},
+		{
+			name: "CythonHookWithoutDirectCythonDependency",
+			files: gitxtest.FileContent{
+				"pyproject.toml": `[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel.hooks.cython]
+enable-by-default = false
+dependencies = ["hatch-cython"]
+`,
+			},
+			wheelEntries: []archive.ZipEntry{
+				cython329Module("psygnal/_signal.cpython-312-x86_64-linux-gnu.so"),
+			},
+			reqs:     []string{"hatchling==1.27.0"},
+			wantEnv:  map[string]string{"HATCH_BUILD_HOOK_ENABLE_CYTHON": "1"},
+			wantReqs: []string{"hatchling==1.27.0", "hatch-cython", "Cython==3.2.9"},
+		},
+		{
+			name: "BuildSystemRequiresUnpinnedCythonPinnedByHook",
+			files: gitxtest.FileContent{
+				"pyproject.toml": `[build-system]
+requires = ["hatchling", "Cython>=3.0"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel.hooks.custom]
+enable-by-default = false
+dependencies = ["Cython>=3.0", "setuptools"]
+`,
+			},
+			wheelEntries: []archive.ZipEntry{
+				cython329Module("chardet/_kernel.cpython-312-x86_64-linux-gnu.so"),
+			},
+			reqs:     []string{"hatchling==1.27.0", "Cython>=3.0"},
+			wantEnv:  map[string]string{"HATCH_BUILD_HOOK_ENABLE_CUSTOM": "1"},
+			wantReqs: []string{"hatchling==1.27.0", "Cython==3.2.9", "setuptools"},
+		},
+		{
+			name: "SkippedAndUnmatchedHooks",
+			files: gitxtest.FileContent{
+				"pyproject.toml": `[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel.hooks.cython]
+enable-by-default = false
+dependencies = ["hatch-cython"]
+
+[tool.hatch.build.targets.wheel.hooks.mypyc]
+enable-by-default = false
+dependencies = ["hatch-mypyc"]
+
+[tool.hatch.build.targets.wheel.hooks.vcs]
+enable-by-default = false
+dependencies = ["hatch-vcs"]
+
+[tool.hatch.build.targets.wheel.hooks.custom]
+enable-by-default = true
+dependencies = ["setuptools"]
+`,
+			},
+			wheelEntries: []archive.ZipEntry{
+				plainModule("example/_ext.cpython-312-x86_64-linux-gnu.so"),
+			},
+			reqs:     []string{"hatchling==1.27.0", "setuptools==84.0.0"},
+			wantReqs: []string{"hatchling==1.27.0", "setuptools==84.0.0"},
+		},
+		{
+			name: "CustomCythonAndMypycHooks",
+			files: gitxtest.FileContent{
+				"pyproject.toml": `[build-system]
+requires = ["hatchling", "hatch-vcs"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel.hooks.custom]
+enable-by-default = false
+dependencies = ["Cython==3.2.*; python_version >= '3.8'", "setuptools"]
+
+[tool.hatch.build.targets.wheel.hooks.mypyc]
+enable-by-default = false
+dependencies = ["hatch-mypyc>=0.16.0", "mypy>=1.19"]
+require-runtime-dependencies = false
+`,
+			},
+			wheelEntries: []archive.ZipEntry{
+				cython329Module("chardet/_kernel.cpython-312-x86_64-linux-gnu.so"),
+				plainModule("0123abcd__mypyc.cpython-312-x86_64-linux-gnu.so"),
+			},
+			reqs: []string{"hatchling==1.27.0", "hatch-vcs"},
+			wantEnv: map[string]string{
+				"HATCH_BUILD_HOOK_ENABLE_CUSTOM": "1",
+				"HATCH_BUILD_HOOK_ENABLE_MYPYC":  "1",
+			},
+			wantReqs: []string{
+				"hatchling==1.27.0",
+				"hatch-vcs",
+				"Cython==3.2.9; python_version >= '3.8'",
+				"setuptools",
+				"hatch-mypyc>=0.16.0",
+				"mypy>=1.19",
+			},
+		},
+		{
+			name: "NonHatchlingIgnored",
+			files: gitxtest.FileContent{
+				"pyproject.toml": `[build-system]
+requires = ["setuptools"]
+build-backend = "setuptools.build_meta"
+
+[tool.hatch.build.targets.wheel.hooks.mypyc]
+enable-by-default = false
+dependencies = ["hatch-mypyc"]
+`,
+			},
+			wheelEntries: []archive.ZipEntry{
+				plainModule("a1b2c3__mypyc.cpython-312-x86_64-linux-gnu.so"),
+			},
+			reqs:     []string{"setuptools==84.0.0"},
+			wantReqs: []string{"setuptools==84.0.0"},
+		},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			files := gitxtest.FileContent{"README.md": ""}
+			maps.Copy(files, tc.files)
+			repo := must(gitxtest.CreateRepo([]gitxtest.Commit{{ID: "initial", Files: files}}, nil))
+			tree := must(must(repo.Repository.CommitObject(git2.Hash(repo.Commits["initial"]))).Tree())
+			zr := readWheel(t, tc.wheelEntries...)
+			gotEnv, gotReqs, err := inferHatchlingOptInHooks(tree, "", zr, tc.reqs)
+			if (err != nil) != tc.wantErr {
+				t.Fatalf("inferHatchlingOptInHooks() error = %v, wantErr %v", err, tc.wantErr)
+			}
+			if diff := cmp.Diff(tc.wantEnv, gotEnv); diff != "" {
+				t.Errorf("inferHatchlingOptInHooks() env diff (-want +got):\n%s", diff)
+			}
+			if diff := cmp.Diff(tc.wantReqs, gotReqs); diff != "" {
+				t.Errorf("inferHatchlingOptInHooks() reqs diff (-want +got):\n%s", diff)
+			}
+		})
+	}
+}
+
+func TestInferStrategyHatchlingOptInHooks(t *testing.T) {
+	repo := must(gitxtest.CreateRepoFromYAML(`commits:
+  - id: release-commit
+    tag: v7.6.0
+    files:
+      pyproject.toml: |
+        [project]
+        name = "chardet"
+        version = "7.6.0"
+        [build-system]
+        requires = ["hatchling>=1.27", "Cython>=3.0"]
+        build-backend = "hatchling.build"
+        [tool.hatch.build.targets.wheel.hooks.custom]
+        enable-by-default = false
+        dependencies = ["setuptools"]
+        [tool.hatch.build.targets.wheel.hooks.mypyc]
+        enable-by-default = false
+        dependencies = ["hatch-mypyc>=0.16.0", "mypy==1.20.2"]
+        require-runtime-dependencies = true
+`, nil))
+	filename := "chardet-7.6.0-cp312-cp312-manylinux_2_28_x86_64.whl"
+	wheelURL := "https://files.pythonhosted.org/" + filename
+	wheelBuf := must(archivetest.ZipFile([]archive.ZipEntry{
+		{
+			FileHeader: &zip.FileHeader{Name: "chardet-7.6.0.dist-info/WHEEL"},
+			Body:       []byte("Wheel-Version: 1.0\nGenerator: hatchling 1.27.0\nRoot-Is-Purelib: false\nTag: cp312-cp312-manylinux_2_28_x86_64\n"),
+		},
+		{
+			FileHeader: &zip.FileHeader{Name: "chardet-7.6.0.dist-info/METADATA"},
+			Body:       []byte("Metadata-Version: 2.4\nName: chardet\nVersion: 7.6.0\nRequires-Dist: click>=8.0.0\nRequires-Dist: pytest; extra == 'dev'\n"),
+		},
+		{
+			FileHeader: &zip.FileHeader{Name: "chardet/_kernel.cpython-312-x86_64-linux-gnu.so"},
+			Body:       elfWithRodata("_cython_3_2_9"),
+		},
+		{
+			FileHeader: &zip.FileHeader{Name: "0123abcd__mypyc.cpython-312-x86_64-linux-gnu.so"},
+			Body:       elfWithRodata("libc.so.6"),
+		},
+	}))
+	releaseJSON := fmt.Sprintf(`{"info":{"name":"chardet","version":"7.6.0"},"urls":[{"filename":%q,"url":%q,"size":%d,"upload_time_iso_8601":"2026-05-01T00:00:00Z"}]}`, filename, wheelURL, wheelBuf.Len())
+	mux := rebuild.RegistryMux{PyPI: pypireg.HTTPRegistry{Client: &httpxtest.MockClient{
+		Calls: []httpxtest.Call{
+			{URL: "https://pypi.org/pypi/chardet/7.6.0/json", Response: &http.Response{StatusCode: 200, Body: httpxtest.Body(releaseJSON)}},
+			{URL: "https://pypi.org/pypi/chardet/7.6.0/json", Response: &http.Response{StatusCode: 200, Body: httpxtest.Body(releaseJSON)}},
+			{URL: wheelURL, Response: &http.Response{StatusCode: 200, Body: io.NopCloser(bytes.NewReader(wheelBuf.Bytes()))}},
+		},
+		URLValidator: httpxtest.NewURLValidator(t),
+	}}}
+	rcfg := &rebuild.RepoConfig{Repo: gitx.Repo{Repository: repo.Repository, Storer: repo.Storer}, URI: "https://github.com/chardet/chardet"}
+	target := rebuild.Target{Ecosystem: rebuild.PyPI, Package: "chardet", Version: "7.6.0", Artifact: filename}
+	strat, err := Rebuilder{}.InferStrategy(context.Background(), target, mux, rcfg, nil)
+	if err != nil {
+		t.Fatalf("InferStrategy() unexpected error: %v", err)
+	}
+	got, ok := strat.(*PlatformWheelBuild)
+	if !ok {
+		t.Fatalf("InferStrategy() returned %T, want *PlatformWheelBuild", strat)
+	}
+	wantEnv := map[string]string{
+		"HATCH_BUILD_HOOK_ENABLE_CUSTOM": "1",
+		"HATCH_BUILD_HOOK_ENABLE_MYPYC":  "1",
+	}
+	if diff := cmp.Diff(wantEnv, got.BuildEnv); diff != "" {
+		t.Errorf("PlatformWheelBuild.BuildEnv diff (-want +got):\n%s", diff)
+	}
+	wantReqs := []string{
+		"hatchling==1.27.0",
+		"Cython==3.2.9",
+		"setuptools",
+		"hatch-mypyc>=0.16.0",
+		"mypy==1.20.2",
+		"click>=8.0.0",
+	}
+	if diff := cmp.Diff(wantReqs, got.Requirements); diff != "" {
+		t.Errorf("PlatformWheelBuild.Requirements diff (-want +got):\n%s", diff)
 	}
 }
