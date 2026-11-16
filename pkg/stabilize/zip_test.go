@@ -10,7 +10,9 @@ import (
 	"testing"
 	"time"
 
+	"github.com/google/go-cmp/cmp"
 	"github.com/google/oss-rebuild/pkg/archive"
+	"github.com/google/oss-rebuild/pkg/archive/archivetest"
 )
 
 func TestStabilizeZip(t *testing.T) {
@@ -97,6 +99,37 @@ func TestStabilizeZip(t *testing.T) {
 				) {
 					t.Fatalf("StabilizeZip(%v) = %v, want %v", tc.test, got, tc.expected)
 				}
+			}
+		})
+	}
+}
+
+func TestStabilizeZipLocalTimeZone(t *testing.T) {
+	input := must(archivetest.ZipFile([]archive.ZipEntry{
+		{FileHeader: &zip.FileHeader{Name: "foo", Modified: time.UnixMilli(1671890378000)}, Body: []byte("foo")},
+	}))
+	stabilizeIn := func(loc *time.Location) []byte {
+		orig := time.Local
+		defer func() { time.Local = orig }()
+		time.Local = loc
+		var output bytes.Buffer
+		zr := must(zip.NewReader(bytes.NewReader(input.Bytes()), int64(input.Len())))
+		orDie(StabilizeZip(zr, zip.NewWriter(&output), NewContext(archive.ZipFormat).WithStabilizers(AllZipStabilizers)))
+		return output.Bytes()
+	}
+	want := stabilizeIn(time.UTC)
+	testCases := []struct {
+		test string
+		loc  *time.Location
+	}{
+		{test: "UTC", loc: time.UTC},
+		{test: "EastOfUTC", loc: time.FixedZone("UTC+9", 9*60*60)},
+		{test: "WestOfUTC", loc: time.FixedZone("UTC-5", -5*60*60)},
+	}
+	for _, tc := range testCases {
+		t.Run(tc.test, func(t *testing.T) {
+			if diff := cmp.Diff(want, stabilizeIn(tc.loc)); diff != "" {
+				t.Errorf("StabilizeZip() with local time zone %s mismatch (-UTC +got):\n%s", tc.loc, diff)
 			}
 		})
 	}
