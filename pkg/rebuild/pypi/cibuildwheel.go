@@ -38,7 +38,29 @@ var (
 	cibuildwheelCmdPat = re.MustCompile(`\bcibuildwheel\b`)
 	// packageSpecPat matches a package name with an optional version pin, such
 	// as "graphviz-dev=14.1.5-r0" or "cairo-dev>=1.18".
-	packageSpecPat = re.MustCompile(`^(?P<pkg>[\w.+:()-]+)(?:(?P<op>[<>~=]=?|=~)[\w.+:-]+)?$`)
+	packageSpecPat    = re.MustCompile(`^(?P<pkg>[\w.+:()-]+)(?:(?P<op>[<>~=]=?|=~)[\w.+:-]+)?$`)
+	constraintEnvVars = []string{"PIP_CONSTRAINT", "PIP_BUILD_CONSTRAINT", "UV_CONSTRAINT", "UV_BUILD_CONSTRAINT"}
+	// cibuildwheelConstraintEnvPat matches a constraint-file assignment inside a
+	// cibuildwheel environment string, capturing double-quoted, single-quoted, or
+	// unquoted values.
+	cibuildwheelConstraintEnvPat = re.MustCompile(`(?:^|\s)(?:` + strings.Join(constraintEnvVars, `|`) + `)\s*=\s*(?:"([^"]*)"|'([^']*)'|([^\s"']+))`)
+	// requirementCommentPat matches a pip requirements file comment, which
+	// starts with "#" at the beginning of a line or after whitespace.
+	requirementCommentPat = re.MustCompile(`(?:^|\s)#`)
+	// NOTE: Constraint files referenced from cibuildwheel are often shared with
+	// test or dev environments and pin far more than the build needs. Only
+	// compiler and build-tool packages that backends request dynamically via
+	// get_requires_for_build_wheel are taken from them, so that unrelated
+	// runtime pins are not installed into the build environment.
+	knownDynamicBuildPkg = map[string]bool{
+		"cython": true,
+		"mypy":   true,
+		"numpy":  true,
+		"scipy":  true,
+		"meson":  true,
+		"ninja":  true,
+		"cmake":  true,
+	}
 )
 
 // ghaWorkflow holds the parts of a GitHub Actions workflow that can run or pin
@@ -149,6 +171,223 @@ func extractCibuildwheelDependencies(tree *git2.Tree, searchDir string, tags Whe
 		deps = appendUnique(deps, scriptDeps...)
 	}
 	return deps, nil
+}
+
+// extractCibuildwheelBuildRequirements extracts pinned Python build tool
+// requirements from constraint files referenced in [tool.cibuildwheel]
+// environments when [build-system] backend-path configures an in-tree PEP 517
+// backend.
+func extractCibuildwheelBuildRequirements(tree *git2.Tree, searchDir string, tags WheelTags, libc platform.LibcImpl) ([]string, error) {
+	pyprojPath := path.Clean(path.Join(searchDir, "pyproject.toml"))
+	f, err := tree.File(pyprojPath)
+	if errors.Is(err, git2.ErrFileNotFound) {
+		return nil, nil
+	} else if err != nil {
+		return nil, errors.Wrapf(err, "finding %s", pyprojPath)
+	}
+	pyProject, err := parsing.ReadPyProject(f)
+	if err != nil {
+		// A pyproject.toml that fails TOML decoding is a rejected candidate, not an infrastructure failure.
+		var decodeErr *toml.DecodeError
+		if errors.As(err, &decodeErr) {
+			return nil, nil
+		}
+		return nil, errors.Wrapf(err, "reading %s", pyprojPath)
+	}
+	if len(tomlStrings(pyProject.BuildSystem.BackendPath)) == 0 {
+		return nil, nil
+	}
+	return extractCibuildwheelConstraintRequirements(tree, searchDir, tags, pyProject.Tool.Cibuildwheel, libc)
+}
+
+func extractCibuildwheelConstraintRequirements(tree *git2.Tree, searchDir string, tags WheelTags, cfg parsing.CibuildwheelConfig, libc platform.LibcImpl) ([]string, error) {
+	// NOTE: cibuildwheel replaces the environment table per override and per
+	// platform table (unless inherit.environment is set), and the last matching
+	// override wins. Sources are therefore visited from most to least specific and
+	// the first non-nil environment replaces all less specific ones.
+	var envSources []any
+	for i := len(cfg.Overrides) - 1; i >= 0; i-- {
+		if overrideAppliesToTarget(cfg.Overrides[i].Select, tags, libc) {
+			envSources = append(envSources, cfg.Overrides[i].Environment)
+		}
+	}
+	envSources = append(envSources, cfg.Linux.Environment, cfg.Environment)
+	var rawPaths []string
+	for _, src := range envSources {
+		if src == nil {
+			continue
+		}
+		rawPaths = extractConstraintPathsFromEnv(src)
+		break
+	}
+	var reqs []string
+	for _, relPath := range appendUnique(nil, rawPaths...) {
+		fileReqs, err := readBuildToolRequirements(tree, searchDir, relPath)
+		if err != nil {
+			return nil, err
+		}
+		reqs = append(reqs, fileReqs...)
+	}
+	return reqs, nil
+}
+
+func extractConstraintPathsFromEnv(env any) []string {
+	var out []string
+	switch v := env.(type) {
+	case string:
+		for _, m := range cibuildwheelConstraintEnvPat.FindAllStringSubmatch(v, -1) {
+			for _, part := range strings.Fields(m[1] + m[2] + m[3]) {
+				out = append(out, normalizeConstraintPath(part))
+			}
+		}
+	case map[string]any:
+		for _, key := range constraintEnvVars {
+			if val, ok := v[key].(string); ok {
+				for _, part := range strings.Fields(val) {
+					out = append(out, normalizeConstraintPath(part))
+				}
+			}
+		}
+	}
+	return out
+}
+
+// normalizeConstraintPath strips cibuildwheel directory placeholders
+// ({project}, {package}), the Linux container mount point (/project/), and
+// common workflow root variables ($PROJECT_ROOT) to yield a tree-relative path.
+// https://cibuildwheel.pypa.io/en/stable/options/#environment
+func normalizeConstraintPath(p string) string {
+	for _, prefix := range []string{"$PROJECT_ROOT/", "${PROJECT_ROOT}/", "{project}/", "{package}/", "/project/", "./"} {
+		p = strings.TrimPrefix(p, prefix)
+	}
+	return strings.TrimSpace(p)
+}
+
+// readBuildToolRequirements reads allowlisted build-tool specifiers from
+// relPath, trying searchDir first and then the repository root for monorepos
+// where cibuildwheel ran at the root.
+func readBuildToolRequirements(tree *git2.Tree, searchDir, relPath string) ([]string, error) {
+	reqs, found, err := readBuildToolRequirementsFrom(tree, path.Clean(path.Join(searchDir, relPath)), make(map[string]bool))
+	if err != nil || found || searchDir == "" {
+		return reqs, err
+	}
+	reqs, _, err = readBuildToolRequirementsFrom(tree, path.Clean(relPath), make(map[string]bool))
+	return reqs, err
+}
+
+func readBuildToolRequirementsFrom(tree *git2.Tree, fullPath string, visited map[string]bool) ([]string, bool, error) {
+	if visited[fullPath] {
+		return nil, true, nil
+	}
+	visited[fullPath] = true
+	f, err := tree.File(fullPath)
+	if errors.Is(err, git2.ErrFileNotFound) {
+		return nil, false, nil
+	} else if err != nil {
+		return nil, false, errors.Wrapf(err, "finding %s", fullPath)
+	}
+	contents, err := f.Contents()
+	if err != nil {
+		return nil, false, errors.Wrapf(err, "reading %s", fullPath)
+	}
+	dir := path.Dir(fullPath)
+	var reqs []string
+	for _, line := range joinContinuedLines(contents) {
+		if loc := requirementCommentPat.FindStringIndex(line); loc != nil {
+			line = line[:loc[0]]
+		}
+		line = strings.TrimSpace(line)
+		if line == "" {
+			continue
+		}
+		if includePath, ok := parseIncludeTarget(line); ok {
+			nested, _, err := readBuildToolRequirementsFrom(tree, path.Clean(path.Join(dir, includePath)), visited)
+			if err != nil {
+				return nil, true, err
+			}
+			reqs = append(reqs, nested...)
+			continue
+		}
+		if strings.HasPrefix(line, "-") {
+			continue
+		}
+		spec := stripRequirementOptions(line)
+		if knownDynamicBuildPkg[requirementName(spec)] {
+			reqs = append(reqs, spec)
+		}
+	}
+	return reqs, true, nil
+}
+
+// parseIncludeTarget extracts the target file from a pip requirements include
+// option (-r, --requirement, -c, --constraint) across space-separated, "="
+// separated, and attached short-flag forms.
+func parseIncludeTarget(line string) (string, bool) {
+	for _, longFlag := range []string{"--requirement", "--constraint"} {
+		if rest, ok := strings.CutPrefix(line, longFlag); ok {
+			if pathArg, ok := strings.CutPrefix(rest, "="); ok {
+				if fields := strings.Fields(strings.Trim(pathArg, `"'`)); len(fields) > 0 {
+					return fields[0], true
+				}
+				return "", false
+			}
+			if strings.HasPrefix(rest, " ") || strings.HasPrefix(rest, "\t") {
+				if fields := strings.Fields(rest); len(fields) > 0 {
+					return strings.Trim(fields[0], `"'`), true
+				}
+			}
+		}
+	}
+	for _, shortFlag := range []string{"-r", "-c"} {
+		if rest, ok := strings.CutPrefix(line, shortFlag); ok && rest != "" && !strings.HasPrefix(rest, "-") {
+			if fields := strings.Fields(rest); len(fields) > 0 {
+				return strings.Trim(fields[0], `"'`), true
+			}
+		}
+	}
+	return "", false
+}
+
+// joinContinuedLines splits a pip requirements file into logical lines,
+// merging lines that end in a backslash with their successors the way pip
+// does. This is how pip-compile and uv export place each --hash option on its
+// own physical line.
+func joinContinuedLines(contents string) []string {
+	var lines []string
+	var pending strings.Builder
+	for _, raw := range strings.Split(contents, "\n") {
+		line := strings.TrimSuffix(raw, "\r")
+		// NOTE: pip's join_lines skips continuation only on whole-line comments
+		// where "#" is the first non-whitespace character. An inline comment
+		// ending in "\" still joins with the next line and comments it out.
+		if strings.HasSuffix(line, "\\") && !strings.HasPrefix(strings.TrimSpace(line), "#") {
+			pending.WriteString(strings.TrimSuffix(line, "\\"))
+			continue
+		}
+		pending.WriteString(line)
+		lines = append(lines, pending.String())
+		pending.Reset()
+	}
+	if pending.Len() > 0 {
+		lines = append(lines, pending.String())
+	}
+	return lines
+}
+
+// stripRequirementOptions removes pip per-requirement options such as --hash
+// or --global-option from a requirements file line, keeping only the
+// dependency specifier. pip accepts these options in requirements files but
+// rejects them when the specifier is passed on its own.
+// https://pip.pypa.io/en/stable/reference/requirements-file-format/#per-requirement-options
+func stripRequirementOptions(line string) string {
+	fields := strings.Fields(line)
+	for i, f := range fields {
+		if strings.HasPrefix(f, "-") {
+			fields = fields[:i]
+			break
+		}
+	}
+	return strings.Join(fields, " ")
 }
 
 func tomlStrings(v any) (out []string) {
