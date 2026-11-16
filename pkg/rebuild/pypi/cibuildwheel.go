@@ -41,28 +41,30 @@ var (
 	packageSpecPat = re.MustCompile(`^(?P<pkg>[\w.+:()-]+)(?:(?P<op>[<>~=]=?|=~)[\w.+:-]+)?$`)
 )
 
-// ghaWorkflow holds the parts of a GitHub Actions workflow that can run or pin
-// cibuildwheel.
+// ghaWorkflow holds the parts of a GitHub Actions workflow that can run, pin,
+// or configure cibuildwheel.
 // https://docs.github.com/en/actions/reference/workflows-and-actions/workflow-syntax
 type ghaWorkflow struct {
+	Env  map[string]any `yaml:"env"`
 	Jobs map[string]struct {
-		Steps []struct {
-			Uses string `yaml:"uses"`
-			Run  string `yaml:"run"`
+		RunsOn any            `yaml:"runs-on"`
+		Env    map[string]any `yaml:"env"`
+		Steps  []struct {
+			Uses string         `yaml:"uses"`
+			Run  string         `yaml:"run"`
+			Env  map[string]any `yaml:"env"`
 		} `yaml:"steps"`
 	} `yaml:"jobs"`
 }
 
-// extractCibuildwheelSpecs returns the cibuildwheel version specs (exact
-// versions, minor series, or commit hashes) found in the GitHub Actions
-// workflows in tree, and reports whether any step runs cibuildwheel (including
-// unpinned uses).
-func extractCibuildwheelSpecs(tree *git2.Tree) (specs []string, usesCibuildwheel bool, err error) {
+// forEachWorkflow calls fn with the contents of each GitHub Actions workflow
+// file in tree.
+func forEachWorkflow(tree *git2.Tree, fn func(workflow []byte)) error {
 	workflows, err := tree.Tree(workflowsDir)
 	if errors.Is(err, git2.ErrDirectoryNotFound) {
-		return nil, false, nil
+		return nil
 	} else if err != nil {
-		return nil, false, errors.Wrapf(err, "finding %s", workflowsDir)
+		return errors.Wrapf(err, "finding %s", workflowsDir)
 	}
 	for _, entry := range workflows.Entries {
 		if ext := path.Ext(entry.Name); !entry.Mode.IsFile() || (ext != ".yml" && ext != ".yaml") {
@@ -70,17 +72,28 @@ func extractCibuildwheelSpecs(tree *git2.Tree) (specs []string, usesCibuildwheel
 		}
 		f, err := workflows.TreeEntryFile(&entry)
 		if err != nil {
-			return nil, false, errors.Wrapf(err, "finding workflow %s", entry.Name)
+			return errors.Wrapf(err, "finding workflow %s", entry.Name)
 		}
 		contents, err := f.Contents()
 		if err != nil {
-			return nil, false, errors.Wrapf(err, "reading workflow %s", entry.Name)
+			return errors.Wrapf(err, "reading workflow %s", entry.Name)
 		}
-		s, u := cibuildwheelSpecs([]byte(contents))
+		fn([]byte(contents))
+	}
+	return nil
+}
+
+// extractCibuildwheelSpecs returns the cibuildwheel version specs (exact
+// versions, minor series, or commit hashes) found in the GitHub Actions
+// workflows in tree, and reports whether any step runs cibuildwheel (including
+// unpinned uses).
+func extractCibuildwheelSpecs(tree *git2.Tree) (specs []string, usesCibuildwheel bool, err error) {
+	err = forEachWorkflow(tree, func(workflow []byte) {
+		s, u := cibuildwheelSpecs(workflow)
 		specs = append(specs, s...)
 		usesCibuildwheel = usesCibuildwheel || u
-	}
-	return specs, usesCibuildwheel, nil
+	})
+	return specs, usesCibuildwheel, err
 }
 
 func cibuildwheelSpecs(workflow []byte) (specs []string, usesCibuildwheel bool) {
@@ -105,26 +118,34 @@ func cibuildwheelSpecs(workflow []byte) (specs []string, usesCibuildwheel bool) 
 	return specs, usesCibuildwheel
 }
 
+// readCibuildwheelConfig returns the [tool.cibuildwheel] table of the
+// pyproject.toml at pyprojPath. ok is false when the file is missing or has
+// invalid syntax, which rejects the candidate rather than failing inference.
+func readCibuildwheelConfig(tree *git2.Tree, pyprojPath string) (cfg parsing.CibuildwheelConfig, ok bool, err error) {
+	f, err := tree.File(pyprojPath)
+	if errors.Is(err, git2.ErrFileNotFound) {
+		return cfg, false, nil
+	} else if err != nil {
+		return cfg, false, errors.Wrapf(err, "finding %s", pyprojPath)
+	}
+	pyProject, err := parsing.ReadPyProject(f)
+	var decodeErr *toml.DecodeError
+	if errors.As(err, &decodeErr) {
+		return cfg, false, nil
+	} else if err != nil {
+		return cfg, false, errors.Wrapf(err, "reading %s", pyprojPath)
+	}
+	return pyProject.Tool.Cibuildwheel, true, nil
+}
+
 // extractCibuildwheelDependencies extracts system dependencies from
 // [tool.cibuildwheel] hooks and overrides in pyproject.toml under searchDir.
 func extractCibuildwheelDependencies(tree *git2.Tree, searchDir string, tags WheelTags, libc platform.LibcImpl) ([]string, error) {
 	pyprojPath := path.Clean(path.Join(searchDir, "pyproject.toml"))
-	f, err := tree.File(pyprojPath)
-	if errors.Is(err, git2.ErrFileNotFound) {
-		return nil, nil
-	} else if err != nil {
-		return nil, errors.Wrapf(err, "finding %s", pyprojPath)
+	cfg, ok, err := readCibuildwheelConfig(tree, pyprojPath)
+	if err != nil || !ok {
+		return nil, err
 	}
-	pyProject, err := parsing.ReadPyProject(f)
-	if err != nil {
-		// A pyproject.toml that fails TOML decoding is a rejected candidate, not an infrastructure failure.
-		var decodeErr *toml.DecodeError
-		if errors.As(err, &decodeErr) {
-			return nil, nil
-		}
-		return nil, errors.Wrapf(err, "reading %s", pyprojPath)
-	}
-	cfg := pyProject.Tool.Cibuildwheel
 	// NOTE: In cibuildwheel, matching overrides replace base and linux hooks by
 	// default unless inherit is configured. Taking the union across all matching
 	// sections is a conservative over-approximation.

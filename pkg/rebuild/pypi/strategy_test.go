@@ -907,6 +907,108 @@ PATH=/deps/bin/:$PATH /deps/bin/python3 -m build --wheel -n the_dir
 				OutputPath: "the_dir/dist/the_artifact",
 			},
 		},
+		{
+			"WithStripModeAuditwheel",
+			&PlatformWheelBuild{
+				Location:    defaultLocation,
+				PythonTag:   "cp310",
+				ABITag:      "cp310",
+				PlatformTag: "manylinux_2_17_x86_64",
+				StripMode:   StripModeAuditwheel,
+			},
+			rebuild.Instructions{
+				Location: defaultLocation,
+				Source:   "git checkout --force 'the_ref'",
+				Deps: `for py in /opt/python/cp310-cp310/bin/python /opt/python/cp310-*/bin/python; do [ -x "$py" ] && break; done
+"$py" -m venv /deps
+/deps/bin/pip install build wheel`,
+				Build: `/deps/bin/python3 -m build --wheel -n the_dir
+mkdir -p the_dir/dist/repaired
+AUDITWHEEL="/deps/bin/auditwheel"
+if [ ! -x "$AUDITWHEEL" ]; then
+  AUDITWHEEL="auditwheel"
+fi
+$AUDITWHEEL repair --strip the_dir/dist/*.whl --plat manylinux_2_17_x86_64 --only-plat -w the_dir/dist/repaired/
+rm -f the_dir/dist/*.whl
+mv the_dir/dist/repaired/*.whl the_dir/dist/the_artifact
+rm -rf the_dir/dist/repaired`,
+				Requires: rebuild.RequiredEnv{
+					BaseImage:  "quay.io/pypa/manylinux2014_x86_64",
+					SystemDeps: []string{"git"},
+				},
+				OutputPath: "the_dir/dist/the_artifact",
+			},
+		},
+		{
+			"WithStripModeLinkerAllAndBuildRoot",
+			&PlatformWheelBuild{
+				Location:     defaultLocation,
+				PythonTag:    "cp310",
+				ABITag:       "cp310",
+				Requirements: []string{"meson-python>=0.15.0"},
+				PlatformTag:  "manylinux_2_17_x86_64",
+				BuildRoot:    "/project",
+				StripMode:    StripModeLinkerAll,
+			},
+			rebuild.Instructions{
+				Location: defaultLocation,
+				Source:   "git checkout --force 'the_ref'",
+				Deps: `for py in /opt/python/cp310-cp310/bin/python /opt/python/cp310-*/bin/python; do [ -x "$py" ] && break; done
+"$py" -m venv /deps
+/deps/bin/pip install build wheel
+/deps/bin/pip install 'meson-python>=0.15.0'`,
+				Build: `mkdir -p $(dirname /project)
+mkdir /project
+cp -a . /project
+PATH=/deps/bin/:$PATH LDFLAGS="-Wl,-s" /deps/bin/python3 -m build --wheel -n --outdir the_dir/dist /project/the_dir
+mkdir -p the_dir/dist/repaired
+AUDITWHEEL="/deps/bin/auditwheel"
+if [ ! -x "$AUDITWHEEL" ]; then
+  AUDITWHEEL="auditwheel"
+fi
+$AUDITWHEEL repair the_dir/dist/*.whl --plat manylinux_2_17_x86_64 --only-plat -w the_dir/dist/repaired/
+rm -f the_dir/dist/*.whl
+mv the_dir/dist/repaired/*.whl the_dir/dist/the_artifact
+rm -rf the_dir/dist/repaired`,
+				Requires: rebuild.RequiredEnv{
+					BaseImage:  "quay.io/pypa/manylinux2014_x86_64",
+					SystemDeps: []string{"git"},
+				},
+				OutputPath: "the_dir/dist/the_artifact",
+			},
+		},
+		{
+			"WithStripModeDebug",
+			&PlatformWheelBuild{
+				Location:    defaultLocation,
+				PythonTag:   "cp310",
+				ABITag:      "cp310",
+				PlatformTag: "manylinux_2_17_x86_64",
+				StripMode:   StripModeDebug,
+			},
+			rebuild.Instructions{
+				Location: defaultLocation,
+				Source:   "git checkout --force 'the_ref'",
+				Deps: `for py in /opt/python/cp310-cp310/bin/python /opt/python/cp310-*/bin/python; do [ -x "$py" ] && break; done
+"$py" -m venv /deps
+/deps/bin/pip install build wheel`,
+				Build: `CFLAGS="-g0" CXXFLAGS="-g0" /deps/bin/python3 -m build --wheel -n the_dir
+mkdir -p the_dir/dist/repaired
+AUDITWHEEL="/deps/bin/auditwheel"
+if [ ! -x "$AUDITWHEEL" ]; then
+  AUDITWHEEL="auditwheel"
+fi
+$AUDITWHEEL repair the_dir/dist/*.whl --plat manylinux_2_17_x86_64 --only-plat -w the_dir/dist/repaired/
+rm -f the_dir/dist/*.whl
+mv the_dir/dist/repaired/*.whl the_dir/dist/the_artifact
+rm -rf the_dir/dist/repaired`,
+				Requires: rebuild.RequiredEnv{
+					BaseImage:  "quay.io/pypa/manylinux2014_x86_64",
+					SystemDeps: []string{"git"},
+				},
+				OutputPath: "the_dir/dist/the_artifact",
+			},
+		},
 	}
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
@@ -1130,6 +1232,30 @@ func TestValidateBuildEnvPath(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			b := &PlatformWheelBuild{PlatformTag: "manylinux2014_x86_64", BuildEnvPath: tt.buildEnvPath}
+			if _, err := b.ToWorkflow(); (err != nil) != tt.wantErr {
+				t.Errorf("ToWorkflow() error = %v, wantErr %v", err, tt.wantErr)
+			}
+		})
+	}
+}
+
+func TestValidateStripMode(t *testing.T) {
+	tests := []struct {
+		name      string
+		stripMode StripMode
+		wantErr   bool
+	}{
+		{name: "Unset"},
+		{name: "AuditwheelStrip", stripMode: StripModeAuditwheel},
+		{name: "LinkerAll", stripMode: StripModeLinkerAll},
+		{name: "Debug", stripMode: StripModeDebug},
+		{name: "UnknownAll", stripMode: "all", wantErr: true},
+		{name: "RawCommand", stripMode: "strip -s", wantErr: true},
+		{name: "Whitespace", stripMode: " linker-strip-all", wantErr: true},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			b := &PlatformWheelBuild{PlatformTag: "manylinux2014_x86_64", StripMode: tt.stripMode}
 			if _, err := b.ToWorkflow(); (err != nil) != tt.wantErr {
 				t.Errorf("ToWorkflow() error = %v, wantErr %v", err, tt.wantErr)
 			}
