@@ -230,7 +230,7 @@ func main() {
 	}
 	addr := fmt.Sprintf(":%d", *port)
 	log.Printf("Starting dashboard on %s\n", addr)
-	if err := http.ListenAndServe(addr, nil); err != nil {
+	if err := http.ListenAndServe(addr, dashboard.SecurityHeaders(http.DefaultServeMux)); err != nil {
 		log.Fatalf("Failed to start server: %v", err)
 	}
 }

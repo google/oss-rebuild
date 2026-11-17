@@ -68,6 +68,51 @@ func TestAssetsCacheAtTheirVersion(t *testing.T) {
 	}
 }
 
+func TestSecurityHeaders(t *testing.T) {
+	h := SecurityHeaders(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusOK)
+	}))
+	rec := httptest.NewRecorder()
+	h.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/", nil))
+	for name, want := range map[string]string{
+		"Content-Security-Policy": ContentSecurityPolicy,
+		"X-Content-Type-Options":  "nosniff",
+		"Referrer-Policy":         "no-referrer",
+	} {
+		if got := rec.Header().Get(name); got != want {
+			t.Errorf("%s = %q, want %q", name, got, want)
+		}
+	}
+}
+
+func TestTemplatesAllowStrictCSP(t *testing.T) {
+	scriptTag := regexp.MustCompile(`(?i)<script\b[^>]*>`)
+	inlineHandler := regexp.MustCompile(`(?i)\bon[a-z]+\s*=`)
+	for name, src := range map[string]string{
+		"layout.gohtml":     layoutHTML,
+		"index.gohtml":      indexHTML,
+		"package.gohtml":    packageHTML,
+		"version.gohtml":    versionHTML,
+		"attempt.gohtml":    attemptHTML,
+		"session.gohtml":    sessionHTML,
+		"transcript.gohtml": transcriptHTML,
+		"packages.gohtml":   packagesHTML,
+		"resources.gohtml":  resourcesHTML,
+		"coverage.gohtml":   coverageHTML,
+		"viz.gohtml":        vizHTML,
+		"rows.gohtml":       rowsHTML,
+	} {
+		for _, tag := range scriptTag.FindAllString(src, -1) {
+			if !strings.Contains(tag, "src=") && !strings.Contains(tag, `type="application/json"`) {
+				t.Errorf("%s has inline executable script tag %q, blocked by strict CSP", name, tag)
+			}
+		}
+		if m := inlineHandler.FindString(src); m != "" {
+			t.Errorf("%s has inline event handler %q, blocked by strict CSP", name, m)
+		}
+	}
+}
+
 func TestApplySuccessRegex(t *testing.T) {
 	tests := []struct {
 		name         string
