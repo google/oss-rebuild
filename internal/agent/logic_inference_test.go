@@ -19,6 +19,7 @@ import (
 	"github.com/google/oss-rebuild/pkg/rebuild/rebuild"
 	"github.com/google/oss-rebuild/pkg/rebuild/schema"
 	"github.com/pkg/errors"
+	"google.golang.org/genai"
 	"google.golang.org/grpc/codes"
 )
 
@@ -228,6 +229,102 @@ func TestInferenceTimeout(t *testing.T) {
 		a := NewDefaultAgent(testTarget, &AgentDeps{Size: tc.size})
 		if got := a.inferenceTimeout(); got != tc.want {
 			t.Errorf("size=%q: inferenceTimeout() = %v, want %v", tc.size, got, tc.want)
+		}
+	}
+}
+
+func TestServiceInferenceBestGuess(t *testing.T) {
+	bestGuess := api.AsStatus(codes.Internal, errors.New("no git ref"), api.AsDetail(rebuild.InferenceErrorDetail{
+		Location: rebuild.Location{Repo: "https://github.com/org/p", Ref: "head"},
+		Kind:     rebuild.FailureNoRef,
+	}))
+	located := api.AsStatus(codes.Internal, errors.New("no build inferred"), api.AsDetail(rebuild.InferenceErrorDetail{
+		Location: rebuild.Location{Repo: "https://github.com/org/p", Ref: "abc"},
+	}))
+	for _, tc := range []struct {
+		name      string
+		first     error
+		hint      string // model's repo hint, "" for no call
+		hintErr   error  // inference error at the hinted repo
+		wantRepo  string
+		wantRef   string
+		wantCalls int // inference calls
+	}{
+		{name: "SameRepoHintKeepsBestGuess", first: bestGuess, hint: "https://github.com/org/p", wantRepo: "https://github.com/org/p", wantRef: "head", wantCalls: 1},
+		{name: "OtherRepoHintInfersThere", first: bestGuess, hint: "https://github.com/org/q", wantRepo: "https://github.com/org/q", wantRef: "def", wantCalls: 2},
+		{name: "OtherRepoHintFailingKeepsBestGuess", first: bestGuess, hint: "https://github.com/org/q", hintErr: errors.New("clone failed"), wantRepo: "https://github.com/org/p", wantRef: "head", wantCalls: 2},
+		{name: "OtherRepoHintLocatedUsesHintedRepo", first: bestGuess, hint: "https://github.com/org/q", hintErr: api.AsStatus(codes.Internal, errors.New("no build inferred"), api.AsDetail(rebuild.InferenceErrorDetail{Location: rebuild.Location{Repo: "https://github.com/org/q", Ref: "def"}})), wantRepo: "https://github.com/org/q", wantRef: "def", wantCalls: 2},
+		{name: "LocatedSkipsHint", first: located, wantRepo: "https://github.com/org/p", wantRef: "abc", wantCalls: 1},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			var calls int
+			infer := func(_ context.Context, req schema.InferenceRequest) (*schema.StrategyOneOf, error) {
+				calls++
+				if req.StrategyHint != nil && req.StrategyHint.LocationHint != nil {
+					if tc.hintErr != nil {
+						return nil, tc.hintErr
+					}
+					return new(schema.NewStrategyOneOf(&npm.NPMPackBuild{Location: rebuild.Location{Repo: req.StrategyHint.LocationHint.Repo, Ref: "def"}})), nil
+				}
+				return nil, tc.first
+			}
+			deps := &AgentDeps{Inference: &inferenceservice.Router{Standard: infer}}
+			if tc.hint != "" {
+				client, err := genai.NewClient(context.Background(), &genai.ClientConfig{APIKey: "test", Backend: genai.BackendGeminiAPI, HTTPClient: &http.Client{Transport: &scriptedModel{responses: []string{modelSays(tc.hint)}}}})
+				if err != nil {
+					t.Fatal(err)
+				}
+				deps.GenaiClient = client
+			}
+			a := NewDefaultAgent(testTarget, deps)
+			if _, err := a.proposeHeuristicInference(context.Background()); err != nil {
+				t.Fatalf("proposeHeuristicInference() error = %v", err)
+			}
+			if a.loc.Repo != tc.wantRepo || a.loc.Ref != tc.wantRef || calls != tc.wantCalls {
+				t.Errorf("loc = %s@%s after %d inferences, want %s@%s after %d", a.loc.Repo, a.loc.Ref, calls, tc.wantRepo, tc.wantRef, tc.wantCalls)
+			}
+		})
+	}
+}
+
+func TestKeepBestGuess(t *testing.T) {
+	at := func(repo string) rebuild.InferenceErrorDetail {
+		return rebuild.InferenceErrorDetail{Location: rebuild.Location{Repo: repo, Ref: "abc"}}
+	}
+	bestGuess := rebuild.InferenceErrorDetail{Location: rebuild.Location{Repo: "https://github.com/org/p", Ref: "head"}, Kind: rebuild.FailureNoRef}
+	bestGuessErr := api.AsStatus(codes.Internal, errors.New("no git ref"), api.AsDetail(bestGuess))
+	for _, tc := range []struct {
+		name     string
+		initial  rebuild.InferenceErrorDetail
+		retryErr error
+		want     bool
+	}{
+		{"UnlocatedInitialTakesRetry", rebuild.InferenceErrorDetail{}, errors.New("clone failed"), false},
+		{"UnlocatedRetryKeepsBestGuess", bestGuess, errors.New("clone failed"), true},
+		{"RetryInSameRepoKeepsBestGuess", bestGuess, api.AsStatus(codes.Internal, errors.New("no build inferred"), api.AsDetail(at("https://github.com/Org/P.git"))), true},
+		{"RetryInOtherRepoReplacesBestGuess", bestGuess, api.AsStatus(codes.Internal, errors.New("no build inferred"), api.AsDetail(at("https://github.com/org/q"))), false},
+		{"NoHintKeepsBestGuess", bestGuess, errors.Wrap(bestGuessErr, "AI could not find a repository hint"), true},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			if got := keepBestGuess(tc.initial, tc.retryErr); got != tc.want {
+				t.Errorf("keepBestGuess() = %v, want %v", got, tc.want)
+			}
+		})
+	}
+}
+
+func TestSameRepo(t *testing.T) {
+	for _, tc := range []struct {
+		a, b string
+		want bool
+	}{
+		{"https://github.com/supabase/postgrest-py", "https://github.com/supabase/postgrest-py", true},
+		{"https://github.com/Supabase/Postgrest-Py", "https://github.com/supabase/postgrest-py.git", true},
+		{"https://github.com/supabase/supabase", "https://github.com/supabase/postgrest-py", false},
+		{"", "https://github.com/supabase/postgrest-py", false},
+	} {
+		if got := sameRepo(tc.a, tc.b); got != tc.want {
+			t.Errorf("sameRepo(%q, %q) = %v, want %v", tc.a, tc.b, got, tc.want)
 		}
 	}
 }
