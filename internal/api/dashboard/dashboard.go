@@ -38,8 +38,6 @@ var (
 	sessionHTML string
 	//go:embed transcript.gohtml
 	transcriptHTML string
-	//go:embed logs.gohtml
-	logsHTML string
 	//go:embed packages.gohtml
 	packagesHTML string
 	//go:embed resources.gohtml
@@ -122,7 +120,6 @@ var (
 	// TranscriptTmpl renders a session's full transcript and exec ledger,
 	// from the same data as SessionTmpl.
 	TranscriptTmpl *template.Template
-	LogsTmpl       *template.Template
 	PackagesTmpl   *template.Template
 	ResourcesTmpl  *template.Template
 	CoverageTmpl   *template.Template
@@ -145,7 +142,6 @@ func init() {
 	AttemptTmpl = page(attemptHTML)
 	SessionTmpl = page(sessionHTML)
 	TranscriptTmpl = page(transcriptHTML)
-	LogsTmpl = template.Must(template.New("logs").Funcs(assetFuncs).Parse(logsHTML))
 	PackagesTmpl = page(packagesHTML)
 	ResourcesTmpl = page(resourcesHTML)
 	CoverageTmpl = page(coverageHTML)

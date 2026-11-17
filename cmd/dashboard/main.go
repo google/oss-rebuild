@@ -36,7 +36,7 @@ var (
 	bench          = flag.String("bench", "", "Path to a benchmark file")
 	port           = flag.Int("port", 8080, "port on which to serve")
 	successRegex   = flag.String("success-regex", "", "Regex to determine if a rebuild is successful based on its message")
-	logsBucket     = flag.String("logs-bucket", "", "GCS bucket containing build logs")
+	logsBucket     = flag.String("logs-bucket", "", "GCS bucket containing build logs, which attempt pages link to")
 	rundexURI      = flag.String("rundex", "", "Snapshot database URI to serve rundex reads from (supported schemes: gs, file). If empty, reads Firestore directly")
 	sessionsBucket = flag.String("sessions-bucket", "", "GCS bucket containing agent session transcripts")
 )
@@ -53,7 +53,7 @@ var (
 	snapReady  = make(chan struct{}) // closed once snapReader and snapCache are set
 
 	fsReader  *rundex.FirestoreClient // rundex reads when -rundex is empty
-	gcsClient *storage.Client         // set when a bucket flag is given
+	gcsClient *storage.Client         // set when -sessions-bucket is given
 	execs     db.ScratchExecs         // set when -project is given
 )
 
@@ -116,7 +116,7 @@ func main() {
 		}()
 	}
 	if *logsBucket == "" {
-		log.Printf("Warning: -logs-bucket not provided, log viewing will be unavailable")
+		log.Printf("Warning: -logs-bucket not provided, attempt pages will not link build logs")
 	}
 	if *successRegex != "" {
 		var err error
@@ -136,7 +136,7 @@ func main() {
 			log.Fatalf("Failed to create rundex client: %v", err)
 		}
 	}
-	if *logsBucket != "" || *sessionsBucket != "" {
+	if *sessionsBucket != "" {
 		gcsClient, err = storage.NewClient(context.Background())
 		if err != nil {
 			log.Fatalf("Failed to create storage client: %v", err)
@@ -211,21 +211,6 @@ func main() {
 			RunID:     r.PathValue("runid"),
 		}, nil
 	}, api.HTMLHandler(DashboardInit, api.WithTimeout(30*time.Second, dashboard.Framed(pages, dashboard.Attempt)), dashboard.AttemptTmpl)))
-	http.HandleFunc("/attempt/{ecosystem}/{package}/{version}/{artifact}/{runid}/build-logs/", api.Translate(func(r *http.Request) (dashboard.LogsRequest, error) {
-		t := encoding.New(
-			rebuild.Ecosystem(r.PathValue("ecosystem")),
-			r.PathValue("package"),
-			r.PathValue("version"),
-			r.PathValue("artifact"),
-		).Decode()
-		return dashboard.LogsRequest{
-			Ecosystem: string(t.Ecosystem),
-			Package:   t.Package,
-			Version:   t.Version,
-			Artifact:  t.Artifact,
-			RunID:     r.PathValue("runid"),
-		}, nil
-	}, api.HTMLHandler(DashboardInit, dashboard.Logs, dashboard.LogsTmpl)))
 	http.HandleFunc("/session/{id}", api.Translate(func(r *http.Request) (dashboard.SessionRequest, error) {
 		return dashboard.SessionRequest{ID: r.PathValue("id")}, nil
 	}, api.HTMLHandler(DashboardInit, api.WithTimeout(30*time.Second, dashboard.Framed(pages, dashboard.Session)), dashboard.SessionTmpl)))
@@ -239,27 +224,6 @@ func main() {
 			return
 		}
 		dashboard.HandleRawExecOutput(w, r, r.PathValue("id"), r.PathValue("execid"), deps)
-	})
-	http.HandleFunc("/attempt/{ecosystem}/{package}/{version}/{artifact}/{runid}/build-logs/raw/", func(w http.ResponseWriter, r *http.Request) {
-		deps, err := DashboardInit(r.Context())
-		if err != nil {
-			http.Error(w, err.Error(), http.StatusInternalServerError)
-			return
-		}
-		t := encoding.New(
-			rebuild.Ecosystem(r.PathValue("ecosystem")),
-			r.PathValue("package"),
-			r.PathValue("version"),
-			r.PathValue("artifact"),
-		).Decode()
-		req := dashboard.LogsRequest{
-			Ecosystem: string(t.Ecosystem),
-			Package:   t.Package,
-			Version:   t.Version,
-			Artifact:  t.Artifact,
-			RunID:     r.PathValue("runid"),
-		}
-		dashboard.HandleRawLogs(w, r, req, deps)
 	})
 	if *rundexURI != "" {
 		go pages.Warm(context.Background(), DashboardInit)
