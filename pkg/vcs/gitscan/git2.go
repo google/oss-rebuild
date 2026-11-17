@@ -6,6 +6,7 @@ package gitscan
 import (
 	"context"
 	"sort"
+	"time"
 
 	"github.com/google/oss-rebuild/internal/bitmap"
 	"github.com/msuozzo/go-git2"
@@ -15,10 +16,12 @@ import (
 // ReachableTreeCount is ExactTreeCount over go-git2, which has no object
 // iterators. It scores only commits reachable from a reference, which in a
 // fresh clone are all of them.
-type ReachableTreeCount struct{}
+type ReachableTreeCount struct {
+	Since, Until *time.Time // committer-time bounds, nil for none
+}
 
 // Search returns the set of matching commits along with the number of matches.
-func (ReachableTreeCount) Search(ctx context.Context, r *git2.Repository, hashes []git2.Hash) (closest []string, matched, total int, err error) {
+func (rc ReachableTreeCount) Search(ctx context.Context, r *git2.Repository, hashes []git2.Hash) (closest []string, matched, total int, err error) {
 	// Find subset of file hashes that are present in the repo.
 	// NOTE: Indexes files as ExactTreeCount does, so results match it.
 	files := make(map[git2.Hash]int)
@@ -41,11 +44,15 @@ func (ReachableTreeCount) Search(ctx context.Context, r *git2.Repository, hashes
 		return nil, 0, 0, errors.New("repo contains no matching files")
 	}
 	s := treeScorer{r: r, files: files, scores: make(map[git2.Hash]*bitmap.Bitmap)}
-	commits, err := r.Log(&git2.LogOptions{All: true})
+	// Committer-time order lets the walk stop at Since.
+	commits, err := r.Log(&git2.LogOptions{All: true, Order: git2.LogOrderCommitterTime, Since: rc.Since, Until: rc.Until})
 	if err != nil {
 		return nil, 0, 0, errors.Wrap(err, "walking commits")
 	}
 	err = commits.ForEach(func(c *git2.Commit) error {
+		if err := ctx.Err(); err != nil {
+			return err
+		}
 		m, err := s.score(c.TreeHash)
 		if err != nil {
 			return errors.Wrapf(err, "scoring tree of %s", c.Hash)

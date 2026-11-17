@@ -491,7 +491,7 @@ func TestGitIndexScan(t *testing.T) {
 				Maven: mockRegistry,
 			}
 			addSourceJarArtifact(mockRegistry, "dummy", "dummy", tc.zipEntries)
-			sourceCommit, err := findClosestCommitToSource(context.Background(), rebuild.Target{Package: "dummy", Version: "dummy"}, mockMux, repo.Repository)
+			sourceCommit, err := findClosestCommitToSource(context.Background(), rebuild.Target{Package: "dummy", Version: "dummy"}, mockMux, repo.Repository, time.Time{})
 			if tc.expectedError {
 				if err == nil {
 					t.Fatalf("expected error but got none")

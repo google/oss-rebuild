@@ -11,6 +11,24 @@ import (
 	"github.com/pkg/errors"
 )
 
+// The commit search spans searchLookback before a version's publish time to
+// searchSlack after. Release commits almost always fall inside, and the bound
+// keeps a search from walking a whole long history.
+const (
+	searchLookback = 365 * 24 * time.Hour
+	searchSlack    = 3 * 24 * time.Hour
+)
+
+// SearchWindow returns the committer-time bounds to search for the commit of
+// a version published at published. A zero publish time leaves both open.
+func SearchWindow(published time.Time) (since, until *time.Time) {
+	if published.IsZero() {
+		return nil, nil
+	}
+	s, u := published.Add(-searchLookback), published.Add(searchSlack)
+	return &s, &u
+}
+
 var (
 	ErrNoRef      = errors.New("no git ref")
 	ErrNoValidRef = errors.New("no git ref: all candidates invalid")

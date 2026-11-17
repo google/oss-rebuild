@@ -7,6 +7,7 @@ import (
 	"archive/zip"
 	"errors"
 	"testing"
+	"time"
 
 	"github.com/google/go-cmp/cmp"
 	"github.com/google/oss-rebuild/internal/gitx"
@@ -123,7 +124,8 @@ func TestGradleInfer(t *testing.T) {
 		target         rebuild.Target
 		repo           string
 		zipEntries     map[string][]*archive.ZipEntry
-		jarError       error // every registry file fetch fails with this
+		jarError       error     // every registry file fetch fails with this
+		published      time.Time // bounds the version searches, zero for none
 		expectedCommit string
 		wantErr        bool
 		wantLocated    bool // the error carries the resolved location
@@ -210,6 +212,88 @@ func TestGradleInfer(t *testing.T) {
 			expectedCommit: "second-commit",
 		},
 		{
+			name: "source jar heuristic finds a matching tree shortly before the publish time",
+			target: rebuild.Target{
+				Package:   "com.example:myapp",
+				Version:   "1.0.0",
+				Ecosystem: rebuild.Maven,
+			},
+			repo: `
+            commits:
+            - id: initial-commit
+              time: 2023-01-01T00:00:00Z
+              files:
+                build.gradle: |
+                  group=com.example
+                src/main/java/App.java: |
+                  class App {}
+            - id: second-commit
+              parents: [initial-commit]
+              time: 2023-05-01T00:00:00Z
+              files:
+                src/main/java/App.java: |
+                  public class App {}`,
+			zipEntries: map[string][]*archive.ZipEntry{
+				maven.TypeJar: {
+					{
+						FileHeader: &zip.FileHeader{Name: "META-INF/maven/com/example/myapp/pom.xml"},
+						Body:       []byte("<project><groupId>com.example</groupId><artifactId>myapp</artifactId><version>1.0.0</version></project>"),
+					},
+					{
+						FileHeader: &zip.FileHeader{Name: "META-INF/MANIFEST.MF"},
+						Body:       []byte("Manifest-Version: 1.0\nBuild-Jdk: 11.0.1\n"),
+					},
+				},
+				maven.TypeSources: {
+					{
+						FileHeader: &zip.FileHeader{Name: "src/main/java/App.java"},
+						Body:       []byte("public class App {}"),
+					},
+				},
+			},
+			published:      time.Date(2023, 6, 1, 0, 0, 0, 0, time.UTC),
+			expectedCommit: "second-commit",
+		},
+		{
+			name: "source jar heuristic leaves out a matching tree long before the publish time",
+			target: rebuild.Target{
+				Package:   "com.example:myapp",
+				Version:   "1.0.0",
+				Ecosystem: rebuild.Maven,
+			},
+			repo: `
+            commits:
+            - id: stale-commit
+              time: 2020-01-01T00:00:00Z
+              files:
+                build.gradle: |
+                  group=com.example
+                src/main/java/App.java: |
+                  public class App {}
+            - id: before-publish
+              parents: [stale-commit]
+              time: 2023-05-01T00:00:00Z
+              files:
+                src/main/java/App.java: |
+                  class App {}`,
+			zipEntries: map[string][]*archive.ZipEntry{
+				maven.TypeJar: {
+					{
+						FileHeader: &zip.FileHeader{Name: "META-INF/MANIFEST.MF"},
+						Body:       []byte("Manifest-Version: 1.0\nBuild-Jdk: 11.0.1\n"),
+					},
+				},
+				maven.TypeSources: {
+					{
+						FileHeader: &zip.FileHeader{Name: "src/main/java/App.java"},
+						Body:       []byte("public class App {}\n"),
+					},
+				},
+			},
+			published: time.Date(2023, 6, 1, 0, 0, 0, 0, time.UTC),
+			wantErr:   true,
+		},
+		{
 			name: "fail when no heuristics match",
 			target: rebuild.Target{
 				Package:   "com.example:unknown",
@@ -279,7 +363,7 @@ func TestGradleInfer(t *testing.T) {
 			mockMux := rebuild.RegistryMux{
 				Maven: mockRegistry,
 			}
-			got, err := GradleInfer(t.Context(), tc.target, mockMux, repoConfig)
+			got, err := GradleInfer(t.Context(), tc.target, mockMux, repoConfig, tc.published)
 			if tc.wantErr {
 				if err == nil {
 					t.Fatalf("GradleInfer() = %v, want error", got)
@@ -325,7 +409,7 @@ func TestGradleInferSubmodules(t *testing.T) {
 		}},
 	}, target)
 	rcfg := &rebuild.RepoConfig{Repo: gitx.Repo{Repository: repo.Repository, Storer: repo.Storer}, URI: "https://github.com/example/myapp"}
-	s, err := GradleInfer(t.Context(), target, rebuild.RegistryMux{Maven: registry}, rcfg)
+	s, err := GradleInfer(t.Context(), target, rebuild.RegistryMux{Maven: registry}, rcfg, time.Time{})
 	if err != nil {
 		t.Fatalf("GradleInfer() error = %v", err)
 	}

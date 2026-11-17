@@ -81,13 +81,29 @@ func (Rebuilder) CloneRepo(ctx context.Context, t rebuild.Target, repoURI string
 	if err != nil {
 		log.Printf("package.json path heuristic failed [pkg=%s,repo=%s]: %s\n", t.Package, r.URI, err.Error())
 	}
+	// InferStrategy runs the version search, bounded by the publish time.
 	r.Dir = rebuild.DirOf(pkgPath)
-	// Do version heuristic search.
-	r.RefMap, err = pkgJSONSearch(t.Package, pkgPath, r.Repository)
-	if err != nil {
-		log.Printf("package.json version heuristic failed [pkg=%s,repo=%s]: %s\n", t.Package, r.URI, err.Error())
-	}
 	return r, nil
+}
+
+func pkgJSONRefMap(t rebuild.Target, rcfg *rebuild.RepoConfig, published time.Time) map[string]string {
+	head, err := rcfg.Repository.Head()
+	if err != nil {
+		return nil
+	}
+	c, err := rcfg.Repository.CommitObject(head.Hash())
+	if err != nil {
+		return nil
+	}
+	_, pkgPath, err := findPackageJSON(rcfg.Repository, c, t.Package)
+	if err != nil {
+		return map[string]string{}
+	}
+	tm, err := pkgJSONSearch(t.Package, pkgPath, rcfg.Repository, published)
+	if err != nil {
+		log.Printf("package.json version heuristic failed [pkg=%s,repo=%s]: %s\n", t.Package, rcfg.URI, err.Error())
+	}
+	return tm
 }
 
 // PickNodeRelease selects the node release to build with: the one the
@@ -308,6 +324,9 @@ func (Rebuilder) InferStrategy(ctx context.Context, t rebuild.Target, mux rebuil
 			loc.Dir = lh.Dir
 		}
 	} else {
+		if rcfg.RefMap == nil {
+			rcfg.RefMap = pkgJSONRefMap(t, rcfg, ut)
+		}
 		loc, versionOverride, err = InferLocation(t, vmeta, rcfg)
 		if err != nil {
 			return nil, rebuild.ErrorWithFallbackRef(err, rcfg.Repository, rebuild.Location{Repo: rcfg.URI, Dir: rcfg.Dir}, ut)
@@ -466,15 +485,20 @@ func findPackageJSON(repo *git2.Repository, c *git2.Commit, pkg string) (*npmreg
 	return nil, "", errors.Errorf("package.json heuristic found no matches")
 }
 
-func pkgJSONSearch(pkg, pkgJSONPath string, repo *git2.Repository) (tm map[string]string, err error) {
+// pkgJSONSearch maps each version the package.json at pkgJSONPath declares to
+// the commit that declared it, within published's search window.
+func pkgJSONSearch(pkg, pkgJSONPath string, repo *git2.Repository, published time.Time) (tm map[string]string, err error) {
 	tm = make(map[string]string)
 	if pkgJSONPath == "" {
 		return tm, nil // no path matches
 	}
+	since, until := rebuild.SearchWindow(published)
 	commitIter, err := repo.Log(&git2.LogOptions{
 		Order:    git2.LogOrderCommitterTime,
 		FileName: &pkgJSONPath,
 		All:      true,
+		Since:    since,
+		Until:    until,
 	})
 	if err != nil {
 		return nil, errors.Wrapf(err, "searching for commits touching package.json")
