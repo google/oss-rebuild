@@ -9,6 +9,7 @@ import (
 	"context"
 	"io"
 	"testing"
+	"time"
 
 	"github.com/google/oss-rebuild/internal/gitx/gitxtest"
 	"github.com/google/oss-rebuild/pkg/archive"
@@ -23,6 +24,7 @@ type mockMavenRegistry struct {
 	maven.Registry
 	artifactCoordinates map[artifactCoordinates][]byte
 	releaseFileError    error
+	published           time.Time
 }
 
 func (m *mockMavenRegistry) ReleaseFile(ctx context.Context, name string, version string, fileType string) (io.ReadCloser, error) {
@@ -30,6 +32,10 @@ func (m *mockMavenRegistry) ReleaseFile(ctx context.Context, name string, versio
 		return nil, m.releaseFileError
 	}
 	return io.NopCloser(bytes.NewReader(m.artifactCoordinates[struct{ PackageName, VersionID, FileType string }{PackageName: name, VersionID: version, FileType: fileType}])), nil
+}
+
+func (m *mockMavenRegistry) ReleaseTime(context.Context, string, string) (time.Time, error) {
+	return m.published, nil
 }
 
 func TestJDKVersionInference(t *testing.T) {

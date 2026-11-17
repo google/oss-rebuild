@@ -90,6 +90,12 @@ func (Rebuilder) InferStrategy(ctx context.Context, t rebuild.Target, mux rebuil
 		return nil, errors.Errorf("unsupported hint type: %T", hint)
 	}
 
+	var registryTime time.Time
+	if vd, err := mux.RubyGems.Version(ctx, t.Package, t.Version); err != nil {
+		log.Printf("warning: failed to fetch version detail for %s@%s: %v", t.Package, t.Version, err)
+	} else {
+		registryTime = vd.CreatedAt
+	}
 	if lh != nil && lh.Ref != "" {
 		ref = lh.Ref
 		if lh.Dir != "" {
@@ -104,7 +110,7 @@ func (Rebuilder) InferStrategy(ctx context.Context, t rebuild.Target, mux rebuil
 			return cfg, errors.Wrapf(err, "[INTERNAL] tag heuristic error")
 		}
 		if tagHeuristic == "" {
-			return cfg, errors.New("no git ref found")
+			return cfg, rebuild.ErrorWithFallbackRef(rebuild.ErrNoRef, rcfg.Repository, rebuild.Location{Repo: rcfg.URI, Dir: rcfg.Dir}, registryTime)
 		}
 		ref = tagHeuristic
 		dir = rcfg.Dir
@@ -161,13 +167,6 @@ func (Rebuilder) InferStrategy(ctx context.Context, t rebuild.Target, mux rebuil
 	if rubyVersion == "" {
 		// Fallback: recent stable Ruby available from ruby-builder.
 		rubyVersion = "3.3.11"
-	}
-
-	var registryTime time.Time
-	if vd, err := mux.RubyGems.Version(ctx, t.Package, t.Version); err != nil {
-		log.Printf("warning: failed to fetch version detail for %s@%s: %v", t.Package, t.Version, err)
-	} else {
-		registryTime = vd.CreatedAt
 	}
 
 	return &GemBuild{

@@ -94,9 +94,9 @@ func MavenInfer(ctx context.Context, t rebuild.Target, mux rebuild.RegistryMux, 
 	}
 	if !found {
 		if pomXMLGuess != "" || tagGuess != "" || sourceJarGuess != nil {
-			return nil, errors.Errorf("no valid git ref")
+			return nil, rebuild.ErrNoValidRef
 		}
-		return nil, errors.Errorf("no git ref")
+		return nil, rebuild.ErrNoRef
 	}
 	var submodules []rebuild.Submodule
 	if refCommit, err := repoConfig.Repository.CommitObject(git2.NewHash(ref)); err == nil {

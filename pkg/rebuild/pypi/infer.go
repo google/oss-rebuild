@@ -193,7 +193,7 @@ func findGitRef(ctx context.Context, mux rebuild.RegistryMux, pkg, version strin
 		log.Printf("using archive-content ref: %s", shortHash(ref))
 		return ref, nil
 	}
-	return "", errors.New("no git ref")
+	return "", rebuild.ErrNoRef
 }
 
 // FindPureWheel returns the pure wheel artifact from the given version's releases.
@@ -445,7 +445,7 @@ func (Rebuilder) InferStrategy(ctx context.Context, t rebuild.Target, mux rebuil
 	} else {
 		ref, err = findGitRef(ctx, mux, release.Name, version, release, rcfg)
 		if err != nil {
-			return cfg, err
+			return cfg, rebuild.ErrorWithFallbackRef(err, rcfg.Repository, rebuild.Location{Repo: rcfg.URI, Dir: rcfg.Dir}, a.UploadTime)
 		}
 		dir = rcfg.Dir
 	}

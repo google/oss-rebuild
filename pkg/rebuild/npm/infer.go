@@ -275,9 +275,9 @@ func InferLocation(t rebuild.Target, vmeta *npmreg.NPMVersion, rcfg *rebuild.Rep
 			versionOverride = t.Version
 			return loc, versionOverride, nil
 		} else if registryRef == "" && tagGuess == "" && pkgJSONGuess == "" {
-			return loc, "", errors.Errorf("no git ref")
+			return loc, "", rebuild.ErrNoRef
 		} else {
-			return loc, "", errors.Errorf("no valid git ref")
+			return loc, "", rebuild.ErrNoValidRef
 		}
 	}
 }
@@ -310,7 +310,7 @@ func (Rebuilder) InferStrategy(ctx context.Context, t rebuild.Target, mux rebuil
 	} else {
 		loc, versionOverride, err = InferLocation(t, vmeta, rcfg)
 		if err != nil {
-			return nil, err
+			return nil, rebuild.ErrorWithFallbackRef(err, rcfg.Repository, rebuild.Location{Repo: rcfg.URI, Dir: rcfg.Dir}, ut)
 		}
 	}
 	if lh != nil {

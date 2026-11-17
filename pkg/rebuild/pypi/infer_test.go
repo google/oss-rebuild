@@ -490,7 +490,9 @@ func TestInferStrategyLocatedError(t *testing.T) {
 	for _, tc := range []struct {
 		name        string
 		calls       []httpxtest.Call
+		noHint      bool // infer the ref, no location hint
 		wantLocated bool // the error carries the resolved location
+		wantKind    rebuild.FailureKind
 	}{
 		{
 			name: "artifact missing from the release",
@@ -507,6 +509,17 @@ func TestInferStrategyLocatedError(t *testing.T) {
 			},
 			wantLocated: true,
 		},
+		{
+			name: "no ref found",
+			calls: []httpxtest.Call{
+				{URL: releaseURL, Response: &http.Response{StatusCode: 200, Body: httpxtest.Body(release(wheel))}},
+				{URL: releaseURL, Response: &http.Response{StatusCode: 200, Body: httpxtest.Body(release(wheel))}},
+				{URL: wheelURL, Response: &http.Response{StatusCode: 200, Body: httpxtest.Body("not a zip")}},
+			},
+			noHint:      true,
+			wantLocated: true,
+			wantKind:    rebuild.FailureNoRef,
+		},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			repo := must(gitxtest.CreateRepoFromYAML(`commits:
@@ -519,7 +532,11 @@ func TestInferStrategyLocatedError(t *testing.T) {
 			target := rebuild.Target{Ecosystem: rebuild.PyPI, Package: "test-package", Version: "1.0.0", Artifact: "test_package-1.0.0-py3-none-any.whl"}
 			mux := rebuild.RegistryMux{PyPI: pypireg.HTTPRegistry{Client: &httpxtest.MockClient{Calls: tc.calls, URLValidator: httpxtest.NewURLValidator(t)}}}
 			rcfg := &rebuild.RepoConfig{Repo: gitx.Repo{Repository: repo.Repository, Storer: repo.Storer}, URI: "https://github.com/test-org/test-package"}
-			s, err := Rebuilder{}.InferStrategy(context.Background(), target, mux, rcfg, &rebuild.LocationHint{Location: rebuild.Location{Repo: rcfg.URI, Ref: ref}})
+			var hint rebuild.Strategy = &rebuild.LocationHint{Location: rebuild.Location{Repo: rcfg.URI, Ref: ref}}
+			if tc.noHint {
+				hint = nil
+			}
+			s, err := Rebuilder{}.InferStrategy(context.Background(), target, mux, rcfg, hint)
 			if err == nil {
 				t.Fatalf("InferStrategy expected error, got %v", s)
 			}
@@ -530,7 +547,7 @@ func TestInferStrategyLocatedError(t *testing.T) {
 			if !tc.wantLocated {
 				return
 			}
-			want := rebuild.InferenceErrorDetail{Location: rebuild.Location{Repo: rcfg.URI, Ref: ref}, Published: time.Date(2023, time.January, 1, 12, 0, 0, 0, time.UTC)}
+			want := rebuild.InferenceErrorDetail{Location: rebuild.Location{Repo: rcfg.URI, Ref: ref}, Published: time.Date(2023, time.January, 1, 12, 0, 0, 0, time.UTC), Kind: tc.wantKind}
 			if diff := cmp.Diff(want, located.Detail); diff != "" {
 				t.Errorf("located detail diff (-want +got):\n%s", diff)
 			}

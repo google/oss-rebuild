@@ -89,7 +89,8 @@ func TestInferStrategy(t *testing.T) {
 		hintFn           func(*gitxtest.Repository) rebuild.Strategy
 		wantFn           func(*gitxtest.Repository) rebuild.Strategy
 		wantErr          bool
-		wantLocated      bool // the error carries the resolved location
+		wantLocated      bool   // the error carries the resolved location
+		wantNoRef        string // commit a NO_REF error is located at
 		registryResponse *cratesregistryservice.FindRegistryCommitResponse
 		wantPublishTime  string
 	}{
@@ -514,7 +515,8 @@ edition = "2024"
 			files: []archive.TarEntry{
 				{Header: &tar.Header{Name: "serde-1.0.150/Cargo.toml"}, Body: []byte(pre150CargoTOML)},
 			},
-			wantErr: true,
+			wantErr:   true,
+			wantNoRef: "version-bump",
 		},
 		{
 			name: "broken cargo_vcs_info",
@@ -1350,10 +1352,15 @@ version = 3
 					t.Errorf("InferStrategy expected error, got %v", s)
 				}
 				var located *rebuild.InferenceError
-				if errors.As(err, &located) != tc.wantLocated {
-					t.Errorf("located error = %v, want %v: %v", !tc.wantLocated, tc.wantLocated, err)
-				} else if tc.wantLocated && located.Detail.Location.Ref != repo.Commits["version-bump"].String() {
-					t.Errorf("located ref = %q, want version-bump", located.Detail.Location.Ref)
+				wantLocated := tc.wantLocated || tc.wantNoRef != ""
+				if errors.As(err, &located) != wantLocated {
+					t.Errorf("located error = %v, want %v: %v", !wantLocated, wantLocated, err)
+				} else if tc.wantNoRef != "" {
+					if want := repo.Commits[tc.wantNoRef].String(); located.Detail.Kind != rebuild.FailureNoRef || located.Detail.Location.Ref != want {
+						t.Errorf("kind %q at %q, want %q at %q", located.Detail.Kind, located.Detail.Location.Ref, rebuild.FailureNoRef, want)
+					}
+				} else if tc.wantLocated && (located.Detail.Kind != "" || located.Detail.Location.Ref != repo.Commits["version-bump"].String()) {
+					t.Errorf("located ref = %q (kind %q), want version-bump", located.Detail.Location.Ref, located.Detail.Kind)
 				}
 			} else if err != nil {
 				t.Fatal(err)

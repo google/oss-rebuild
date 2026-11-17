@@ -16,6 +16,7 @@ import (
 	"github.com/google/oss-rebuild/internal/httpx/httpxtest"
 	"github.com/google/oss-rebuild/pkg/rebuild/rebuild"
 	reg "github.com/google/oss-rebuild/pkg/registry/rubygems"
+	"github.com/pkg/errors"
 )
 
 func TestInferStrategy(t *testing.T) {
@@ -29,6 +30,7 @@ func TestInferStrategy(t *testing.T) {
 		wantCommitID   string
 		wantStrategyFn func(commitHash string) rebuild.Strategy
 		wantErr        bool
+		wantNoRef      string // commit a NO_REF error is located at
 	}{
 		{
 			name:    "basic",
@@ -165,15 +167,20 @@ func TestInferStrategy(t *testing.T) {
 			version: "1.0.0",
 			repoYAML: `commits:
   - id: initial
+    time: 2023-01-01T00:00:00Z
     files:
       test-gem.gemspec: |
         Gem::Specification.new do |s|
           s.name = 'test-gem'
           s.version = '1.0.0'
         end
+  - id: later
+    parent: initial
+    time: 2024-01-01T00:00:00Z
 `,
 			versionDetail: `{"name":"test-gem","version":"1.0.0","platform":"ruby","sha":"abc","version_created_at":"2023-06-01T00:00:00Z"}`,
 			wantErr:       true,
+			wantNoRef:     "initial",
 		},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
@@ -188,21 +195,21 @@ func TestInferStrategy(t *testing.T) {
 				Version:   tc.version,
 			}
 			target.Artifact = ArtifactName(target)
-			// Mock the registry: Artifact call (for gem spec) and Version call.
+			// Mock the registry: Version call and Artifact call (for gem spec).
 			mux := rebuild.RegistryMux{RubyGems: reg.HTTPRegistry{Client: &httpxtest.MockClient{
 				Calls: []httpxtest.Call{
-					{
-						URL: fmt.Sprintf("https://rubygems.org/gems/%s-%s.gem", tc.pkg, tc.version),
-						Response: &http.Response{
-							StatusCode: 200,
-							Body:       httpxtest.Body(""), // Empty body; parseUpstreamGemSpec will fail gracefully
-						},
-					},
 					{
 						URL: fmt.Sprintf("https://rubygems.org/api/v2/rubygems/%s/versions/%s.json", tc.pkg, tc.version),
 						Response: &http.Response{
 							StatusCode: 200,
 							Body:       httpxtest.Body(tc.versionDetail),
+						},
+					},
+					{
+						URL: fmt.Sprintf("https://rubygems.org/gems/%s-%s.gem", tc.pkg, tc.version),
+						Response: &http.Response{
+							StatusCode: 200,
+							Body:       httpxtest.Body(""), // Empty body; parseUpstreamGemSpec will fail gracefully
 						},
 					},
 				},
@@ -219,6 +226,16 @@ func TestInferStrategy(t *testing.T) {
 			if tc.wantErr {
 				if err == nil {
 					t.Errorf("InferStrategy expected error, got %v", s)
+				}
+				if tc.wantNoRef != "" {
+					var located *rebuild.InferenceError
+					if !errors.As(err, &located) {
+						t.Fatalf("InferStrategy() error = %v, want a located error", err)
+					}
+					want := rebuild.InferenceErrorDetail{Location: rebuild.Location{Repo: "https://github.com/test-org/test-gem", Ref: repo.Commits[tc.wantNoRef].String()}, Published: must(parseTime("2023-06-01T00:00:00Z")), Kind: rebuild.FailureNoRef}
+					if diff := cmp.Diff(want, located.Detail); diff != "" {
+						t.Errorf("detail mismatch (-want +got):\n%s", diff)
+					}
 				}
 				return
 			}

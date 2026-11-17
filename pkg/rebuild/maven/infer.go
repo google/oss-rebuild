@@ -86,13 +86,13 @@ func (Rebuilder) InferStrategy(ctx context.Context, t rebuild.Target, mux rebuil
 	case mavenBuildTool:
 		mavenStrategy, err := MavenInfer(ctx, t, mux, repoConfig)
 		if err != nil {
-			return nil, errors.Wrapf(err, "inferring Maven strategy")
+			return nil, errors.Wrap(withFallbackRef(ctx, err, t, mux, repoConfig), "inferring Maven strategy")
 		}
 		return mavenStrategy, nil
 	case gradleBuildTool:
 		gradleStrategy, err := GradleInfer(ctx, t, mux, repoConfig)
 		if err != nil {
-			return nil, errors.Wrapf(err, "inferring Gradle strategy")
+			return nil, errors.Wrap(withFallbackRef(ctx, err, t, mux, repoConfig), "inferring Gradle strategy")
 		}
 		return gradleStrategy, nil
 	case sbtBuildTool, antBuildTool, ivyBuildTool, leiningenBuildTool, npmBuildTool, millBuildTool:
@@ -100,6 +100,20 @@ func (Rebuilder) InferStrategy(ctx context.Context, t rebuild.Target, mux rebuil
 	default:
 		return nil, errors.New("no recognized build tool")
 	}
+}
+
+// withFallbackRef locates a no-ref err at a fallback commit. Only then does it
+// ask Central for the publish time, and a time Central doesn't give leaves
+// the fallback unbounded.
+func withFallbackRef(ctx context.Context, err error, t rebuild.Target, mux rebuild.RegistryMux, repoConfig *rebuild.RepoConfig) error {
+	if !errors.Is(err, rebuild.ErrNoRef) && !errors.Is(err, rebuild.ErrNoValidRef) {
+		return err
+	}
+	published, terr := mux.Maven.ReleaseTime(ctx, t.Package, t.Version)
+	if terr != nil {
+		log.Printf("publish time unknown [pkg=%s,version=%s]: %v", t.Package, t.Version, terr)
+	}
+	return rebuild.ErrorWithFallbackRef(err, repoConfig.Repository, rebuild.Location{Repo: repoConfig.URI, Dir: repoConfig.Dir}, published)
 }
 
 // inferBuildTool scans the repository for build tool indicators and returns the most probable build tool.
