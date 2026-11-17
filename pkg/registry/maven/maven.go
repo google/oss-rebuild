@@ -82,6 +82,7 @@ type Registry interface {
 	PackageVersion(context.Context, string, string) (*MavenVersion, error)
 	ReleaseFile(context.Context, string, string, string) (io.ReadCloser, error)
 	ReleaseURL(context.Context, string, string, string) (string, error)
+	ReleaseTime(context.Context, string, string) (time.Time, error)
 	Artifact(context.Context, string, string, string) (io.ReadCloser, error)
 }
 
@@ -173,6 +174,25 @@ func (r HTTPRegistry) ReleaseURL(ctx context.Context, pkg, version, typ string) 
 	artifactPath := path.Join(strings.ReplaceAll(g, ".", "/"), a, version, fmt.Sprintf("%s-%s%s", a, version, typ))
 	artifactURL := releaseURL.JoinPath(artifactPath)
 	return artifactURL.String(), nil
+}
+
+// ReleaseTime returns when a version was published, from its POM's Last-Modified.
+func (r HTTPRegistry) ReleaseTime(ctx context.Context, pkg, version string) (time.Time, error) {
+	pomURL, err := r.ReleaseURL(ctx, pkg, version, TypePOM)
+	if err != nil {
+		return time.Time{}, err
+	}
+	req, _ := http.NewRequestWithContext(ctx, http.MethodHead, pomURL, nil)
+	resp, err := r.Client.Do(req)
+	if err != nil {
+		return time.Time{}, errors.Wrap(err, "fetching POM")
+	}
+	resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		return time.Time{}, errors.Wrap(errors.New(resp.Status), "fetching POM")
+	}
+	t, err := http.ParseTime(resp.Header.Get("Last-Modified"))
+	return t, errors.Wrap(err, "parsing Last-Modified")
 }
 
 // Artifact returns file that is part of the Maven release.

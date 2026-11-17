@@ -8,6 +8,7 @@ import (
 	"io"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/google/go-cmp/cmp"
 	"github.com/google/oss-rebuild/pkg/rebuild/rebuild"
@@ -33,6 +34,10 @@ func (r TestRegistry) ReleaseFile(_ context.Context, _, _, _ string) (io.ReadClo
 
 func (r TestRegistry) ReleaseURL(_ context.Context, _, _, _ string) (string, error) {
 	return "", nil
+}
+
+func (TestRegistry) ReleaseTime(_ context.Context, _, _ string) (time.Time, error) {
+	return time.Time{}, nil
 }
 
 func (r TestRegistry) Artifact(_ context.Context, _, _, _ string) (io.ReadCloser, error) {
