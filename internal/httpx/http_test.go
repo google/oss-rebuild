@@ -156,6 +156,49 @@ func TestCachedClient(t *testing.T) {
 				},
 			},
 		},
+		{
+			name: "CacheMethodsSeparately",
+			callsToCache: []httpxtest.Call{
+				{
+					Method: "HEAD",
+					URL:    "http://example.com",
+					Response: &http.Response{
+						Status:     "200 OK",
+						StatusCode: http.StatusOK,
+						Body:       httpxtest.Body(""),
+					},
+				},
+				{
+					Method: "GET",
+					URL:    "http://example.com",
+					Response: &http.Response{
+						Status:     "200 OK",
+						StatusCode: http.StatusOK,
+						Body:       httpxtest.Body("body"),
+					},
+				},
+			},
+			callsToBaseClient: []httpxtest.Call{
+				{
+					Method: "HEAD",
+					URL:    "http://example.com",
+					Response: &http.Response{
+						Status:     "200 OK",
+						StatusCode: http.StatusOK,
+						Body:       httpxtest.Body(""),
+					},
+				},
+				{
+					Method: "GET",
+					URL:    "http://example.com",
+					Response: &http.Response{
+						Status:     "200 OK",
+						StatusCode: http.StatusOK,
+						Body:       httpxtest.Body("body"),
+					},
+				},
+			},
+		},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			basic := &httpxtest.MockClient{
