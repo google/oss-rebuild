@@ -4,6 +4,7 @@
 package maven
 
 import (
+	"cmp"
 	"log"
 	"path"
 	"regexp"
@@ -20,6 +21,10 @@ type MavenBuild struct {
 
 	// JDKVersion is the version of the JDK to use for the build.
 	JDKVersion string `json:"jdk_version" yaml:"jdk_version"`
+	// MavenVersion is the Maven release to install. Empty installs defaultMaven.
+	MavenVersion string `json:"maven_version,omitempty" yaml:"maven_version,omitempty"`
+	// CRLF checks the source out with CRLF line endings, as on Windows.
+	CRLF bool `json:"crlf,omitempty" yaml:"crlf,omitempty"`
 }
 
 var _ rebuild.Strategy = &MavenBuild{}
@@ -49,24 +54,34 @@ func (b *MavenBuild) ToWorkflow() *rebuild.WorkflowStrategy {
 			Uses: "maven/regen-cacerts",
 		})
 	}
+	deps = append(deps, flow.Step{
+		Uses: "maven/setup-maven",
+		With: map[string]string{"version": cmp.Or(b.MavenVersion, defaultMaven)},
+	})
 	return &rebuild.WorkflowStrategy{
 		Location: b.Location,
-		Source: []flow.Step{{
-			Uses: "git-checkout",
-		}},
-		Deps: deps,
+		Source:   checkout(b.CRLF),
+		Deps:     deps,
 		Build: []flow.Step{
-			{
-				Uses: "maven/export-java",
-			},
-			{
-				Runs: "mvn clean package -DskipTests --batch-mode{{if and (ne .Location.Dir \".\") (ne .Location.Dir \"\")}} -f {{.Location.Dir}}{{end}} -Dmaven.javadoc.skip=true",
-				// Note `maven` from apt also pull in jdk-21 and hence we must export JAVA_HOME and PATH in the step before
-				Needs: []string{"maven"},
-			},
+			{Uses: "maven/export-java"},
+			{Uses: "maven/export-maven"},
+			{Uses: "maven/mvn-build", With: map[string]string{"dir": cmp.Or(b.Dir, ".")}},
 		},
 		OutputDir: path.Join(b.Dir, "target"),
 	}
+}
+
+// defaultMaven is the Maven release for strategies without maven_version. It
+// matches the apt package they used before (Debian 13).
+const defaultMaven = "3.9.9"
+
+// checkout is the source step, optionally converting line endings to CRLF.
+func checkout(crlf bool) []flow.Step {
+	step := flow.Step{Uses: "git-checkout"}
+	if crlf {
+		step.With = map[string]string{"crlf": "true"}
+	}
+	return []flow.Step{step}
 }
 
 func (b *MavenBuild) GenerateFor(t rebuild.Target, be rebuild.BuildEnv) (rebuild.Instructions, error) {
@@ -177,9 +192,40 @@ var toolkit = []*flow.Tool{
 	{
 		Name: "maven/export-java",
 		Steps: []flow.Step{{
+			// Without a UTF-8 locale, javac reads sources and writes class file
+			// names as ASCII, unlike a publisher's desktop.
 			Runs: textwrap.Dedent(`
 				export JAVA_HOME=/opt/jdk
-				export PATH=$JAVA_HOME/bin:$PATH`[1:]),
+				export PATH=$JAVA_HOME/bin:$PATH
+				export LANG=C.UTF-8`[1:]),
+		}},
+	},
+	{
+		Name: "maven/setup-maven",
+		Steps: []flow.Step{
+			{
+				// Maven before 3.2.3 reaches Central over plain HTTP, which Central
+				// refuses, so the global settings mirror it to the HTTPS URL.
+				Runs: textwrap.Dedent(`
+					mkdir -p /opt/maven
+					wget -q -O - "https://repo1.maven.org/maven2/org/apache/maven/apache-maven/{{.With.version}}/apache-maven-{{.With.version}}-bin.tar.gz" | tar -xzf - --strip-components=1 -C /opt/maven
+					cat <<'SETTINGS' > /opt/maven/conf/settings.xml
+					<settings><mirrors><mirror><id>central-https</id><mirrorOf>central</mirrorOf><url>https://repo.maven.apache.org/maven2</url></mirror></mirrors></settings>
+					SETTINGS`[1:]),
+				Needs: []string{"wget"},
+			},
+		},
+	},
+	{
+		Name: "maven/export-maven",
+		Steps: []flow.Step{{
+			Runs: "export PATH=/opt/maven/bin:$PATH",
+		}},
+	},
+	{
+		Name: "maven/mvn-build",
+		Steps: []flow.Step{{
+			Runs: "mvn clean package -DskipTests --batch-mode -f {{.With.dir}} -Dmaven.javadoc.skip=true",
 		}},
 	},
 	{

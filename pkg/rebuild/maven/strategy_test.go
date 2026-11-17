@@ -35,17 +35,62 @@ func TestStrategies(t *testing.T) {
 					Dir:  "dir",
 				},
 				Requires: rebuild.RequiredEnv{
-					SystemDeps: []string{"git", "wget", "maven"},
+					SystemDeps: []string{"git", "wget"},
 				},
 				Source: "git clone https://foo.bar .\ngit checkout --force 'ref'",
 				Deps: textwrap.Dedent(`
 					mkdir -p /opt/jdk
-					wget -q -O - "https://github.com/AdoptOpenJDK/openjdk11-binaries/releases/download/jdk-11.0.1%2B13/OpenJDK11U-jdk_x64_linux_hotspot_11.0.1_13.tar.gz" | tar -xzf - --strip-components=1 -C /opt/jdk`)[1:],
+					wget -q -O - "https://github.com/AdoptOpenJDK/openjdk11-binaries/releases/download/jdk-11.0.1%2B13/OpenJDK11U-jdk_x64_linux_hotspot_11.0.1_13.tar.gz" | tar -xzf - --strip-components=1 -C /opt/jdk
+					mkdir -p /opt/maven
+					wget -q -O - "https://repo1.maven.org/maven2/org/apache/maven/apache-maven/3.9.9/apache-maven-3.9.9-bin.tar.gz" | tar -xzf - --strip-components=1 -C /opt/maven
+					cat <<'SETTINGS' > /opt/maven/conf/settings.xml
+					<settings><mirrors><mirror><id>central-https</id><mirrorOf>central</mirrorOf><url>https://repo.maven.apache.org/maven2</url></mirror></mirrors></settings>
+					SETTINGS`)[1:],
 				Build: textwrap.Dedent(`
 					export JAVA_HOME=/opt/jdk
 					export PATH=$JAVA_HOME/bin:$PATH
+					export LANG=C.UTF-8
+					export PATH=/opt/maven/bin:$PATH
 					mvn clean package -DskipTests --batch-mode -f dir -Dmaven.javadoc.skip=true`[1:]),
 				OutputPath: "dir/target/ldapchai-0.8.6.jar",
+			},
+			false,
+		},
+		{
+			"install the recorded maven version and check out with CRLF",
+			&MavenBuild{
+				Location: rebuild.Location{
+					Repo: "https://foo.bar",
+					Ref:  "ref",
+				},
+				JDKVersion:   "11.0.1",
+				MavenVersion: "3.5.4",
+				CRLF:         true,
+			},
+			rebuild.Instructions{
+				Location: rebuild.Location{
+					Repo: "https://foo.bar",
+					Ref:  "ref",
+				},
+				Requires: rebuild.RequiredEnv{
+					SystemDeps: []string{"git", "wget"},
+				},
+				Source: "git clone -c core.autocrlf=true https://foo.bar .\ngit checkout --force 'ref'",
+				Deps: textwrap.Dedent(`
+					mkdir -p /opt/jdk
+					wget -q -O - "https://github.com/AdoptOpenJDK/openjdk11-binaries/releases/download/jdk-11.0.1%2B13/OpenJDK11U-jdk_x64_linux_hotspot_11.0.1_13.tar.gz" | tar -xzf - --strip-components=1 -C /opt/jdk
+					mkdir -p /opt/maven
+					wget -q -O - "https://repo1.maven.org/maven2/org/apache/maven/apache-maven/3.5.4/apache-maven-3.5.4-bin.tar.gz" | tar -xzf - --strip-components=1 -C /opt/maven
+					cat <<'SETTINGS' > /opt/maven/conf/settings.xml
+					<settings><mirrors><mirror><id>central-https</id><mirrorOf>central</mirrorOf><url>https://repo.maven.apache.org/maven2</url></mirror></mirrors></settings>
+					SETTINGS`)[1:],
+				Build: textwrap.Dedent(`
+					export JAVA_HOME=/opt/jdk
+					export PATH=$JAVA_HOME/bin:$PATH
+					export LANG=C.UTF-8
+					export PATH=/opt/maven/bin:$PATH
+					mvn clean package -DskipTests --batch-mode -f . -Dmaven.javadoc.skip=true`[1:]),
+				OutputPath: "target/ldapchai-0.8.6.jar",
 			},
 			false,
 		},
@@ -75,6 +120,7 @@ func TestStrategies(t *testing.T) {
 				Build: textwrap.Dedent(`
 					export JAVA_HOME=/opt/jdk
 					export PATH=$JAVA_HOME/bin:$PATH
+					export LANG=C.UTF-8
 					./gradlew assemble --no-daemon --console=plain -Pversion=0.8.6`[1:]),
 				OutputPath: "dir/build/libs/ldapchai-0.8.6.jar",
 			},
@@ -110,6 +156,7 @@ func TestStrategies(t *testing.T) {
 				Build: textwrap.Dedent(`
 					export JAVA_HOME=/opt/jdk
 					export PATH=$JAVA_HOME/bin:$PATH
+					export LANG=C.UTF-8
 					export GRADLE_HOME=/opt/gradle
 					export PATH=$GRADLE_HOME/bin:$PATH
 					gradle assemble --no-daemon --console=plain -Pversion=0.8.6`[1:]),
@@ -133,7 +180,7 @@ func TestStrategies(t *testing.T) {
 					Dir:  "dir",
 				},
 				Requires: rebuild.RequiredEnv{
-					SystemDeps: []string{"git", "wget", "ca-certificates", "maven"},
+					SystemDeps: []string{"git", "wget", "ca-certificates"},
 				},
 				Source: "git clone https://foo.bar .\ngit checkout --force 'ref'",
 				Deps: textwrap.Dedent(`
@@ -141,6 +188,7 @@ func TestStrategies(t *testing.T) {
                     wget -q -O - "https://github.com/AdoptOpenJDK/openjdk10-binaries/releases/download/jdk-10.0.2%2B13.1/OpenJDK10U-jdk_x64_linux_hotspot_10.0.2_13.tar.gz" | tar -xzf - --strip-components=1 -C /opt/jdk
                     export JAVA_HOME=/opt/jdk
                     export PATH=$JAVA_HOME/bin:$PATH
+                    export LANG=C.UTF-8
                     KEYSTORE_FILE="$JAVA_HOME/lib/security/cacerts"
                     rm -f $KEYSTORE_FILE
                     find /etc/ssl/certs -name '*.pem' | while read cert_path; do
@@ -151,10 +199,17 @@ func TestStrategies(t *testing.T) {
                         -file "$cert_path" \
                         -storepass password \
                         -storetype JKS
-                    done`)[1:],
+                    done
+                    mkdir -p /opt/maven
+                    wget -q -O - "https://repo1.maven.org/maven2/org/apache/maven/apache-maven/3.9.9/apache-maven-3.9.9-bin.tar.gz" | tar -xzf - --strip-components=1 -C /opt/maven
+                    cat <<'SETTINGS' > /opt/maven/conf/settings.xml
+                    <settings><mirrors><mirror><id>central-https</id><mirrorOf>central</mirrorOf><url>https://repo.maven.apache.org/maven2</url></mirror></mirrors></settings>
+                    SETTINGS`)[1:],
 				Build: textwrap.Dedent(`
                     export JAVA_HOME=/opt/jdk
                     export PATH=$JAVA_HOME/bin:$PATH
+                    export LANG=C.UTF-8
+                    export PATH=/opt/maven/bin:$PATH
                     mvn clean package -DskipTests --batch-mode -f dir -Dmaven.javadoc.skip=true`[1:]),
 				OutputPath: "dir/target/ldapchai-0.8.6.jar",
 			},
@@ -185,6 +240,7 @@ func TestStrategies(t *testing.T) {
                     wget -q -O - "https://github.com/AdoptOpenJDK/openjdk9-binaries/releases/download/jdk-9%2B181/OpenJDK9U-jdk_x64_linux_hotspot_9_181.tar.gz" | tar -xzf - --strip-components=1 -C /opt/jdk
                     export JAVA_HOME=/opt/jdk
                     export PATH=$JAVA_HOME/bin:$PATH
+                    export LANG=C.UTF-8
                     KEYSTORE_FILE="$JAVA_HOME/lib/security/cacerts"
                     rm -f $KEYSTORE_FILE
                     find /etc/ssl/certs -name '*.pem' | while read cert_path; do
@@ -199,6 +255,7 @@ func TestStrategies(t *testing.T) {
 				Build: textwrap.Dedent(`
                     export JAVA_HOME=/opt/jdk
                     export PATH=$JAVA_HOME/bin:$PATH
+                    export LANG=C.UTF-8
                     ./gradlew assemble --no-daemon --console=plain -Pversion=0.8.6`[1:]),
 				OutputPath: "dir/build/libs/ldapchai-0.8.6.jar",
 			},
@@ -221,15 +278,22 @@ func TestStrategies(t *testing.T) {
 					Dir:  "repo-dir",
 				},
 				Requires: rebuild.RequiredEnv{
-					SystemDeps: []string{"git", "wget", "maven"},
+					SystemDeps: []string{"git", "wget"},
 				},
 				Source: "git clone https://foo.bar .\ngit checkout --force 'ref'",
 				Deps: textwrap.Dedent(`
 					mkdir -p /opt/jdk
-					wget -q -O - "http://not-found.invalid/" | tar -xzf - --strip-components=1 -C /opt/jdk`)[1:],
+					wget -q -O - "http://not-found.invalid/" | tar -xzf - --strip-components=1 -C /opt/jdk
+					mkdir -p /opt/maven
+					wget -q -O - "https://repo1.maven.org/maven2/org/apache/maven/apache-maven/3.9.9/apache-maven-3.9.9-bin.tar.gz" | tar -xzf - --strip-components=1 -C /opt/maven
+					cat <<'SETTINGS' > /opt/maven/conf/settings.xml
+					<settings><mirrors><mirror><id>central-https</id><mirrorOf>central</mirrorOf><url>https://repo.maven.apache.org/maven2</url></mirror></mirrors></settings>
+					SETTINGS`)[1:],
 				Build: textwrap.Dedent(`
 					export JAVA_HOME=/opt/jdk
 					export PATH=$JAVA_HOME/bin:$PATH
+					export LANG=C.UTF-8
+					export PATH=/opt/maven/bin:$PATH
 					mvn clean package -DskipTests --batch-mode -f repo-dir -Dmaven.javadoc.skip=true`[1:]),
 				OutputPath: "repo-dir/target/ldapchai-0.8.6.jar",
 			},

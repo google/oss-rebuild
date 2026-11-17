@@ -10,6 +10,7 @@ import (
 	"encoding/xml"
 	"errors"
 	"fmt"
+	"net/http"
 	"path"
 	"testing"
 	"time"
@@ -20,6 +21,7 @@ import (
 	"github.com/go-git/go-git/v5/plumbing/object"
 	"github.com/go-git/go-git/v5/storage/filesystem"
 	"github.com/google/oss-rebuild/internal/gitx/gitxtest"
+	"github.com/google/oss-rebuild/internal/httpx/httpxtest"
 	"github.com/google/oss-rebuild/pkg/archive"
 	"github.com/google/oss-rebuild/pkg/rebuild/rebuild"
 	"github.com/google/oss-rebuild/pkg/registry/maven"
@@ -126,6 +128,115 @@ func TestSourceRepositoryURLInference(t *testing.T) {
 			},
 			expectedURL: "https://github.com/example/child",
 			wantErr:     false,
+		},
+		{
+			name: "git connection over a retired scm URL",
+			pom: []PomXML{
+				{
+					GroupID:       "org.example",
+					ArtifactID:    "child",
+					VersionID:     "1.0.0",
+					SCMURL:        "http://fisheye.codehaus.org/browse/child",
+					SCMConnection: "scm:git:git@github.com:example/child.git",
+				},
+			},
+			targetPom: rebuild.Target{
+				Package: "org.example:child",
+				Version: "1.0.0",
+			},
+			expectedURL: "https://github.com/example/child",
+		},
+		{
+			name: "interpolate a property in the scm URL",
+			pom: []PomXML{
+				{
+					GroupID:    "org.example",
+					ArtifactID: "child",
+					VersionID:  "1.0.0",
+					SCMURL:     "${repository.url}",
+					Properties: pomProperties{"repository.url": "https://github.com/example/child"},
+				},
+			},
+			targetPom: rebuild.Target{
+				Package: "org.example:child",
+				Version: "1.0.0",
+			},
+			expectedURL: "https://github.com/example/child",
+		},
+		{
+			name: "connection keeps a parent's scm URL out",
+			pom: []PomXML{
+				{
+					GroupID:       "org.example",
+					ArtifactID:    "child",
+					VersionID:     "1.0.0",
+					URL:           "https://example.com/child",
+					SCMConnection: "scm:git:https://git.example.org/child.git",
+					Parent: Parent{
+						GroupID:    "org.example",
+						ArtifactID: "parent",
+						VersionID:  "1.0.0",
+					},
+				},
+				{
+					GroupID:    "org.example",
+					ArtifactID: "parent",
+					VersionID:  "1.0.0",
+					SCMURL:     "https://github.com/example/parent",
+				},
+			},
+			targetPom: rebuild.Target{
+				Package: "org.example:child",
+				Version: "1.0.0",
+			},
+			expectedURL: "https://example.com/child",
+		},
+		{
+			name: "connection needs no parent POM",
+			pom: []PomXML{
+				{
+					GroupID:       "org.example",
+					ArtifactID:    "child",
+					VersionID:     "1.0.0",
+					SCMConnection: "scm:git:git@github.com:example/child.git",
+					Parent: Parent{
+						GroupID:    "org.example",
+						ArtifactID: "unpublished",
+						VersionID:  "1.0.0",
+					},
+				},
+			},
+			targetPom: rebuild.Target{
+				Package: "org.example:child",
+				Version: "1.0.0",
+			},
+			expectedURL: "https://github.com/example/child",
+		},
+		{
+			name: "parent's connection stands in",
+			pom: []PomXML{
+				{
+					GroupID:    "org.example",
+					ArtifactID: "child",
+					VersionID:  "1.0.0",
+					Parent: Parent{
+						GroupID:    "org.example",
+						ArtifactID: "parent",
+						VersionID:  "1.0.0",
+					},
+				},
+				{
+					GroupID:       "org.example",
+					ArtifactID:    "parent",
+					VersionID:     "1.0.0",
+					SCMConnection: "scm:git:git@github.com:example/parent.git",
+				},
+			},
+			targetPom: rebuild.Target{
+				Package: "org.example:child",
+				Version: "1.0.0",
+			},
+			expectedURL: "https://github.com/example/parent",
 		},
 		{
 			name: "get URL",
@@ -263,6 +374,51 @@ func addPomArtifact(mavenRegistry *mockMavenRegistry, pom *PomXML) {
 	}
 	xmlBytes, _ := xml.MarshalIndent(pom, "", "  ")
 	mavenRegistry.artifactCoordinates[key] = xmlBytes
+}
+
+func TestApacheMirror(t *testing.T) {
+	for _, tc := range []struct {
+		url   string
+		calls []httpxtest.Call
+		want  string
+	}{
+		{
+			url:   "https://gitbox.apache.org/repos/asf?p=logging-log4j2.git",
+			calls: []httpxtest.Call{{Method: "HEAD", URL: "https://github.com/apache/logging-log4j2", Response: &http.Response{StatusCode: 200, Body: http.NoBody}}},
+			want:  "https://github.com/apache/logging-log4j2",
+		},
+		{
+			url:   "http://svn.apache.org/repos/asf/commons/proper/logging/trunk",
+			calls: []httpxtest.Call{{Method: "HEAD", URL: "https://github.com/apache/commons-logging", Response: &http.Response{StatusCode: 200, Body: http.NoBody}}},
+			want:  "https://github.com/apache/commons-logging",
+		},
+		{
+			url: "http://svn.apache.org/viewvc/xml/commons/tags/xml-commons-external-1_4_01/",
+			calls: []httpxtest.Call{
+				{Method: "HEAD", URL: "https://github.com/apache/xml-commons", Response: &http.Response{StatusCode: 404, Body: http.NoBody}},
+				{Method: "HEAD", URL: "https://github.com/apache/commons", Response: &http.Response{StatusCode: 404, Body: http.NoBody}},
+			},
+			want: "",
+		},
+		{
+			url:   "http://svn.apache.org/repos/asf/maven/trunk",
+			calls: []httpxtest.Call{{Method: "HEAD", URL: "https://github.com/apache/maven", Response: &http.Response{StatusCode: 404, Body: http.NoBody}}},
+			want:  "",
+		},
+		{
+			url:  "https://example.com/repo",
+			want: "",
+		},
+	} {
+		c := &httpxtest.MockClient{Calls: tc.calls, URLValidator: httpxtest.NewURLValidator(t)}
+		ctx := context.WithValue(context.Background(), rebuild.HTTPBasicClientID, c)
+		if got := apacheMirror(ctx, tc.url); got != tc.want {
+			t.Errorf("apacheMirror(%q) = %q, want %q", tc.url, got, tc.want)
+		}
+		if c.CallCount() != len(tc.calls) {
+			t.Errorf("apacheMirror(%q) made %d requests, want %d", tc.url, c.CallCount(), len(tc.calls))
+		}
+	}
 }
 
 func TestMavenInfer(t *testing.T) {
