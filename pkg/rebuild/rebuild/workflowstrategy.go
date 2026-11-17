@@ -5,6 +5,8 @@ package rebuild
 
 import (
 	"path"
+	"strings"
+	"unicode"
 
 	"github.com/google/oss-rebuild/internal/textwrap"
 	"github.com/google/oss-rebuild/pkg/rebuild/flow"
@@ -47,6 +49,13 @@ func (s *WorkflowStrategy) GenerateFor(t Target, be BuildEnv) (Instructions, err
 	} else {
 		// NOTE: This is potentially unexpected default behavior.
 		outputPath = t.Artifact
+	}
+	// NOTE: Planners interpolate these outside the indented scripts, so a
+	// newline in one can end the heredoc around it.
+	for _, v := range chain([]string{outputPath, s.Requires.BaseImage}, s.Requires.SystemDeps) {
+		if strings.ContainsFunc(v, unicode.IsControl) {
+			return Instructions{}, errors.Errorf("control character in %q", v)
+		}
 	}
 	data := map[string]any{
 		"Location": &s.Location,
