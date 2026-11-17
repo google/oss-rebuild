@@ -163,6 +163,33 @@ func TestSessionHandler(t *testing.T) {
 	}
 }
 
+func TestHandleRawExecOutput(t *testing.T) {
+	ctx := context.Background()
+	execs := db.NewMemoryScratchExecs()
+	if err := execs.Insert(ctx, schema.ScratchExec{
+		ID:        "op-1",
+		ScratchID: "scr-1",
+		OutURI:    "gs://out-bucket/obliv/op-1/out",
+	}); err != nil {
+		t.Fatalf("Insert: %v", err)
+	}
+	deps := &Deps{
+		Sessions: &sessionFixtureReader{
+			session: schema.AgentSession{ID: "sess-1", ScratchID: "scr-1"},
+		},
+		Execs: execs,
+	}
+	rec := httptest.NewRecorder()
+	HandleRawExecOutput(rec, httptest.NewRequest(http.MethodGet, "/session/sess-1/exec/op-1/out", nil), "sess-1", "op-1", deps)
+	if rec.Code != http.StatusFound {
+		t.Fatalf("status = %d; want %d", rec.Code, http.StatusFound)
+	}
+	want := "https://storage.cloud.google.com/out-bucket/obliv/op-1/out"
+	if got := rec.Header().Get("Location"); got != want {
+		t.Errorf("Location = %q; want %q", got, want)
+	}
+}
+
 func TestParseTranscriptName(t *testing.T) {
 	when := time.Date(2026, 8, 19, 12, 0, 1, 500000000, time.UTC)
 	for _, tc := range []struct {
@@ -681,7 +708,6 @@ func TestBuildOutcome(t *testing.T) {
 		}
 	}
 }
-
 func TestSessionSimplifiesErrors(t *testing.T) {
 	when := time.Date(2026, 10, 19, 4, 0, 0, 0, time.UTC)
 	toolOut := eventsFrom(transcriptName{Iter: 1, Role: "user"}, "1/stamp-0-user.json", []byte(`{
@@ -711,5 +737,51 @@ func TestSessionSimplifiesErrors(t *testing.T) {
 	})
 	if want := "compare failed: googleapi: got HTTP response code 404"; comp.Err != want {
 		t.Errorf("Comparison.Err = %q; want %q", comp.Err, want)
+	}
+}
+
+// Temporary coverage while read_logs_end omits build log tails.
+func TestReadLogsEndOmitted(t *testing.T) {
+	for _, tc := range []struct {
+		name     string
+		respJSON string
+		wantBody string
+		wantNote string
+		wantHTML string
+	}{{
+		name:     "LogOutput",
+		respJSON: `{"logs": "Step #0: build output", "error": ""}`,
+	}, {
+		name:     "Error",
+		respJSON: `{"logs": "", "error": "no previous build"}`,
+		wantBody: "no previous build",
+		wantNote: "show error",
+		wantHTML: "<summary>show error</summary>",
+	}} {
+		t.Run(tc.name, func(t *testing.T) {
+			events := eventsFrom(transcriptName{Iter: 2, Role: "user"}, "2/stamp-0-user.json", []byte(
+				fmt.Sprintf(`{"role":"user","parts":[{"functionResponse":{"name":"read_logs_end","response":%s}}]}`, tc.respJSON),
+			))
+			if len(events) != 1 || events[0].Title != "read_logs_end result" || events[0].Body != tc.wantBody || events[0].Note != tc.wantNote {
+				t.Fatalf("events = %+v; want title %q, body %q, note %q", events, "read_logs_end result", tc.wantBody, tc.wantNote)
+			}
+			var buf bytes.Buffer
+			if err := TranscriptTmpl.Execute(&buf, &SessionData{
+				Session:    NewSessionView(schema.AgentSession{ID: "s1", Target: rebuild.Target{Ecosystem: rebuild.NPM, Package: "pkg", Version: "1.0.0"}}),
+				Trajectory: []IterationGroup{{Number: 2, Events: events}},
+			}); err != nil {
+				t.Fatalf("TranscriptTmpl.Execute: %v", err)
+			}
+			html := buf.String()
+			if tc.wantHTML == "" {
+				if strings.Contains(html, "build output") || strings.Contains(html, "show output") {
+					t.Errorf("rendered transcript unexpectedly exposed read_logs_end output")
+				}
+				return
+			}
+			if !strings.Contains(html, tc.wantHTML) {
+				t.Errorf("rendered transcript missing %q", tc.wantHTML)
+			}
+		})
 	}
 }

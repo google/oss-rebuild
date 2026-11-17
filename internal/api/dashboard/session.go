@@ -12,6 +12,7 @@ import (
 	"log"
 	"maps"
 	"net/http"
+	"net/url"
 	"regexp"
 	"slices"
 	"sort"
@@ -22,6 +23,7 @@ import (
 
 	"cloud.google.com/go/storage"
 	"github.com/google/oss-rebuild/internal/buildpolicy"
+	"github.com/google/oss-rebuild/internal/gcsx"
 	"github.com/google/oss-rebuild/internal/rundex"
 	"github.com/google/oss-rebuild/pkg/act/api"
 	"github.com/google/oss-rebuild/pkg/rebuild/schema"
@@ -1032,6 +1034,18 @@ func responseEvent(r *genai.FunctionResponse, when time.Time) TranscriptEvent {
 	if msg, ok := r.Response["error"].(string); ok && msg != "" {
 		e.Note = "show error"
 	}
+	// TODO: Link read_logs_end to its backing Cloud Storage object once locating
+	// the right file is tractable.
+	if r.Name == "read_logs_end" {
+		// Omit build log tails from rendered transcripts so build log content is
+		// not served directly on the dashboard.
+		if msg, ok := r.Response["error"].(string); ok && msg != "" {
+			e.Body = simplifyMessage(msg)
+		} else {
+			e.Note = ""
+		}
+		return e
+	}
 	for _, key := range []string{"output", "logs", "error"} {
 		if v, ok := r.Response[key].(string); ok && v != "" {
 			if key == "error" {
@@ -1046,10 +1060,18 @@ func responseEvent(r *genai.FunctionResponse, when time.Time) TranscriptEvent {
 	return e
 }
 
-// HandleRawExecOutput streams one exec's merged output object. Outside the
-// act/api framework (like HandleRawLogs) since it writes a raw body.
+func gcsConsoleURL(uri string) string {
+	bucket, object, err := gcsx.ParseURL(uri)
+	if err != nil || bucket == "" || object == "" {
+		return ""
+	}
+	return (&url.URL{Scheme: "https", Host: "storage.cloud.google.com", Path: "/" + bucket + "/" + object}).String()
+}
+
+// HandleRawExecOutput redirects to one exec's merged output object in the
+// Cloud Storage console, which checks the viewer's own access.
 func HandleRawExecOutput(w http.ResponseWriter, r *http.Request, sessionID, execID string, deps *Deps) {
-	if deps.GCSClient == nil || deps.Execs == nil {
+	if deps.Execs == nil {
 		http.Error(w, "exec output viewing not configured", http.StatusServiceUnavailable)
 		return
 	}
@@ -1065,25 +1087,14 @@ func HandleRawExecOutput(w http.ResponseWriter, r *http.Request, sessionID, exec
 		http.Error(w, "exec not found for session", http.StatusNotFound)
 		return
 	}
-	rest, ok := strings.CutPrefix(exec.OutURI, "gs://")
-	if !ok {
+	if !strings.HasPrefix(exec.OutURI, "gs://") {
 		http.Error(w, "no output recorded for exec", http.StatusNotFound)
 		return
 	}
-	bucket, object, ok := strings.Cut(rest, "/")
-	if !ok {
+	target := gcsConsoleURL(exec.OutURI)
+	if target == "" {
 		http.Error(w, "malformed output URI", http.StatusInternalServerError)
 		return
 	}
-	reader, err := deps.GCSClient.Bucket(bucket).Object(object).NewReader(r.Context())
-	if err != nil {
-		http.Error(w, fmt.Sprintf("Failed to read output: %v", err), http.StatusNotFound)
-		return
-	}
-	defer reader.Close()
-	w.Header().Set("Content-Type", "text/plain; charset=utf-8")
-	w.Header().Set("X-Content-Type-Options", "nosniff")
-	if _, err := io.Copy(w, reader); err != nil {
-		log.Printf("streaming exec output %s: %v", exec.ID, err)
-	}
+	http.Redirect(w, r, target, http.StatusFound)
 }
