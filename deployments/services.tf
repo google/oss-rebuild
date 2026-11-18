@@ -5,6 +5,8 @@
 
 resource "google_project_service" "cloudbuild" {
   service = "cloudbuild.googleapis.com"
+  # NOTE: Cloud Build creates cloud-builds itself if Pub/Sub is active when it is enabled.
+  depends_on = [google_pubsub_topic.cloud-builds]
 }
 
 resource "google_cloudbuild_worker_pool" "private-pool" {
