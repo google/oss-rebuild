@@ -571,6 +571,10 @@ func inferBuild(ctx context.Context, t rebuild.Target, mux rebuild.RegistryMux, 
 		if err != nil {
 			return nil, errors.Wrap(err, "inferring Rust version")
 		}
+		stripMode, err := inferStripMode(zr, tree, dir, tags, highest.LibcImpl, reqs)
+		if err != nil {
+			return nil, errors.Wrap(err, "inferring strip mode")
+		}
 		return &PlatformWheelBuild{
 			Location: rebuild.Location{
 				Repo:       rcfg.URI,
@@ -589,6 +593,7 @@ func inferBuild(ctx context.Context, t rebuild.Target, mux rebuild.RegistryMux, 
 			BuildEnvPath: buildEnvPath,
 			RustVersion:  rustVersion,
 			CargoTarget:  rustVersion != "" && maturinTakesTarget(reqs),
+			StripMode:    stripMode,
 		}, nil
 	} else {
 		return &PureWheelBuild{
