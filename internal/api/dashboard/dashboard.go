@@ -9,12 +9,12 @@ import (
 	"encoding/hex"
 	"fmt"
 	"html/template"
-	"io"
 	"mime"
 	"net/http"
 	"path"
 	"regexp"
 	"strings"
+	"time"
 
 	"cloud.google.com/go/storage"
 	"github.com/google/oss-rebuild/internal/db"
@@ -117,15 +117,17 @@ var assetFuncs = template.FuncMap{"asset": assetURL}
 // RegisterAssets serves the dashboard's stylesheets, script, and icon, and
 // under the webfonts build tag the embedded font files. A request for an
 // asset at its current version may be cached indefinitely, since new content
-// gets a new link.
+// gets a new link. Conditional requests with If-None-Match receive 304.
 func RegisterAssets(mux *http.ServeMux) {
 	for route, a := range assets {
+		etag := `"` + a.version + `"`
 		mux.HandleFunc(route, func(w http.ResponseWriter, r *http.Request) {
 			w.Header().Set("Content-Type", mime.TypeByExtension(path.Ext(route)))
+			w.Header().Set("ETag", etag)
 			if r.URL.Query().Get("v") == a.version {
 				w.Header().Set("Cache-Control", "public, max-age=31536000, immutable")
 			}
-			_, _ = io.WriteString(w, a.content)
+			http.ServeContent(w, r, route, time.Time{}, strings.NewReader(a.content))
 		})
 	}
 	registerFonts(mux)

@@ -68,6 +68,70 @@ func TestAssetsCacheAtTheirVersion(t *testing.T) {
 	}
 }
 
+func TestAssetsETag304(t *testing.T) {
+	mux := http.NewServeMux()
+	RegisterAssets(mux)
+	wantETag := `"` + assets[DashboardJSPath].version + `"`
+	for _, tc := range []struct {
+		name      string
+		url       string
+		inm       string
+		wantCode  int
+		wantEmpty bool
+		wantCache string
+	}{
+		{
+			name:      "VersionedMiss",
+			url:       assetURL(DashboardJSPath),
+			wantCode:  http.StatusOK,
+			wantCache: "public, max-age=31536000, immutable",
+		},
+		{
+			name:      "VersionedMatch",
+			url:       assetURL(DashboardJSPath),
+			inm:       wantETag,
+			wantCode:  http.StatusNotModified,
+			wantEmpty: true,
+			wantCache: "public, max-age=31536000, immutable",
+		},
+		{
+			name:      "BareMatch",
+			url:       DashboardJSPath,
+			inm:       wantETag,
+			wantCode:  http.StatusNotModified,
+			wantEmpty: true,
+		},
+		{
+			name:      "StaleTag",
+			url:       assetURL(DashboardJSPath),
+			inm:       `"stale"`,
+			wantCode:  http.StatusOK,
+			wantCache: "public, max-age=31536000, immutable",
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			req := httptest.NewRequest(http.MethodGet, tc.url, nil)
+			if tc.inm != "" {
+				req.Header.Set("If-None-Match", tc.inm)
+			}
+			rec := httptest.NewRecorder()
+			mux.ServeHTTP(rec, req)
+			if rec.Code != tc.wantCode {
+				t.Errorf("status = %d, want %d", rec.Code, tc.wantCode)
+			}
+			if got := rec.Header().Get("ETag"); got != wantETag {
+				t.Errorf("ETag = %q, want %q", got, wantETag)
+			}
+			if got := rec.Header().Get("Cache-Control"); got != tc.wantCache {
+				t.Errorf("Cache-Control = %q, want %q", got, tc.wantCache)
+			}
+			if empty := rec.Body.Len() == 0; empty != tc.wantEmpty {
+				t.Errorf("body empty = %v (len %d), want %v", empty, rec.Body.Len(), tc.wantEmpty)
+			}
+		})
+	}
+}
+
 func TestSecurityHeaders(t *testing.T) {
 	h := SecurityHeaders(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusOK)
