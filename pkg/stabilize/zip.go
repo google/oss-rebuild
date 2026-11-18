@@ -52,7 +52,10 @@ var StableZipFileOrder = Stabilizer{
 var StableZipModifiedTime = Stabilizer{
 	Name: "zip-modified-time",
 }.WithFn(ZipEntryFn(func(zf *archive.MutableZipFile) {
-	zf.Modified = time.UnixMilli(0)
+	// NOTE: zip.Writer.CreateHeader encodes the MS-DOS date and time fields in
+	// the location of Modified without converting to UTC. Pinning UTC keeps
+	// the output independent of the host's local time zone.
+	zf.Modified = time.UnixMilli(0).UTC()
 	zf.ModifiedDate = 0
 	zf.ModifiedTime = 0
 }))
