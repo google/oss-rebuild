@@ -328,7 +328,7 @@ func entryCount(groups []DiffGroup) int {
 func checkComparison(at time.Time, r map[string]any) *Comparison {
 	c := &Comparison{By: "check_artifact", At: at}
 	if msg, _ := r["error"].(string); msg != "" {
-		c.Err = msg
+		c.Err = simplifyMessage(msg)
 		return c
 	}
 	result, _ := r["result"].(string)
@@ -577,6 +577,7 @@ func (d *deriver) call(e *TranscriptEvent) {
 	var detail string
 	if resp != nil {
 		detail, _ = resp.Response["error"].(string)
+		detail = simplifyMessage(detail)
 	}
 	if timeout > 0 && !isBuild(e) {
 		d.spans = append(d.spans, stretch{"timeout", "a call timed out", e.At, resp.At})

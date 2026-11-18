@@ -214,7 +214,7 @@ func PackagesPage(ctx context.Context, req PackagesRequest, deps *Deps) (*Packag
 		WHERE rn = 1 AND NOT success`,
 		func(stmt *sqlite3.Stmt) error {
 			if p := byKey[[2]string{stmt.ColumnText(0), stmt.ColumnText(1)}]; p != nil && p.FailingStreak > 0 {
-				p.LastFailure = stmt.ColumnText(2)
+				p.LastFailure = simplifyMessage(stmt.ColumnText(2))
 			}
 			return nil
 		})

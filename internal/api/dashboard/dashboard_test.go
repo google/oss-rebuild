@@ -469,3 +469,27 @@ func TestPackageHandlerVersionListingFailure(t *testing.T) {
 		t.Errorf("no-lister case should not warn, got %q", got.Warning)
 	}
 }
+
+func TestSimplifyViewMessages(t *testing.T) {
+	rb := NewRebuildView(rundex.Rebuild{RebuildAttempt: schema.RebuildAttempt{
+		Message: "outer step: inner failure: googleapi: Error 429: foo bar baz",
+	}})
+	if want := "outer step: inner failure: googleapi: Error 429"; rb.Message != want {
+		t.Errorf("RebuildView.Message = %q, want %q", rb.Message, want)
+	}
+	errSess := NewSessionView(schema.AgentSession{
+		StopReason: schema.AgentCompleteReasonError,
+		Summary:    "outer step: \n<html><body>403</body></html>\n: foo bar",
+	})
+	if want := "outer step: HTTP error response"; errSess.Summary != want {
+		t.Errorf("error SessionView.Summary = %q, want %q", errSess.Summary, want)
+	}
+	gaveUp := "Gave up: Upstream generates <html> output dynamically."
+	guSess := NewSessionView(schema.AgentSession{
+		StopReason: schema.AgentCompleteReasonGaveUp,
+		Summary:    gaveUp,
+	})
+	if guSess.Summary != gaveUp {
+		t.Errorf("GAVE_UP SessionView.Summary = %q, want %q", guSess.Summary, gaveUp)
+	}
+}
