@@ -568,13 +568,6 @@ resource "google_storage_bucket_iam_member" "dashboard-reads-agent-sessions" {
   role   = "roles/storage.objectViewer"
   member = google_service_account.dashboard[0].member
 }
-# Session pages fetch tool output by the gs:// URI recorded on each exec.
-resource "google_storage_bucket_iam_member" "dashboard-reads-scratch-output" {
-  count  = var.enable_dashboard && var.enable_scratch ? 1 : 0
-  bucket = google_storage_bucket.scratch-output[0].name
-  role   = "roles/storage.objectViewer"
-  member = google_service_account.dashboard[0].member
-}
 resource "google_project_iam_member" "dashboard-views-datastore" {
   count   = var.enable_dashboard ? 1 : 0
   project = var.project
