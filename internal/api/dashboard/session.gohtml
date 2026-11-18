@@ -128,28 +128,6 @@
         </div>
         {{- end}}
     </section>
-    <script>
-        // Drawers and popouts are native toggles. This wires the controls that
-        // reach across rows: expand all, a review row opening its popout, a
-        // diffr link opening the drawer it points into.
-        for (const b of document.querySelectorAll('[data-drawers]')) b.addEventListener('click', () => {
-            for (const t of document.querySelectorAll('.drawer-toggle')) t.checked = b.dataset.drawers === 'open';
-        });
-        for (const b of document.querySelectorAll('[data-pop]')) b.addEventListener('click', e => {
-            e.stopPropagation();
-            const d = document.getElementById(b.dataset.pop);
-            if (d) { d.open = true; d.scrollIntoView({block: 'nearest'}); }
-        });
-        for (const a of document.querySelectorAll('[data-drawer]')) a.addEventListener('click', () => {
-            const t = document.getElementById(a.dataset.drawer);
-            if (t) t.checked = true;
-            a.closest('details')?.removeAttribute('open');
-        });
-        for (const b of document.querySelectorAll('.pop-close')) b.addEventListener('click', () => b.closest('details').removeAttribute('open'));
-        document.addEventListener('click', e => {
-            for (const d of document.querySelectorAll('details.pop[open]')) if (!d.contains(e.target)) d.removeAttribute('open');
-        });
-    </script>
 
     <p class="page-links"><a href="/session/{{$s.ID}}/transcript">Full transcript</a> · <a href="/session/{{$s.ID}}/transcript#execs">Scratch execs</a></p>
 {{end}}
