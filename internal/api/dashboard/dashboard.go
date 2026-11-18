@@ -69,6 +69,22 @@ const (
 	DashboardJSPath = "/dashboard.js"
 )
 
+// ContentSecurityPolicy locks the read-only dashboard to same-origin assets
+// with no forms, framing, or plugins. Templates use inline style attributes
+// and style blocks, so style-src allows 'unsafe-inline'.
+const ContentSecurityPolicy = "default-src 'none'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self'; font-src 'self'; base-uri 'none'; form-action 'none'; frame-ancestors 'none'; object-src 'none'"
+
+// SecurityHeaders sets CSP and standard hardening headers on every response.
+func SecurityHeaders(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		h := w.Header()
+		h.Set("Content-Security-Policy", ContentSecurityPolicy)
+		h.Set("X-Content-Type-Options", "nosniff")
+		h.Set("Referrer-Policy", "no-referrer")
+		next.ServeHTTP(w, r)
+	})
+}
+
 // asset is a file the pages link, with a digest of its content that the
 // links carry.
 type asset struct{ content, version string }
