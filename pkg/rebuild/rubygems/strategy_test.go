@@ -48,7 +48,7 @@ mkdir -p /opt/hostedtoolcache/Ruby/3.3.6/x64
 tar xzf /tmp/ruby.tar.gz --strip-components=1 -C /opt/hostedtoolcache/Ruby/3.3.6/x64
 ln -sf /opt/hostedtoolcache/Ruby/3.3.6/x64/bin/* /usr/local/bin/
 rm -f /tmp/ruby.tar.gz`,
-				Build:      "cd the_dir && gem build *.gemspec",
+				Build:      "cd the_dir && gem build \"$PWD\"/*.gemspec",
 				OutputPath: "the_dir/example-1.0.0.gem",
 			},
 		},
@@ -78,7 +78,7 @@ tar xzf /tmp/ruby.tar.gz --strip-components=1 -C /opt/hostedtoolcache/Ruby/3.3.6
 ln -sf /opt/hostedtoolcache/Ruby/3.3.6/x64/bin/* /usr/local/bin/
 rm -f /tmp/ruby.tar.gz
 gem update --system 3.5.23`,
-				Build:      "cd the_dir && gem build *.gemspec",
+				Build:      "cd the_dir && gem build \"$PWD\"/*.gemspec",
 				OutputPath: "the_dir/example-1.0.0.gem",
 			},
 		},
@@ -114,7 +114,7 @@ mkdir -p /opt/hostedtoolcache/Ruby/3.4.0/x64
 tar xzf /tmp/ruby.tar.gz --strip-components=1 -C /opt/hostedtoolcache/Ruby/3.4.0/x64
 ln -sf /opt/hostedtoolcache/Ruby/3.4.0/x64/bin/* /usr/local/bin/
 rm -f /tmp/ruby.tar.gz`,
-				Build:      "gem build *.gemspec",
+				Build:      "gem build \"$PWD\"/*.gemspec",
 				OutputPath: "example-2.0.0.gem",
 			},
 		},
@@ -145,7 +145,7 @@ tar xzf /tmp/ruby.tar.gz --strip-components=1 -C /opt/hostedtoolcache/Ruby/3.3.6
 ln -sf /opt/hostedtoolcache/Ruby/3.3.6/x64/bin/* /usr/local/bin/
 rm -f /tmp/ruby.tar.gz
 printf -- '---\n:sources:\n- %s\n' 'http://rubygems:2023-06-01T00:00:00Z@orange' > $HOME/.gemrc`,
-				Build:      "cd the_dir && gem build *.gemspec",
+				Build:      "cd the_dir && gem build \"$PWD\"/*.gemspec",
 				OutputPath: "the_dir/example-1.0.0.gem",
 			},
 		},
@@ -174,7 +174,7 @@ mkdir -p /opt/hostedtoolcache/Ruby/3.3.6/x64
 tar xzf /tmp/ruby.tar.gz --strip-components=1 -C /opt/hostedtoolcache/Ruby/3.3.6/x64
 ln -sf /opt/hostedtoolcache/Ruby/3.3.6/x64/bin/* /usr/local/bin/
 rm -f /tmp/ruby.tar.gz`,
-				Build:      "cd the_dir && gem build concurrent-ruby.gemspec",
+				Build:      "cd the_dir && gem build \"$PWD\"/concurrent-ruby.gemspec",
 				OutputPath: "the_dir/concurrent-ruby-1.2.2.gem",
 			},
 		},
@@ -196,7 +196,7 @@ rm -f /tmp/ruby.tar.gz`,
 				},
 				Source:     "git clone the_repo .\ngit checkout --force 'the_ref'",
 				Deps:       "",
-				Build:      "cd the_dir && gem build *.gemspec",
+				Build:      "cd the_dir && gem build \"$PWD\"/*.gemspec",
 				OutputPath: "the_dir/example-1.0.0.gem",
 			},
 		},

@@ -123,11 +123,13 @@ var toolkit = []*flow.Tool{
 	{
 		Name: "rubygems/build/gem",
 		Steps: []flow.Step{{
+			// NOTE: Bundler's gem tasks pass gem build an absolute gemspec path,
+			// which more published file lists match than a relative one.
 			Runs: textwrap.Dedent(`
 				{{- $dir := .With.dir -}}
 				{{- $gemspec := .With.gemspec -}}
 				{{- if and (ne $dir ".") (ne $dir "")}}cd {{$dir}} && {{end -}}
-				gem build {{if ne $gemspec ""}}{{$gemspec}}{{else}}*.gemspec{{end}}`)[1:],
+				gem build "$PWD"/{{if ne $gemspec ""}}{{$gemspec}}{{else}}*.gemspec{{end}}`)[1:],
 			Needs: []string{},
 		}},
 	},
