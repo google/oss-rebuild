@@ -52,6 +52,8 @@ var (
 	favicon string
 	//go:embed charts.js
 	chartsJS string
+	//go:embed dashboard.js
+	dashboardJS string
 	//go:embed viz.gohtml
 	vizHTML string
 	//go:embed rows.gohtml
@@ -60,10 +62,11 @@ var (
 
 // Hardcoded by the page templates, so the package owns the routes.
 const (
-	ThemeCSSPath = "/theme.css"
-	CSSPath      = "/dashboard.css"
-	FaviconPath  = "/favicon.svg"
-	ChartsJSPath = "/charts.js"
+	ThemeCSSPath    = "/theme.css"
+	CSSPath         = "/dashboard.css"
+	FaviconPath     = "/favicon.svg"
+	ChartsJSPath    = "/charts.js"
+	DashboardJSPath = "/dashboard.js"
 )
 
 // asset is a file the pages link, with a digest of its content that the
@@ -75,12 +78,13 @@ func newAsset(content string) asset {
 	return asset{content, hex.EncodeToString(sum[:6])}
 }
 
-// assets are the stylesheets, script, and icon the pages link, by route.
+// assets are the stylesheets, scripts, and icon the pages link, by route.
 var assets = map[string]asset{
-	ThemeCSSPath: newAsset(themeCSS),
-	CSSPath:      newAsset(css),
-	FaviconPath:  newAsset(favicon),
-	ChartsJSPath: newAsset(chartsJS),
+	ThemeCSSPath:    newAsset(themeCSS),
+	CSSPath:         newAsset(css),
+	FaviconPath:     newAsset(favicon),
+	ChartsJSPath:    newAsset(chartsJS),
+	DashboardJSPath: newAsset(dashboardJS),
 }
 
 // assetURL links the asset at route by its version.
