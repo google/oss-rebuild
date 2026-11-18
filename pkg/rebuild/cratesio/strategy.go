@@ -65,7 +65,7 @@ func (b *CratesIOCargoPackage) ToWorkflow() *rebuild.WorkflowStrategy {
 		Build: []flow.Step{{
 			Uses: "cargo/build/package",
 			With: map[string]string{
-				"dir":             b.Location.Dir,
+				"dir":             "{{.Location.Dir}}",
 				"rustVersion":     b.RustVersion,
 				"excludeLockfile": fmt.Sprintf("%t", b.ExcludeLockfile),
 				"registryCommit":  b.RegistryCommit,

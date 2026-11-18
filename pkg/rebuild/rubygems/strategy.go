@@ -69,7 +69,7 @@ func (b *GemBuild) ToWorkflow() *rebuild.WorkflowStrategy {
 		Build: []flow.Step{{
 			Uses: "rubygems/build/gem",
 			With: map[string]string{
-				"dir":     b.Location.Dir,
+				"dir":     "{{.Location.Dir}}",
 				"gemspec": b.Gemspec,
 			},
 		}},
