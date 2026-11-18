@@ -123,36 +123,62 @@ func stepSection(r io.Reader, stepIndex int) ([]byte, error) {
 
 // Operation polls share a per-caller get quota (750 per minute by default).
 // A queued build cannot finish, so it is polled less often than a running one.
+// When a Pub/Sub Waiter is active, completions wake WaitForOperation directly
+// and waiterPollInterval serves only as an empirical safety-net fallback.
 const (
 	queuedPollInterval  = 45 * time.Second
 	runningPollInterval = 15 * time.Second
+	waiterPollInterval  = 2 * time.Minute
 )
+
+// ClientOption configures a Client.
+type ClientOption func(*clientImpl)
+
+// WithWaiter attaches a shared Pub/Sub Waiter to wake WaitForOperation on
+// build completion before falling back to periodic Operations.Get polls.
+func WithWaiter(w *Waiter) ClientOption {
+	return func(c *clientImpl) {
+		c.waiter = w
+	}
+}
 
 // clientImpl is a concrete implementation of the Client interface using the Cloud Build service.
 type clientImpl struct {
 	service     *cloudbuild.Service
 	queuedPoll  time.Duration
 	runningPoll time.Duration
+	waiterPoll  time.Duration
 	region      string
+	waiter      *Waiter
 }
 
 // NewClient creates a new Client with the given options.
-func NewClient(s *cloudbuild.Service) Client {
-	return &clientImpl{
+func NewClient(s *cloudbuild.Service, opts ...ClientOption) Client {
+	c := &clientImpl{
 		service:     s,
 		queuedPoll:  queuedPollInterval,
 		runningPoll: runningPollInterval,
+		waiterPoll:  waiterPollInterval,
 	}
+	for _, opt := range opts {
+		opt(c)
+	}
+	return c
 }
 
 // NewRegionalClient creates a new Client that uses regional GCB backends.
-func NewRegionalClient(s *cloudbuild.Service, region string) Client {
-	return &clientImpl{
+func NewRegionalClient(s *cloudbuild.Service, region string, opts ...ClientOption) Client {
+	c := &clientImpl{
 		service:     s,
 		queuedPoll:  queuedPollInterval,
 		runningPoll: runningPollInterval,
+		waiterPoll:  waiterPollInterval,
 		region:      region,
 	}
+	for _, opt := range opts {
+		opt(c)
+	}
+	return c
 }
 
 // CreateBuild creates and starts a GCB Build.
@@ -180,21 +206,43 @@ func (c *clientImpl) CreateBuild(ctx context.Context, project string, build *clo
 // WaitForOperation polls and waits for the operation to complete.
 // Operations.Get() will respect context deadlines, in which case that error will be returned
 func (c *clientImpl) WaitForOperation(ctx context.Context, op *cloudbuild.Operation) (*cloudbuild.Operation, error) {
+	buildID := operationBuildID(op)
+	notified := false
 	for !op.Done {
-		select {
-		// Wait for ctx.Done() in case a cancel is called during the poll interval.
-		case <-ctx.Done():
-			return nil, ctx.Err()
-		case <-time.After(c.pollInterval(op)):
-			next, err := c.operations().Get(op.Name).Context(ctx).Do()
-			if err == nil {
-				op = next
-			} else if !retryablePollError(err) {
-				return nil, errors.Wrap(err, "fetching operation")
+		if !notified && c.waiter.alive() && buildID != "" {
+			waitCtx, cancel := context.WithTimeout(ctx, c.waiterPoll)
+			notified = c.waiter.wait(waitCtx, buildID)
+			cancel()
+			if err := ctx.Err(); err != nil {
+				return nil, err
 			}
+		} else {
+			interval := c.pollInterval(op)
+			if notified {
+				interval = c.runningPoll
+			}
+			select {
+			case <-ctx.Done():
+				return nil, ctx.Err()
+			case <-time.After(interval):
+			}
+		}
+		next, err := c.operations().Get(op.Name).Context(ctx).Do()
+		if err == nil {
+			op = next
+		} else if !retryablePollError(err) {
+			return nil, errors.Wrap(err, "fetching operation")
 		}
 	}
 	return op, nil
+}
+
+func operationBuildID(op *cloudbuild.Operation) string {
+	var md cloudbuild.BuildOperationMetadata
+	if json.Unmarshal(op.Metadata, &md) == nil && md.Build != nil {
+		return md.Build.Id
+	}
+	return ""
 }
 
 // retryablePollError reports whether an operation poll failed while the build kept running.
