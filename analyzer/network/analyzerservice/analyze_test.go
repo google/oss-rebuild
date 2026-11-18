@@ -280,13 +280,13 @@ func TestAnalyze(t *testing.T) {
 			// Setup input attestations
 			bundleData := createMockAttestationBundle(tc.target, tc.strategy)
 			bundleWriter := must(d.InputAttestationStore.Writer(ctx, rebuild.AttestationBundleAsset.For(tc.target)))
-			defer bundleWriter.Close()
 			must(bundleWriter.Write(bundleData))
+			must1(bundleWriter.Close())
 			// Setup existing analysis for the "already exists" test case
 			if tc.name == "analysis already exists" {
 				existingAnalysis := must(d.OutputAnalysisStore.Writer(ctx, NetworkAnalysisAsset.For(tc.target)))
-				defer existingAnalysis.Close()
 				must(existingAnalysis.Write([]byte("existing analysis")))
+				must1(existingAnalysis.Close())
 			}
 			// Execute the test
 			result, err := Analyze(ctx, schema.AnalyzeRebuildRequest{

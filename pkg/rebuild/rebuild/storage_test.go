@@ -180,3 +180,92 @@ func TestCachedReader_Close(t *testing.T) {
 		t.Error("readClosed was not called")
 	}
 }
+
+type failingReader struct {
+	data []byte
+	read bool
+}
+
+func (f *failingReader) Read(p []byte) (int, error) {
+	if !f.read && len(f.data) > 0 {
+		f.read = true
+		n := copy(p, f.data)
+		return n, io.ErrUnexpectedEOF
+	}
+	return 0, io.ErrUnexpectedEOF
+}
+
+type failingReadOnlyStore struct {
+	AssetStore
+	data []byte
+}
+
+func (s *failingReadOnlyStore) Reader(ctx context.Context, a Asset) (io.ReadCloser, error) {
+	return io.NopCloser(&failingReader{data: s.data}), nil
+}
+
+func TestFilesystemAssetStore_AtomicWriter(t *testing.T) {
+	ctx := context.Background()
+	fs := memfs.New()
+	store := NewFilesystemAssetStore(fs)
+	asset := Asset{Type: "test", Target: Target{Ecosystem: "debian", Package: "main/foo", Version: "1.0", Artifact: "foo.deb"}}
+	w, err := store.Writer(ctx, asset)
+	if err != nil {
+		t.Fatalf("Writer() error = %v", err)
+	}
+	if _, err := w.Write([]byte("partial")); err != nil {
+		t.Fatalf("Write() error = %v", err)
+	}
+	if _, err := store.Reader(ctx, asset); err == nil {
+		t.Error("expected Reader() to fail before Writer.Close(), but succeeded")
+	}
+	if err := w.Close(); err != nil {
+		t.Fatalf("Close() error = %v", err)
+	}
+	r, err := store.Reader(ctx, asset)
+	if err != nil {
+		t.Fatalf("Reader() after Close() error = %v", err)
+	}
+	defer r.Close()
+	got, err := io.ReadAll(r)
+	if err != nil {
+		t.Fatalf("io.ReadAll() error = %v", err)
+	}
+	if string(got) != "partial" {
+		t.Errorf("got %q, want %q", string(got), "partial")
+	}
+}
+
+func TestAssetCopy_ErrorCleanup(t *testing.T) {
+	ctx := context.Background()
+	fs := memfs.New()
+	toStore := NewFilesystemAssetStore(fs)
+	fromStore := &failingReadOnlyStore{data: []byte("truncated")}
+	asset := Asset{Type: "test", Target: Target{Ecosystem: "debian", Package: "main/foo", Version: "1.0", Artifact: "foo.deb"}}
+	if err := AssetCopy(ctx, toStore, fromStore, asset); err == nil {
+		t.Fatal("expected AssetCopy() to fail, got nil")
+	}
+	if _, err := toStore.Reader(ctx, asset); err == nil {
+		t.Error("expected destination asset not to exist after failed AssetCopy(), but Reader() succeeded")
+	}
+}
+
+func TestCachedAssetStore_ReadErrorCleanup(t *testing.T) {
+	ctx := context.Background()
+	frontline := NewFilesystemAssetStore(memfs.New())
+	backline := &failingReadOnlyStore{data: []byte("truncated")}
+	cached := NewCachedAssetStore(frontline, backline)
+	asset := Asset{Type: "test", Target: Target{Ecosystem: "debian", Package: "main/foo", Version: "1.0", Artifact: "foo.deb"}}
+	r, err := cached.Reader(ctx, asset)
+	if err != nil {
+		t.Fatalf("cached.Reader() error = %v", err)
+	}
+	_, readErr := io.ReadAll(r)
+	_ = r.Close()
+	if readErr == nil {
+		t.Fatal("expected io.ReadAll() to fail, got nil")
+	}
+	if _, err := frontline.Reader(ctx, asset); err == nil {
+		t.Error("expected frontline asset not to exist after failed CachedAssetStore read, but Reader() succeeded")
+	}
+}
