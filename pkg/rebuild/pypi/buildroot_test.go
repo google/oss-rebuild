@@ -181,7 +181,7 @@ func TestCandidatePaths(t *testing.T) {
 	}
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
-			dwarfPaths, rodataPaths, skipped := candidatePaths(readWheel(t, tc.entries...), files)
+			dwarfPaths, rodataPaths, _, skipped := candidatePaths(readWheel(t, tc.entries...), files)
 			if diff := cmp.Diff(tc.wantDWARF, dwarfPaths.roots); diff != "" {
 				t.Errorf("candidatePaths() DWARF diff (-want +got):\n%s", diff)
 			}

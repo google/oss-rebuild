@@ -1,16 +1,17 @@
 // Copyright 2026 Google LLC
 // SPDX-License-Identifier: Apache-2.0
 
-// Build path inference reads the paths that upstream built the repository at
-// and installed build dependencies into from the DWARF debug info or .rodata
-// strings of a wheel's extension modules.
+// Build path inference reads the paths that upstream built the repository at,
+// installed build dependencies into, and ran meson-python in from the DWARF
+// debug info or .rodata strings of a wheel's extension modules and from its
+// packaged build sources.
 //
 // Each compile unit (DWARF 4 §3.1.1 DW_TAG_compile_unit) records its primary
 // source file in DW_AT_name and the working directory of the compiler in
 // DW_AT_comp_dir. Their form depends on the toolchain:
 //   - C and C++ (setuptools, meson-python): DW_AT_name is relative to
-//     DW_AT_comp_dir, which is the project root or a "build/<abi>"
-//     subdirectory.
+//     DW_AT_comp_dir, which is the project root or a "build/<abi>" or
+//     ".mesonpy-<id>" subdirectory.
 //   - C and C++ (CMake): DW_AT_name is absolute, and DW_AT_comp_dir may be an
 //     out-of-tree build directory.
 //   - Rust (maturin, setuptools-rust): DW_AT_name of a workspace crate is
@@ -24,14 +25,21 @@
 //
 // Stripped modules and CMake Release builds without "-g" have no .debug_info
 // section, yet still embed NUL-terminated absolute __FILE__ paths from
-// assertions and logging macros in .rodata.
+// assertions and logging macros in .rodata. Packages built with meson-python
+// strip debug info by default and ship a generated "*_build_config.py" module
+// that records both the isolated build environment path and the temporary
+// ".mesonpy-<id>" build directory, while Cython wheels that package their
+// generated C or C++ sources record the isolated build environment path in a
+// metadata header comment.
 //
 // inferBuildPaths resolves these in three steps:
 //  1. Collection: Reads the DWARF compile units, their .debug_line file names
 //     (DWARF 4 §6.2.4), and the .rodata strings of each .so member up to
-//     maxModuleSize, except the libraries that auditwheel grafts into
-//     "<distribution>.libs/" or "<pkg>/.libs/". A module or section that cannot
-//     be read is skipped so it does not hide the paths recorded by the others.
+//     maxModuleSize, and reads packaged "*_build_config.py" and C or C++
+//     sources up to maxTextSourceSize, outside the "<distribution>.libs/" and
+//     "<pkg>/.libs/" directories where auditwheel grafts external libraries.
+//     An entry or section that cannot be read is skipped so it does not hide
+//     the paths recorded by the others.
 //  2. Matching: Resolves each DW_AT_name against DW_AT_comp_dir, stripping the
 //     rustc "/@/<cgu>" suffix from relative names first. The longest suffix of
 //     the resulting path that names a file in the repository is the
@@ -47,9 +55,10 @@
 //     span a directory and generated files do not match through a .pyx or .py
 //     sibling. Build environment paths match the "/tmp/build-env-<id>" or
 //     "/tmp/pip-build-env-<id>/overlay" or "/normal" prefix of any DW_AT_name,
-//     DW_AT_comp_dir, file name, or .rodata string, after relative DWARF names
-//     resolve against DW_AT_comp_dir and parent-relative .rodata strings
-//     against "/".
+//     DW_AT_comp_dir, file name, .rodata string, or packaged source, after
+//     relative DWARF names resolve against DW_AT_comp_dir and parent-relative
+//     .rodata strings against "/". Meson build paths match
+//     "<parent>/.mesonpy-<id>" in DWARF, .rodata, or "*_build_config.py".
 //  3. Selection: Candidates inside "site-packages", "dist-packages", ".cargo",
 //     or the isolated build environments that "python -m build" and "pip
 //     wheel" create under "/tmp" hold unpacked dependencies and drop out, as
@@ -58,9 +67,11 @@
 //     smallest root, and .rodata candidates count only if DWARF yields none.
 //     checkoutDir ("/src") stays a candidate so an upstream build in the
 //     checkout can be told apart from a wheel with no evidence, and then maps
-//     to "" since the build already runs there. Build environment paths are
-//     voted on the same way, with each compile unit counting a path at most
-//     once.
+//     to "" since the build already runs there. Build environment paths and
+//     meson build directories under the resolved build root and package
+//     subdirectory are voted on the same way across DWARF, .rodata, and
+//     packaged sources, with each compile unit or source file counting a path
+//     at most once.
 //
 // References:
 //   - DWARF Debugging Information Format Version 4, §3.1.1 and §6.2.4:
@@ -87,27 +98,68 @@ import (
 	"github.com/pkg/errors"
 )
 
-// maxModuleSize bounds the extension modules that are read into memory to
-// parse their ELF sections. It admits common extension modules while skipping
-// the largest libraries, such as those of torch.
-const maxModuleSize = 256 << 20
+const (
+	// maxModuleSize bounds the extension modules that are read into memory to
+	// parse their ELF sections. It admits common extension modules while skipping
+	// the largest libraries, such as those of torch.
+	maxModuleSize = 256 << 20
+	// maxPackagedSourceSize bounds packaged Python build configs and generated C
+	// or C++ sources scanned for build environment and meson build paths. It is
+	// larger than the largest file we have seen while still keeping an upper
+	// bound on I/O size.
+	maxPackagedSourceSize = 32 << 20
+)
 
 type compileUnit struct {
 	Name    string // primary source file as passed to the compiler (DW_AT_name)
 	CompDir string // working directory of the compiler (DW_AT_comp_dir)
 }
 
-// buildPaths holds the candidate build roots and isolated build environment
-// paths that one kind of ELF data records across a wheel's extension modules.
-type buildPaths struct {
-	roots    []string
-	envPaths []string
+type mesonBuildPath struct {
+	parent string // directory containing the .mesonpy-<id> build dir
+	dir    string // .mesonpy-<id> directory leaf
 }
 
-// buildEnvPathPat matches the isolated build environment directory created
-// under "/tmp" by "python -m build" ("/tmp/build-env-<id>") or "pip wheel"
-// ("/tmp/pip-build-env-<id>/overlay" or "/normal").
-var buildEnvPathPat = re.MustCompile(`^/tmp/(build-env-[A-Za-z0-9_]+|pip-build-env-[A-Za-z0-9_]+/(?:overlay|normal))(?:/|$)`)
+// buildPaths holds the candidate build roots, isolated build environment
+// paths, and meson build paths that one source tier records across a wheel.
+type buildPaths struct {
+	roots      []string
+	envPaths   []string
+	mesonPaths []mesonBuildPath
+}
+
+// mesonBuildDir returns the most common meson build directory name recorded
+// under buildRoot and subdir. An empty buildRoot means the build runs in
+// checkoutDir.
+func (bp buildPaths) mesonBuildDir(buildRoot, subdir string) string {
+	parent := buildRoot
+	if parent == "" {
+		parent = checkoutDir
+	}
+	if subdir != "" && subdir != "." {
+		parent = path.Join(parent, subdir)
+	}
+	var dirs []string
+	for _, mp := range bp.mesonPaths {
+		if mp.parent == parent {
+			dirs = append(dirs, mp.dir)
+		}
+	}
+	return mostCommon(dirs)
+}
+
+var (
+	// buildEnvPathPat matches the isolated build environment directory created
+	// under "/tmp" by "python -m build" ("/tmp/build-env-<id>") or "pip wheel"
+	// ("/tmp/pip-build-env-<id>/overlay" or "/normal").
+	buildEnvPathPat = re.MustCompile(`^/tmp/(build-env-[A-Za-z0-9_]+|pip-build-env-[A-Za-z0-9_]+/(?:overlay|normal))(?:/|$)`)
+	// packagedBuildEnvPat matches isolated "/tmp" build environment paths
+	// embedded in packaged Python build config files and generated C or C++
+	// sources.
+	packagedBuildEnvPat = re.MustCompile(`(?:^|[^A-Za-z0-9_./-])(/tmp/(?:build-env-[A-Za-z0-9_]+|pip-build-env-[A-Za-z0-9_]+/(?:overlay|normal)))(?:/|["'\s,;)\]}]|$)`)
+	// mesonPathPat matches "<parent>/.mesonpy-<id>" paths recorded by meson-python.
+	mesonPathPat = re.MustCompile(`(?:^|[^A-Za-z0-9._+,@/-])((?:/[A-Za-z0-9._+,@-]+)+)/(\.mesonpy-[A-Za-z0-9_]{4,24})(?:/|["'\s,;)\]}]|$)`)
+)
 
 func extractBuildEnvPath(p string) string {
 	if strings.HasPrefix(p, "../") {
@@ -122,42 +174,63 @@ func extractBuildEnvPath(p string) string {
 	return "/tmp/" + m[1]
 }
 
-// candidatePaths returns the usable candidate build roots and isolated build
-// environment paths of the wheel's extension modules from their DWARF debug info
-// and from their .rodata strings, recording an error in skipped for each module
-// or section that cannot be read.
-func candidatePaths(zr *zip.Reader, files map[string]bool) (dwarfPaths, rodataPaths buildPaths, skipped []error) {
-	for _, f := range zr.File {
-		if !isExtensionModule(f.Name) || f.UncompressedSize64 > maxModuleSize {
-			continue
-		}
-		ef, err := openELF(f)
-		if err != nil {
-			skipped = append(skipped, errors.Wrapf(err, "reading %s", f.Name))
-			continue
-		}
-		units, envPaths, err := moduleDWARF(ef)
-		if err != nil {
-			skipped = append(skipped, errors.Wrapf(err, "reading debug info of %s", f.Name))
-		}
-		for _, u := range units {
-			if root := u.buildRoot(files); usableRoot(root) {
-				dwarfPaths.roots = append(dwarfPaths.roots, root)
-			}
-		}
-		dwarfPaths.envPaths = append(dwarfPaths.envPaths, envPaths...)
-		paths, envPaths, err := moduleRodata(ef)
-		if err != nil {
-			skipped = append(skipped, errors.Wrapf(err, "reading .rodata of %s", f.Name))
-		}
-		for _, p := range paths {
-			if root := rodataBuildRoot(p, files); usableRoot(root) {
-				rodataPaths.roots = append(rodataPaths.roots, root)
-			}
-		}
-		rodataPaths.envPaths = append(rodataPaths.envPaths, envPaths...)
+func extractMesonBuildPath(p string) (mesonBuildPath, bool) {
+	m := mesonPathPat.FindStringSubmatch(p)
+	if m == nil {
+		return mesonBuildPath{}, false
 	}
-	return dwarfPaths, rodataPaths, skipped
+	return mesonBuildPath{parent: path.Clean(m[1]), dir: m[2]}, true
+}
+
+// candidatePaths returns the usable candidate build roots, isolated build
+// environment paths, and meson build paths of the wheel from its extension
+// modules' DWARF debug info and .rodata strings and from its packaged build
+// sources, recording an error in skipped for each entry or section that cannot
+// be read.
+func candidatePaths(zr *zip.Reader, files map[string]bool) (dwarfPaths, rodataPaths, packagedPaths buildPaths, skipped []error) {
+	for _, f := range zr.File {
+		switch {
+		case isExtensionModule(f.Name) && f.UncompressedSize64 <= maxModuleSize:
+			ef, err := openELF(f)
+			if err != nil {
+				skipped = append(skipped, errors.Wrapf(err, "reading %s", f.Name))
+				continue
+			}
+			units, envPaths, mesonPaths, err := moduleDWARF(ef)
+			if err != nil {
+				skipped = append(skipped, errors.Wrapf(err, "reading debug info of %s", f.Name))
+			}
+			for _, u := range units {
+				if root := u.buildRoot(files); usableRoot(root) {
+					dwarfPaths.roots = append(dwarfPaths.roots, root)
+				}
+			}
+			dwarfPaths.envPaths = append(dwarfPaths.envPaths, envPaths...)
+			dwarfPaths.mesonPaths = append(dwarfPaths.mesonPaths, mesonPaths...)
+			paths, envPaths, mesonPaths, err := moduleRodata(ef)
+			if err != nil {
+				skipped = append(skipped, errors.Wrapf(err, "reading .rodata of %s", f.Name))
+			}
+			for _, p := range paths {
+				if root := rodataBuildRoot(p, files); usableRoot(root) {
+					rodataPaths.roots = append(rodataPaths.roots, root)
+				}
+			}
+			rodataPaths.envPaths = append(rodataPaths.envPaths, envPaths...)
+			rodataPaths.mesonPaths = append(rodataPaths.mesonPaths, mesonPaths...)
+		case (isBuildConfigFile(f.Name) || isPackagedCSource(f.Name)) && f.UncompressedSize64 <= maxPackagedSourceSize:
+			b, err := readZipEntry(f)
+			if err != nil {
+				skipped = append(skipped, errors.Wrapf(err, "reading %s", f.Name))
+				continue
+			}
+			packagedPaths.envPaths = append(packagedPaths.envPaths, packagedEnvPaths(b)...)
+			if isBuildConfigFile(f.Name) {
+				packagedPaths.mesonPaths = append(packagedPaths.mesonPaths, packagedMesonPaths(b)...)
+			}
+		}
+	}
+	return dwarfPaths, rodataPaths, packagedPaths, skipped
 }
 
 // isExtensionModule reports whether name is a shared object outside the
@@ -167,18 +240,68 @@ func isExtensionModule(name string) bool {
 	return strings.HasSuffix(name, ".so") && !strings.Contains(path.Dir(name)+"/", ".libs/")
 }
 
-var errNotELF = errors.New("not an ELF file")
+func isBuildConfigFile(name string) bool {
+	return strings.HasSuffix(name, "_build_config.py") && !strings.Contains(path.Dir(name)+"/", ".libs/")
+}
 
-// openELF parses f as an ELF file, returning errNotELF if f is not an ELF file.
-func openELF(f *zip.File) (*elf.File, error) {
+func isPackagedCSource(name string) bool {
+	if strings.Contains(path.Dir(name)+"/", ".libs/") {
+		return false
+	}
+	switch path.Ext(name) {
+	case ".c", ".cc", ".cpp", ".cxx":
+		return true
+	default:
+		return false
+	}
+}
+
+func readZipEntry(f *zip.File) ([]byte, error) {
 	rc, err := f.Open()
 	if err != nil {
-		return nil, errors.Wrap(err, "opening module")
+		return nil, errors.Wrap(err, "opening entry")
 	}
 	defer rc.Close()
 	b, err := io.ReadAll(rc)
 	if err != nil {
-		return nil, errors.Wrap(err, "reading module")
+		return nil, errors.Wrap(err, "reading entry")
+	}
+	return b, nil
+}
+
+func packagedEnvPaths(b []byte) []string {
+	seen := make(map[string]bool)
+	var envPaths []string
+	for _, m := range packagedBuildEnvPat.FindAllSubmatch(b, -1) {
+		envPath := string(m[1])
+		if !seen[envPath] {
+			seen[envPath] = true
+			envPaths = append(envPaths, envPath)
+		}
+	}
+	return envPaths
+}
+
+func packagedMesonPaths(b []byte) []mesonBuildPath {
+	seen := make(map[mesonBuildPath]bool)
+	var mesonPaths []mesonBuildPath
+	for _, m := range mesonPathPat.FindAllSubmatch(b, -1) {
+		mp := mesonBuildPath{parent: path.Clean(string(m[1])), dir: string(m[2])}
+		if !seen[mp] {
+			seen[mp] = true
+			mesonPaths = append(mesonPaths, mp)
+		}
+	}
+	return mesonPaths
+}
+
+var errNotELF = errors.New("not an ELF file")
+
+// openELF parses f as an ELF file, returning errNotELF if f is not an ELF file.
+func openELF(f *zip.File) (*elf.File, error) {
+	b, err := readZipEntry(f)
+	if err != nil {
+		return nil, err
 	}
 	if !bytes.HasPrefix(b, []byte(elf.ELFMAG)) {
 		return nil, errNotELF
@@ -190,55 +313,61 @@ func openELF(f *zip.File) (*elf.File, error) {
 	return ef, nil
 }
 
-// moduleDWARF returns the compile units and isolated build environment paths in
-// the debug info of ef, or nil, nil, nil if ef is stripped. Each compile unit
-// records each build environment path at most once.
-func moduleDWARF(ef *elf.File) (units []compileUnit, envPaths []string, err error) {
+// moduleDWARF returns the compile units, isolated build environment paths, and
+// meson build paths in the debug info of ef, or nil, nil, nil, nil if ef is
+// stripped. Each compile unit records each build environment or meson path at
+// most once.
+func moduleDWARF(ef *elf.File) (units []compileUnit, envPaths []string, mesonPaths []mesonBuildPath, err error) {
 	// NOTE: ef.DWARF returns an error when debug sections are absent, so
 	// checking for them first distinguishes stripped modules from malformed
 	// debug info.
 	if ef.Section(".debug_info") == nil && ef.Section(".zdebug_info") == nil {
-		return nil, nil, nil
+		return nil, nil, nil, nil
 	}
 	d, err := ef.DWARF()
 	if err != nil {
-		return nil, nil, errors.Wrap(err, "loading DWARF")
+		return nil, nil, nil, errors.Wrap(err, "loading DWARF")
 	}
 	r := d.Reader()
 	for {
 		e, err := r.Next()
 		if err != nil {
-			return nil, nil, errors.Wrap(err, "reading DWARF")
+			return nil, nil, nil, errors.Wrap(err, "reading DWARF")
 		}
 		if e == nil {
-			return units, envPaths, nil
+			return units, envPaths, mesonPaths, nil
 		}
 		if e.Tag == dwarf.TagCompileUnit {
 			name, _ := e.Val(dwarf.AttrName).(string)
 			compDir, _ := e.Val(dwarf.AttrCompDir).(string)
 			units = append(units, compileUnit{Name: name, CompDir: compDir})
-			seen := make(map[string]bool)
-			addEnvPath := func(s string) {
+			seenEnv := make(map[string]bool)
+			seenMeson := make(map[mesonBuildPath]bool)
+			addPaths := func(s string) {
 				if !path.IsAbs(s) && path.IsAbs(compDir) {
 					s = path.Join(compDir, s)
 				}
-				if envPath := extractBuildEnvPath(s); envPath != "" && !seen[envPath] {
-					seen[envPath] = true
+				if envPath := extractBuildEnvPath(s); envPath != "" && !seenEnv[envPath] {
+					seenEnv[envPath] = true
 					envPaths = append(envPaths, envPath)
 				}
+				if mp, ok := extractMesonBuildPath(s); ok && !seenMeson[mp] {
+					seenMeson[mp] = true
+					mesonPaths = append(mesonPaths, mp)
+				}
 			}
-			addEnvPath(name)
-			addEnvPath(compDir)
+			addPaths(name)
+			addPaths(compDir)
 			// NOTE: A malformed or unsupported line table is ignored so that
 			// the compile unit's Name and CompDir still participate in build
 			// root selection.
 			if lr, err := d.LineReader(e); err == nil && lr != nil {
 				// NOTE: debug/dwarf misresolves DWARF 5 file names
-				// (https://github.com/golang/go/issues/82944), so addEnvPath
+				// (https://github.com/golang/go/issues/82944), so addPaths
 				// resolves relative names against DW_AT_comp_dir itself.
 				for _, lf := range lr.Files() {
 					if lf != nil {
-						addEnvPath(lf.Name)
+						addPaths(lf.Name)
 					}
 				}
 			}
@@ -247,28 +376,32 @@ func moduleDWARF(ef *elf.File) (units []compileUnit, envPaths []string, err erro
 	}
 }
 
-// moduleRodata returns the NUL-terminated C and C++ source paths and isolated
-// build environment paths in the .rodata section of ef.
-func moduleRodata(ef *elf.File) (sourcePaths, envPaths []string, err error) {
+// moduleRodata returns the NUL-terminated C and C++ source paths, isolated
+// build environment paths, and meson build paths in the .rodata section of ef.
+func moduleRodata(ef *elf.File) (sourcePaths, envPaths []string, mesonPaths []mesonBuildPath, err error) {
 	sec := ef.Section(".rodata")
 	if sec == nil {
-		return nil, nil, nil
+		return nil, nil, nil, nil
 	}
 	b, err := sec.Data()
 	if err != nil {
-		return nil, nil, errors.Wrap(err, "reading .rodata")
+		return nil, nil, nil, errors.Wrap(err, "reading .rodata")
 	}
 	for len(b) > 0 {
 		var entry []byte
 		entry, b, _ = bytes.Cut(b, []byte{0})
+		s := string(entry)
 		if isSourcePath(entry) {
-			sourcePaths = append(sourcePaths, string(entry))
+			sourcePaths = append(sourcePaths, s)
 		}
-		if envPath := extractBuildEnvPath(string(entry)); envPath != "" {
+		if envPath := extractBuildEnvPath(s); envPath != "" {
 			envPaths = append(envPaths, envPath)
 		}
+		if mp, ok := extractMesonBuildPath(s); ok {
+			mesonPaths = append(mesonPaths, mp)
+		}
 	}
-	return sourcePaths, envPaths, nil
+	return sourcePaths, envPaths, mesonPaths, nil
 }
 
 // isSourcePath reports whether b is an absolute C or C++ source or header path
