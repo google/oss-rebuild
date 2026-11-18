@@ -6,8 +6,12 @@
 package dashboard
 
 import (
+	"bytes"
+	"crypto/sha256"
 	_ "embed"
+	"encoding/hex"
 	"net/http"
+	"time"
 )
 
 // The font binaries are fetched, not committed: run
@@ -44,9 +48,12 @@ func init() { assets["/fonts.css"] = newAsset(fontsCSS) }
 // registerFonts serves the embedded face. Fonts are immutable: a face
 // change ships under a new path.
 func registerFonts(mux *http.ServeMux) {
+	sum := sha256.Sum256(publicSansWoff2)
+	etag := `"` + hex.EncodeToString(sum[:6]) + `"`
 	mux.HandleFunc("/fonts/public-sans-latin.woff2", func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "font/woff2")
+		w.Header().Set("ETag", etag)
 		w.Header().Set("Cache-Control", "public, max-age=31536000, immutable")
-		_, _ = w.Write(publicSansWoff2)
+		http.ServeContent(w, r, "/fonts/public-sans-latin.woff2", time.Time{}, bytes.NewReader(publicSansWoff2))
 	})
 }
