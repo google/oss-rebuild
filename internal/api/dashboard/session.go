@@ -147,9 +147,14 @@ func Session(ctx context.Context, req SessionRequest, deps *Deps) (*SessionData,
 	// either shouldn't sink the page.
 	iters, err := deps.Sessions.FetchIterations(ctx, &rundex.FetchIterationsReq{SessionID: s.ID})
 	if err != nil {
-		data.Warnings = append(data.Warnings, fmt.Sprintf("loading iterations: %v", err))
+		data.Warnings = append(data.Warnings, fmt.Sprintf("loading iterations: %s", simplifyMessage(err.Error())))
 	}
 	for i := range iters {
+		if iters[i].Result != nil {
+			r := *iters[i].Result
+			r.ErrorMessage = simplifyMessage(r.ErrorMessage)
+			iters[i].Result = &r
+		}
 		g := groupFor(iters[i].Number)
 		g.Record = &iters[i]
 		if iters[i].Strategy != nil {
@@ -179,13 +184,13 @@ func Session(ctx context.Context, req SessionRequest, deps *Deps) (*SessionData,
 	}
 	wg.Wait()
 	if transcriptErr != nil {
-		data.Warnings = append(data.Warnings, fmt.Sprintf("loading transcript: %v", transcriptErr))
+		data.Warnings = append(data.Warnings, fmt.Sprintf("loading transcript: %s", simplifyMessage(transcriptErr.Error())))
 	}
 	if execErr != nil {
-		data.Warnings = append(data.Warnings, fmt.Sprintf("loading scratch execs: %v", execErr))
+		data.Warnings = append(data.Warnings, fmt.Sprintf("loading scratch execs: %s", simplifyMessage(execErr.Error())))
 	}
 	if purposesErr != nil {
-		data.Warnings = append(data.Warnings, fmt.Sprintf("loading purposes: %v", purposesErr))
+		data.Warnings = append(data.Warnings, fmt.Sprintf("loading purposes: %s", simplifyMessage(purposesErr.Error())))
 	}
 	data.Warnings = append(data.Warnings, applyPurposes(groups, purposes)...)
 	for _, e := range execs {
@@ -571,7 +576,7 @@ func newExecView(sessionID string, e schema.ScratchExec) ExecView {
 		v.Duration = e.FinishedAt.Sub(e.StartedAt).Round(time.Millisecond).String()
 	}
 	if e.Error != nil {
-		v.ErrorMsg = e.Error.Message
+		v.ErrorMsg = simplifyMessage(e.Error.Message)
 	}
 	switch {
 	case e.State == schema.ScratchExecPending:
@@ -888,7 +893,7 @@ func recordEvents(name transcriptName, body []byte) []TranscriptEvent {
 		switch {
 		case r.Error != "":
 			e.Title += " · rejected"
-			e.Body = strings.TrimSpace(r.Error + "\n\n" + r.Response)
+			e.Body = strings.TrimSpace(simplifyMessage(r.Error) + "\n\n" + r.Response)
 			e.Note = "show rejection"
 		case len(r.Strategy) > 0:
 			e.Title += " · accepted"
@@ -1029,6 +1034,9 @@ func responseEvent(r *genai.FunctionResponse, when time.Time) TranscriptEvent {
 	}
 	for _, key := range []string{"output", "logs", "error"} {
 		if v, ok := r.Response[key].(string); ok && v != "" {
+			if key == "error" {
+				v = simplifyMessage(v)
+			}
 			e.Body = v
 			return e
 		}

@@ -37,7 +37,7 @@ func rebuildEvent(rb rundex.Rebuild) PackageEvent {
 	v := NewRebuildView(rb)
 	e := PackageEvent{Created: rb.Created, Version: rb.Version, Variant: artifactVariant(rb.Artifact, rb.Version), Tone: v.Tone(), Outcome: v.Outcome(), Href: v.Href()}
 	if e.Failed() {
-		e.setFailure(failedStage(rb.Message), failureCause(rb.Message), rb.Message, string(rb.Status))
+		e.setFailure(failedStage(rb.Message), failureCause(rb.Message), v.Message, string(rb.Status))
 	}
 	return e
 }
@@ -46,7 +46,7 @@ func sessionEvent(s schema.AgentSession) PackageEvent {
 	v := NewSessionView(s)
 	e := PackageEvent{Created: s.Created, Agent: true, Version: s.Target.Version, Variant: artifactVariant(s.Target.Artifact, s.Target.Version), Tone: v.Tone(), Outcome: v.Outcome(), Href: "/session/" + s.ID}
 	if e.Failed() {
-		e.setFailure("agent", v.Reason(), s.Summary, s.StopReason)
+		e.setFailure("agent", v.Reason(), v.Summary, s.StopReason)
 	}
 	return e
 }

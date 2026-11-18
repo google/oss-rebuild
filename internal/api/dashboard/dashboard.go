@@ -194,6 +194,7 @@ type RebuildView struct {
 }
 
 func NewRebuildView(rb rundex.Rebuild) RebuildView {
+	rb.Message = simplifyMessage(rb.Message)
 	et := packagePathEncoding.Encode(rb.Target())
 	return RebuildView{
 		Rebuild: rb,
@@ -248,6 +249,9 @@ type SessionView struct {
 }
 
 func NewSessionView(s schema.AgentSession) SessionView {
+	if s.StopReason != schema.AgentCompleteReasonGaveUp {
+		s.Summary = simplifyMessage(s.Summary)
+	}
 	return SessionView{
 		AgentSession: s,
 		Encoded:      packagePathEncoding.Encode(s.Target),

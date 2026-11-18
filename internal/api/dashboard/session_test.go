@@ -681,3 +681,35 @@ func TestBuildOutcome(t *testing.T) {
 		}
 	}
 }
+
+func TestSessionSimplifiesErrors(t *testing.T) {
+	when := time.Date(2026, 10, 19, 4, 0, 0, 0, time.UTC)
+	toolOut := eventsFrom(transcriptName{Iter: 1, Role: "user"}, "1/stamp-0-user.json", []byte(`{
+		"role": "user",
+		"parts": [{"functionResponse": {"name": "run_in_container", "response": {"output": "<html>fixture</html>", "exit_code": 0}}}]
+	}`))
+	if len(toolOut) != 1 || toolOut[0].Body != "<html>fixture</html>" {
+		t.Errorf("tool output = %+v; want HTML fixture output preserved", toolOut)
+	}
+	toolErr := eventsFrom(transcriptName{Iter: 1, Role: "user"}, "1/stamp-1-user.json", []byte(`{
+		"role": "user",
+		"parts": [{"functionResponse": {"name": "run_on_host", "response": {"error": "tool call: <html><body>502</body></html>\n: foo bar"}}}]
+	}`))
+	if want := "tool call: HTTP error response"; len(toolErr) != 1 || toolErr[0].Body != want {
+		t.Errorf("tool error = %+v; want body %q", toolErr, want)
+	}
+	execView := newExecView("sess-1", schema.ScratchExec{
+		ID:    "exec-1",
+		State: schema.ScratchExecLost,
+		Error: &schema.Status{Message: "step failed: googleapi: Error 503: foo bar"},
+	})
+	if want := "step failed: googleapi: Error 503"; execView.ErrorMsg != want {
+		t.Errorf("ExecView.ErrorMsg = %q; want %q", execView.ErrorMsg, want)
+	}
+	comp := checkComparison(when, map[string]any{
+		"error": "compare failed: googleapi: got HTTP response code 404 with body: <!DOCTYPE html><html></html>",
+	})
+	if want := "compare failed: googleapi: got HTTP response code 404"; comp.Err != want {
+		t.Errorf("Comparison.Err = %q; want %q", comp.Err, want)
+	}
+}

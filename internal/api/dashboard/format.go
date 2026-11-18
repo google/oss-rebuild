@@ -100,11 +100,35 @@ var failureWrappers = []string{
 	"AI-assisted inference failed: ",
 }
 
-var grpcFraming = regexp.MustCompile(`rpc error: code = \w+ desc = `)
+var (
+	grpcFraming    = regexp.MustCompile(`rpc error: code = \w+ desc = `)
+	googleAPIError = regexp.MustCompile(`googleapi: ((?:Error|got HTTP response code) \d+)[\s\S]*`)
+	gceOpError     = regexp.MustCompile(`: op operation-[\s\S]*`)
+	htmlErrorBody  = regexp.MustCompile(`(?i)(?:<!doctype|<html)[\s\S]*`)
+)
+
+// simplifyMessage removes long, unstructured error content so failure views
+// stay concise.
+func simplifyMessage(msg string) string {
+	if msg == "" {
+		return ""
+	}
+	msg = googleAPIError.ReplaceAllString(msg, "googleapi: $1")
+	msg = gceOpError.ReplaceAllString(msg, "")
+	if loc := htmlErrorBody.FindStringIndex(msg); loc != nil {
+		// Keep the separator before the body so stage and wrapper prefixes still match.
+		if prefix := strings.TrimSpace(msg[:loc[0]]); prefix != "" {
+			return prefix + " HTTP error response"
+		}
+		return "HTTP error response"
+	}
+	return msg
+}
 
 // failureCause is a failure message without its gRPC framing and leading
 // wrappers, the part that differs between failures.
 func failureCause(msg string) string {
+	msg = simplifyMessage(msg)
 	msg = grpcFraming.ReplaceAllString(msg, "")
 	for {
 		i := slices.IndexFunc(failureWrappers, func(w string) bool { return strings.HasPrefix(msg, w) })

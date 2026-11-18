@@ -66,6 +66,13 @@ func Version(ctx context.Context, req VersionRequest, deps *Deps) (*VersionData,
 			// Iterations are best-effort. A failure to load them shouldn't sink the page.
 			iters, _ := deps.Sessions.FetchIterations(ctx, &rundex.FetchIterationsReq{SessionID: ss[i].ID})
 			slices.SortFunc(iters, func(a, b schema.AgentIteration) int { return a.Number - b.Number })
+			for j := range iters {
+				if iters[j].Result != nil {
+					r := *iters[j].Result
+					r.ErrorMessage = simplifyMessage(r.ErrorMessage)
+					iters[j].Result = &r
+				}
+			}
 			view := NewSessionView(ss[i])
 			view.Iterations = iters
 			sessions = append(sessions, view)

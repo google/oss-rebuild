@@ -78,6 +78,8 @@ func TestFailure(t *testing.T) {
 		{"Upstream", "executing rebuild: comparing artifacts: fetching upstream artifact: 429 Too Many Requests", "compare", "comparing artifacts: fetching upstream artifact: 429 Too Many Requests"},
 		{"Session", "Inference failed: generating strategy: AI-assisted inference failed: AI-assisted inference failed: rpc error: code = Internal desc = failed to infer strategy: clone failed [repo=https://0xacab.org/x]: Unsupported repo URI", "", "clone failed [repo=https://0xacab.org/x]: Unsupported repo URI"},
 		{"Unwrapped", "Session throttled: 5 transient LLM failures", "", "Session throttled: 5 transient LLM failures"},
+		{"HTMLAfterWrapper", "getting strategy: fetching inference: \n<html><body>502</body></html>", "infer", "HTTP error response"},
+		{"HTMLAfterGRPCFraming", "executing rebuild: rpc error: code = Unavailable desc = <!DOCTYPE html><html>502</html>", "build", "HTTP error response"},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			if got := failedStage(tc.msg); got != tc.stage {
@@ -85,6 +87,49 @@ func TestFailure(t *testing.T) {
 			}
 			if got := failureCause(tc.msg); got != tc.cause {
 				t.Errorf("failureCause() = %q, want %q", got, tc.cause)
+			}
+		})
+	}
+}
+
+func TestSimplifyMessage(t *testing.T) {
+	for _, tc := range []struct {
+		name, in, want string
+	}{
+		{
+			"LongGoogleAPIError",
+			"outer step: inner failure: googleapi: Error 429: foo bar baz\nDetails:\n[{\"k\": \"v\"}]\n, qux",
+			"outer step: inner failure: googleapi: Error 429",
+		},
+		{
+			"LongGoogleAPIHTMLError",
+			"outer step: inner failure: googleapi: got HTTP response code 404 with body: <!DOCTYPE html><html>...</html>",
+			"outer step: inner failure: googleapi: got HTTP response code 404",
+		},
+		{
+			"CascadingOperationError",
+			"outer step: rpc error: code = ResourceExhausted desc = inner failure: op operation-0000-xyz failed: FOO_BAR: baz qux",
+			"outer step: rpc error: code = ResourceExhausted desc = inner failure",
+		},
+		{
+			"HTMLWrapperError",
+			"outer step: inner failure: \n<html><head><title>500</title></head><body>foo</body></html>\n: 500 Internal Server Error: bar",
+			"outer step: inner failure: HTTP error response",
+		},
+		{
+			"BareHTMLError",
+			"<!DOCTYPE html><html><body>foo bar</body></html>",
+			"HTTP error response",
+		},
+		{
+			"Upstream429Preserved",
+			"comparing artifacts: fetching upstream artifact: 429 Too Many Requests",
+			"comparing artifacts: fetching upstream artifact: 429 Too Many Requests",
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			if got := simplifyMessage(tc.in); got != tc.want {
+				t.Errorf("simplifyMessage() =\n  %q\nwant:\n  %q", got, tc.want)
 			}
 		})
 	}
