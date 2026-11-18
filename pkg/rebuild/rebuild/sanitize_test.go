@@ -4,6 +4,7 @@
 package rebuild
 
 import (
+	"strings"
 	"testing"
 
 	"github.com/google/go-cmp/cmp"
@@ -231,4 +232,113 @@ func TestEncodedTargetNew(t *testing.T) {
 	if diff := cmp.Diff(wantDecoded, decoded); diff != "" {
 		t.Errorf("EncodedTarget.Decode() mismatch (-want +got):\n%s", diff)
 	}
+}
+
+func TestValidateErrors(t *testing.T) {
+	tests := []struct {
+		name     string
+		encoding *targetEncoding
+		et       EncodedTarget
+		errorMsg string
+	}{
+		{
+			name:     "filesystem with forbidden slash in package",
+			encoding: FilesystemTargetEncoding,
+			et: EncodedTarget{
+				Ecosystem: NPM,
+				Package:   "@fortawesome/react-fontawesome",
+				Version:   "0.2.0",
+				Artifact:  "react-fontawesome-0.2.0.tgz",
+			},
+			errorMsg: "filesystem encoding violation: forbidden character '/' in Package field",
+		},
+		{
+			name:     "filesystem with forbidden colon in package",
+			encoding: FilesystemTargetEncoding,
+			et: EncodedTarget{
+				Ecosystem: Maven,
+				Package:   "org.apache.commons:commons-lang3",
+				Version:   "3.12.0",
+				Artifact:  "commons-lang3-3.12.0.jar",
+			},
+			errorMsg: "filesystem encoding violation: forbidden character ':' in Package field",
+		},
+		{
+			name:     "firestore with forbidden slash in package",
+			encoding: FirestoreTargetEncoding,
+			et: EncodedTarget{
+				Ecosystem: NPM,
+				Package:   "@fortawesome/react-fontawesome",
+				Version:   "0.2.0",
+				Artifact:  "react-fontawesome-0.2.0.tgz",
+			},
+			errorMsg: "firestore encoding violation: forbidden character '/' in Package field",
+		},
+		{
+			name:     "filesystem with forbidden character in version",
+			encoding: FilesystemTargetEncoding,
+			et: EncodedTarget{
+				Ecosystem: PyPI,
+				Package:   "test-pkg",
+				Version:   "1.0.0/beta",
+				Artifact:  "test_pkg-1.0.0.whl",
+			},
+			errorMsg: "filesystem encoding violation: forbidden character '/' in Version field",
+		},
+		{
+			name:     "filesystem with forbidden character in artifact",
+			encoding: FilesystemTargetEncoding,
+			et: EncodedTarget{
+				Ecosystem: PyPI,
+				Package:   "test-pkg",
+				Version:   "1.0.0",
+				Artifact:  "test:pkg-1.0.0.whl",
+			},
+			errorMsg: "filesystem encoding violation: forbidden character ':' in Artifact field",
+		},
+		{
+			name:     "filesystem with multiple forbidden characters",
+			encoding: FilesystemTargetEncoding,
+			et: EncodedTarget{
+				Ecosystem: Maven,
+				Package:   "org:apache/commons",
+				Version:   "3.12.0",
+				Artifact:  "commons-lang3-3.12.0.jar",
+			},
+			errorMsg: "filesystem encoding violation: forbidden character ':' in Package field",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			err := tt.encoding.Validate(tt.et)
+			if err == nil {
+				t.Errorf("Validate() expected error but got nil")
+			} else if !strings.Contains(err.Error(), tt.errorMsg) {
+				t.Errorf("Validate() error = %q, want to contain %q", err.Error(), tt.errorMsg)
+			}
+		})
+	}
+}
+
+func TestEncodeWithValidateFailure(t *testing.T) {
+	// Register a broken encoder that doesn't transform the problematic character
+	registerTestEncoder(t, NPM, FilesystemTargetEncoding, &TargetEncoder{
+		Package:  IdentityTransform, // This should transform '/' but doesn't
+		Version:  IdentityTransform,
+		Artifact: IdentityTransform,
+	})
+	target := Target{
+		Ecosystem: NPM,
+		Package:   "@fortawesome/react-fontawesome",
+		Version:   "0.2.0",
+		Artifact:  "react-fontawesome-0.2.0.tgz",
+	}
+	// Should panic because the encoded output still contains '/'
+	defer func() {
+		if r := recover(); r == nil {
+			t.Errorf("Encode() with broken encoder should have panicked")
+		}
+	}()
+	FilesystemTargetEncoding.Encode(target)
 }
