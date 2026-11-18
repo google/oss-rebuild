@@ -377,6 +377,11 @@ resource "google_pubsub_topic" "build-tasks" {
   name = "build-tasks"
 }
 
+# Cloud Build publishes build status updates here with its service agent.
+resource "google_pubsub_topic" "cloud-builds" {
+  name = "cloud-builds"
+}
+
 # A worker extends a task's lease through its rebuild, then acks it.
 resource "google_pubsub_subscription" "build-workers" {
   name                 = "build-workers"

@@ -91,6 +91,11 @@ resource "google_project_iam_custom_role" "bucket-viewer-role" {
   title       = "Bucket Viewer"
   permissions = ["storage.buckets.get", "storage.buckets.list"]
 }
+resource "google_project_iam_custom_role" "gcb-waiter-role" {
+  role_id     = "gcbWaiter"
+  title       = "GCB Waiter Ephemeral Subscriber"
+  permissions = ["pubsub.subscriptions.create", "pubsub.subscriptions.consume", "pubsub.subscriptions.delete"]
+}
 resource "google_storage_bucket_iam_member" "git-cache-manages-git-cache" {
   bucket = google_storage_bucket.git-cache.name
   role   = "roles/storage.objectAdmin"
@@ -331,6 +336,21 @@ resource "google_pubsub_subscription_iam_member" "orchestrator-pulls-builds" {
   subscription = google_pubsub_subscription.build-workers.id
   role         = "roles/pubsub.subscriber"
   member       = google_service_account.orchestrator.member
+}
+resource "google_pubsub_topic_iam_member" "orchestrator-attaches-cloud-builds" {
+  topic  = google_pubsub_topic.cloud-builds.id
+  role   = "roles/pubsub.subscriber"
+  member = google_service_account.orchestrator.member
+}
+# NOTE: Prefix matches gcb.WaiterSubscriptionPrefix in pkg/gcb/waiter.go.
+resource "google_project_iam_member" "orchestrator-manages-gcb-waiters" {
+  project = var.project
+  role    = google_project_iam_custom_role.gcb-waiter-role.name
+  member  = google_service_account.orchestrator.member
+  condition {
+    title      = "gcb-waiter-subscriptions"
+    expression = "resource.type != \"pubsub.googleapis.com/Subscription\" || resource.name.startsWith(\"projects/${var.project}/subscriptions/gcb-waiter-\")"
+  }
 }
 resource "google_pubsub_topic_iam_member" "can-publish-to-attestation-topic" {
   topic  = google_pubsub_topic.attestation-topic.id
