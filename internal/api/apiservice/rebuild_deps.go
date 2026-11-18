@@ -27,7 +27,7 @@ import (
 )
 
 // MakeRebuildPackageDeps creates RebuildPackageDeps from a RebuildDepsConfig.
-func MakeRebuildPackageDeps(ctx context.Context, cfg *schema.RebuildDepsConfig) (*RebuildPackageDeps, error) {
+func MakeRebuildPackageDeps(ctx context.Context, cfg *schema.RebuildDepsConfig, gcbOpts ...gcb.ClientOption) (*RebuildPackageDeps, error) {
 	var d RebuildPackageDeps
 	var err error
 	d.HTTPClient, err = httpegress.MakeClient(ctx, httpegress.Config{Host: cfg.Host})
@@ -78,7 +78,7 @@ func MakeRebuildPackageDeps(ctx context.Context, cfg *schema.RebuildDepsConfig) 
 		Client:         nil, // Defined depending on GCBPrivatePoolName
 	}
 	if cfg.GCBPrivatePoolName != "" {
-		executorConfig.Client = gcb.NewRegionalClient(svc, cfg.GCBPrivatePoolRegion)
+		executorConfig.Client = gcb.NewRegionalClient(svc, cfg.GCBPrivatePoolRegion, gcbOpts...)
 		executorConfig.PrivatePool = &gcb.PrivatePoolConfig{
 			Name:   cfg.GCBPrivatePoolName,
 			Region: cfg.GCBPrivatePoolRegion,
@@ -88,7 +88,7 @@ func MakeRebuildPackageDeps(ctx context.Context, cfg *schema.RebuildDepsConfig) 
 			Region: cfg.GCBPrivatePoolRegion,
 		}
 	} else {
-		executorConfig.Client = gcb.NewClient(svc)
+		executorConfig.Client = gcb.NewClient(svc, gcbOpts...)
 	}
 	executorConfig.Planner = buildgcb.NewPlanner(plannerConfig)
 	d.Executor, err = buildgcb.NewExecutor(executorConfig)
