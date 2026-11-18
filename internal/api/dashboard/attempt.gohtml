@@ -20,15 +20,8 @@
     <p><strong>Finished:</strong> {{.Attempt.Finished.Format "2006-01-02 15:04:05"}}</p>
     <p><strong>Duration:</strong> {{.AttemptDuration}}</p>
 
-    {{$logID := ""}}
-    {{if .Attempt.BuildID}}
-        {{$logID = .Attempt.BuildID}}
-    {{else if .Attempt.ObliviousID}}
-        {{$logID = .Attempt.ObliviousID}}
-    {{end}}
-
-    {{if $logID}}
-    <p><strong>Logs:</strong> <a href="/attempt/{{.Attempt.Encoded.Ecosystem}}/{{.Attempt.Encoded.Package}}/{{.Attempt.Encoded.Version}}/{{.Attempt.Encoded.Artifact}}/{{.Attempt.RunID}}/build-logs/">View Raw Logs</a></p>
+    {{with .LogsURL}}
+    <p><strong>Logs:</strong> <a href="{{.}}">View in Cloud Storage</a></p>
     {{end}}
 
     <h3>Strategy</h3>

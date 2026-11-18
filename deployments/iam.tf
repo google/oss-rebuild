@@ -562,12 +562,6 @@ resource "google_storage_bucket_iam_member" "dashboard-reads-analytics" {
   role   = "roles/storage.objectViewer"
   member = google_service_account.dashboard[0].member
 }
-resource "google_storage_bucket_iam_member" "dashboard-reads-logs" {
-  count  = var.enable_dashboard ? 1 : 0
-  bucket = google_storage_bucket.logs.name
-  role   = "roles/storage.objectViewer"
-  member = google_service_account.dashboard[0].member
-}
 resource "google_storage_bucket_iam_member" "dashboard-reads-agent-sessions" {
   count  = var.enable_dashboard ? 1 : 0
   bucket = google_storage_bucket.agent-sessions.name
