@@ -9,6 +9,7 @@ import (
 	"context"
 	"encoding/json"
 	"flag"
+	"fmt"
 	"log"
 	"net/http"
 	"os"
@@ -23,6 +24,7 @@ import (
 	"github.com/google/oss-rebuild/internal/cache"
 	"github.com/google/oss-rebuild/internal/httpegress"
 	"github.com/google/oss-rebuild/internal/serviceid"
+	"github.com/google/oss-rebuild/pkg/gcb"
 	"github.com/google/oss-rebuild/pkg/rebuild/rebuild"
 	"github.com/google/oss-rebuild/pkg/rebuild/schema"
 	"github.com/pkg/errors"
@@ -56,6 +58,19 @@ func main() {
 		log.Fatalf("creating pubsub client: %v", err)
 	}
 	defer client.Close()
+	waiter, err := gcb.NewWaiter(ctx, gcb.WaiterConfig{
+		Client: client,
+		Topic:  fmt.Sprintf("projects/%s/topics/cloud-builds", *project),
+	})
+	if err != nil {
+		log.Printf("disabling GCB waiter, falling back to polling: %v", err)
+	} else {
+		defer func() {
+			if err := waiter.Close(); err != nil {
+				log.Printf("closing GCB waiter: %v", err)
+			}
+		}()
+	}
 	sub := client.Subscriber(*subscription)
 	sub.ReceiveSettings.MaxOutstandingMessages = *buildsPerWorker
 	sub.ReceiveSettings.MaxExtension = maxBuild
@@ -63,7 +78,11 @@ func main() {
 	var clients cache.CoalescingMemoryCache[schema.RebuildDepsConfig, *apiservice.RebuildPackageDeps]
 	depsFor := func(cfg schema.RebuildDepsConfig) (*apiservice.RebuildPackageDeps, error) {
 		return clients.GetOrSet(cfg, func() (*apiservice.RebuildPackageDeps, error) {
-			d, err := apiservice.MakeRebuildPackageDeps(context.Background(), &cfg)
+			var gcbOpts []gcb.ClientOption
+			if waiter != nil && cfg.BuildProject == *project {
+				gcbOpts = append(gcbOpts, gcb.WithWaiter(waiter))
+			}
+			d, err := apiservice.MakeRebuildPackageDeps(context.Background(), &cfg, gcbOpts...)
 			if err != nil {
 				return nil, errors.Wrap(err, "making rebuild deps")
 			}
