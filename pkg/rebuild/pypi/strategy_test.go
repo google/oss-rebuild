@@ -334,7 +334,7 @@ func TestPlatformWheelBuild(t *testing.T) {
 				Source:   "git checkout --force 'the_ref'",
 				Deps: `for py in /opt/python/cp310-cp310/bin/python /opt/python/cp310-*/bin/python; do [ -x "$py" ] && break; done
 "$py" -m venv /deps
-/deps/bin/pip install build wheel
+/deps/bin/pip install build
 /deps/bin/pip install 'req_1'
 /deps/bin/pip install 'req_2'`,
 				Build: `/deps/bin/python3 -m build --wheel -n the_dir
@@ -368,7 +368,7 @@ rm -rf the_dir/dist/repaired`,
 				Source:   "git checkout --force 'the_ref'",
 				Deps: `for py in /opt/python/cp310-cp310/bin/python /opt/python/cp310-*/bin/python; do [ -x "$py" ] && break; done
 "$py" -m venv /deps
-/deps/bin/pip install build wheel
+/deps/bin/pip install build
 /deps/bin/pip install 'req_1<='\''1.2.3'\'''`,
 				Build: `/deps/bin/python3 -m build --wheel -n the_dir
 mkdir -p the_dir/dist/repaired
@@ -400,7 +400,7 @@ rm -rf the_dir/dist/repaired`,
 				Source:   "git checkout --force 'the_ref'",
 				Deps: `for py in /opt/python/cp310-cp310/bin/python /opt/python/cp310-*/bin/python; do [ -x "$py" ] && break; done
 "$py" -m venv /deps
-/deps/bin/pip install build wheel`,
+/deps/bin/pip install build`,
 				Build: `/deps/bin/python3 -m build --wheel -n the_dir
 mkdir -p the_dir/dist/repaired
 AUDITWHEEL="/deps/bin/auditwheel"
@@ -432,7 +432,7 @@ rm -rf the_dir/dist/repaired`,
 				Source:   "git checkout --force 'the_ref'",
 				Deps: `for py in /opt/python/cp312-cp312/bin/python /opt/python/cp312-*/bin/python; do [ -x "$py" ] && break; done
 "$py" -m venv /deps
-/deps/bin/pip install build wheel`,
+/deps/bin/pip install build`,
 				Build: `/deps/bin/python3 -m build --wheel -n the_dir
 mkdir -p the_dir/dist/repaired
 AUDITWHEEL="/deps/bin/auditwheel"
@@ -464,7 +464,7 @@ rm -rf the_dir/dist/repaired`,
 				Source:   "git checkout --force 'the_ref'",
 				Deps: `for py in /opt/python/cp310-cp310/bin/python /opt/python/cp310-*/bin/python; do [ -x "$py" ] && break; done
 "$py" -m venv /deps
-/deps/bin/pip install build wheel`,
+/deps/bin/pip install build`,
 				Build: `mkdir -p $(dirname /project)
 mkdir /project
 cp -a . /project
@@ -497,7 +497,7 @@ rm -rf the_dir/dist/repaired`,
 				Source:   "git checkout --force 'the_ref'",
 				Deps: `for py in /opt/python/cp3*/bin/python; do [ -x "$py" ] && break; done
 "$py" -m venv /deps
-/deps/bin/pip install build wheel
+/deps/bin/pip install build
 export PIP_INDEX_URL=http://pypi:2006-01-02T03:04:05Z@orange/simple`,
 				Build: `/deps/bin/python3 -m build --wheel -n the_dir
 mkdir -p the_dir/dist/repaired
@@ -527,7 +527,7 @@ rm -rf the_dir/dist/repaired`,
 				Source:   "git checkout --force 'the_ref'",
 				Deps: `for py in /opt/python/cp3*/bin/python; do [ -x "$py" ] && break; done
 "$py" -m venv /deps
-/deps/bin/pip install build wheel`,
+/deps/bin/pip install build`,
 				Build: `/deps/bin/python3 -m build --wheel -n
 mkdir -p dist/repaired
 AUDITWHEEL="/deps/bin/auditwheel"
@@ -558,7 +558,7 @@ rm -rf dist/repaired`,
 				Source:   "git checkout --force 'the_ref'",
 				Deps: `for py in /opt/python/cp312-cp312/bin/python /opt/python/cp312-*/bin/python; do [ -x "$py" ] && break; done
 "$py" -m venv /deps
-/deps/bin/pip install build wheel`,
+/deps/bin/pip install build`,
 				Build: `/deps/bin/python3 -m build --wheel -n the_dir
 mkdir -p the_dir/dist/repaired
 AUDITWHEEL="/deps/bin/auditwheel"
@@ -589,7 +589,7 @@ rm -rf the_dir/dist/repaired`,
 				Source:   "git checkout --force 'the_ref'",
 				Deps: `for py in /opt/python/cp310-cp310/bin/python /opt/python/cp310-*/bin/python; do [ -x "$py" ] && break; done
 "$py" -m venv /deps
-/deps/bin/pip install build wheel`,
+/deps/bin/pip install build`,
 				Build: `/deps/bin/python3 -m build --wheel -n the_dir
 mkdir -p the_dir/dist/repaired
 AUDITWHEEL="/deps/bin/auditwheel"
@@ -620,7 +620,7 @@ rm -rf the_dir/dist/repaired`,
 				Source:   "git checkout --force 'the_ref'",
 				Deps: `for py in /opt/python/cp310-cp310/bin/python /opt/python/cp310-*/bin/python; do [ -x "$py" ] && break; done
 "$py" -m venv /deps
-/deps/bin/pip install build wheel`,
+/deps/bin/pip install build`,
 				Build: `/deps/bin/python3 -m build --wheel -n the_dir
 mkdir -p the_dir/dist/repaired
 AUDITWHEEL="/deps/bin/auditwheel"
@@ -651,7 +651,7 @@ rm -rf the_dir/dist/repaired`,
 				Source:   "git checkout --force 'the_ref'",
 				Deps: `for py in /opt/python/cp38-cp38/bin/python /opt/python/cp38-*/bin/python; do [ -x "$py" ] && break; done
 "$py" -m venv /deps
-/deps/bin/pip install build wheel`,
+/deps/bin/pip install build`,
 				Build: `/deps/bin/python3 -m build --wheel -n the_dir
 mkdir -p the_dir/dist/repaired
 AUDITWHEEL="/deps/bin/auditwheel"
@@ -681,7 +681,7 @@ rm -rf the_dir/dist/repaired`,
 				Source:   "git checkout --force 'the_ref'",
 				Deps: `for py in /opt/python/cp38-*/bin/python; do [ -x "$py" ] && break; done
 "$py" -m venv /deps
-/deps/bin/pip install build wheel`,
+/deps/bin/pip install build`,
 				Build: `/deps/bin/python3 -m build --wheel -n the_dir
 mkdir -p the_dir/dist/repaired
 AUDITWHEEL="/deps/bin/auditwheel"
@@ -712,7 +712,7 @@ rm -rf the_dir/dist/repaired`,
 				Source:   "git checkout --force 'the_ref'",
 				Deps: `for py in /opt/python/cp38-abi3/bin/python /opt/python/cp38-*/bin/python /opt/python/cp3*/bin/python; do [ -x "$py" ] && break; done
 "$py" -m venv /deps
-/deps/bin/pip install build wheel`,
+/deps/bin/pip install build`,
 				Build: `/deps/bin/python3 -m build --wheel -n the_dir
 mkdir -p the_dir/dist/repaired
 AUDITWHEEL="/deps/bin/auditwheel"
@@ -744,7 +744,7 @@ rm -rf the_dir/dist/repaired`,
 				Source:   "git checkout --force 'the_ref'",
 				Deps: `for py in /opt/python/cp310-cp310/bin/python /opt/python/cp310-*/bin/python; do [ -x "$py" ] && break; done
 "$py" -m venv /deps
-/deps/bin/pip install build wheel`,
+/deps/bin/pip install build`,
 				Build: `/deps/bin/python3 -m build --wheel -n the_dir
 mkdir -p the_dir/dist/repaired
 AUDITWHEEL="/deps/bin/auditwheel"
@@ -777,7 +777,7 @@ rm -rf the_dir/dist/repaired`,
 				Source:   "git checkout --force 'the_ref'",
 				Deps: `for py in /opt/python/cp310-cp310/bin/python /opt/python/cp310-*/bin/python; do [ -x "$py" ] && break; done
 "$py" -m venv /tmp/build-env-v9c0qwj_
-/tmp/build-env-v9c0qwj_/bin/pip install build wheel
+/tmp/build-env-v9c0qwj_/bin/pip install build
 /tmp/build-env-v9c0qwj_/bin/pip install 'numpy==2.0.0'`,
 				Build: `/tmp/build-env-v9c0qwj_/bin/python3 -m build --wheel -n the_dir
 mkdir -p the_dir/dist/repaired
@@ -811,7 +811,7 @@ rm -rf the_dir/dist/repaired`,
 				Source:   "git checkout --force 'the_ref'",
 				Deps: `for py in /opt/python/cp312-cp312/bin/python /opt/python/cp312-*/bin/python; do [ -x "$py" ] && break; done
 "$py" -m venv /deps
-/deps/bin/pip install build wheel
+/deps/bin/pip install build
 /deps/bin/pip install 'setuptools-rust==1.9.0'
 wget -O rustup-init https://static.rust-lang.org/rustup/dist/x86_64-unknown-linux-gnu/rustup-init
 chmod +x rustup-init
@@ -850,7 +850,7 @@ rm -rf the_dir/dist/repaired`,
 				Source:   "git checkout --force 'the_ref'",
 				Deps: `for py in /opt/python/cp312-cp312/bin/python /opt/python/cp312-*/bin/python; do [ -x "$py" ] && break; done
 "$py" -m venv /deps
-/deps/bin/pip install build wheel
+/deps/bin/pip install build
 /deps/bin/pip install 'setuptools-rust==1.9.0'
 wget -O rustup-init https://static.rust-lang.org/rustup/dist/x86_64-unknown-linux-gnu/rustup-init
 chmod +x rustup-init
@@ -890,7 +890,7 @@ rm -rf the_dir/dist/repaired`,
 				Source:   "git checkout --force 'the_ref'",
 				Deps: `for py in /opt/python/cp312-cp312/bin/python /opt/python/cp312-*/bin/python; do [ -x "$py" ] && break; done
 "$py" -m venv /deps
-/deps/bin/pip install build wheel
+/deps/bin/pip install build
 /deps/bin/pip install 'maturin==1.7.4'
 wget -O rustup-init https://static.rust-lang.org/rustup/dist/x86_64-unknown-linux-musl/rustup-init
 chmod +x rustup-init

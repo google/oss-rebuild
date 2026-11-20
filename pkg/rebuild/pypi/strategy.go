@@ -405,11 +405,11 @@ var toolkit = []*flow.Tool{
 				},
 			},
 			{
-				// Fetch the PEP 517 frontend and wheel from the real index, before timewarp.
+				// Fetch the PEP 517 frontend from the real index, before timewarp.
 				// auditwheel is deliberately absent. The build uses the one bundled with the
 				// PyPA image, which matches the image's patchelf and is what upstream used
 				// when building in the same image.
-				Runs: "{{.With.venv}}/bin/pip install build wheel",
+				Runs: "{{.With.venv}}/bin/pip install build",
 			},
 			{
 				Uses: "pypi/setup-registry",
