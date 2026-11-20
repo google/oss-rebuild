@@ -355,6 +355,41 @@ rm -rf the_dir/dist/repaired`,
 			},
 		},
 		{
+			"WithSetuptools",
+			&PlatformWheelBuild{
+				Location:     defaultLocation,
+				PythonTag:    "cp310",
+				ABITag:       "cp310",
+				Requirements: []string{"wheel==0.37.1", "setuptools<=67.7.2"},
+				PlatformTag:  "manylinux_2_17_x86_64",
+			},
+			rebuild.Instructions{
+				Location: defaultLocation,
+				Source:   "git checkout --force 'the_ref'",
+				Deps: `for py in /opt/python/cp310-cp310/bin/python /opt/python/cp310-*/bin/python; do [ -x "$py" ] && break; done
+"$py" -m venv /deps
+/deps/bin/pip install build
+/deps/bin/pip uninstall -y setuptools
+/deps/bin/pip install 'wheel==0.37.1'
+/deps/bin/pip install 'setuptools<=67.7.2'`,
+				Build: `/deps/bin/python3 -m build --wheel -n the_dir
+mkdir -p the_dir/dist/repaired
+AUDITWHEEL="/deps/bin/auditwheel"
+if [ ! -x "$AUDITWHEEL" ]; then
+  AUDITWHEEL="auditwheel"
+fi
+$AUDITWHEEL repair the_dir/dist/*.whl --plat manylinux_2_17_x86_64 --only-plat -w the_dir/dist/repaired/
+rm -f the_dir/dist/*.whl
+mv the_dir/dist/repaired/*.whl the_dir/dist/the_artifact
+rm -rf the_dir/dist/repaired`,
+				Requires: rebuild.RequiredEnv{
+					BaseImage:  "quay.io/pypa/manylinux2014_x86_64",
+					SystemDeps: []string{"git"},
+				},
+				OutputPath: "the_dir/dist/the_artifact",
+			},
+		},
+		{
 			"DepsEscaping",
 			&PlatformWheelBuild{
 				Location:     defaultLocation,

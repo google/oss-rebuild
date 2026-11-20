@@ -418,6 +418,18 @@ var toolkit = []*flow.Tool{
 				},
 			},
 			{
+				// venvs on Python 3.11 and earlier come with setuptools, which pip will reuse
+				// instead of fetching a new version. Remove the bundled version to avoid the
+				// behavior change.
+				Runs: `
+					{{- range .With.requirements | fromJSON}}
+						{{- if eq (regexReplace . "^([A-Za-z0-9._-]+).*" "$1") "setuptools"}}
+							{{- $.With.venv}}/bin/pip uninstall -y setuptools
+							{{- break}}
+						{{- end}}
+					{{- end}}`,
+			},
+			{
 				Uses: "pypi/install-deps",
 				With: map[string]string{
 					"requirements": "{{.With.requirements}}",
