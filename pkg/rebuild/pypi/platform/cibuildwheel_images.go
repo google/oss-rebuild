@@ -10,7 +10,7 @@ import "time"
 
 // CibuildwheelPinsGeneratedAt is when CibuildwheelPins was generated. Releases
 // published after it are missing from the table.
-var CibuildwheelPinsGeneratedAt = time.Date(2026, time.October, 16, 20, 27, 36, 0, time.UTC)
+var CibuildwheelPinsGeneratedAt = time.Date(2026, time.November, 20, 5, 43, 36, 0, time.UTC)
 
 // CibuildwheelPins lists the cibuildwheel releases that pin a supported x86_64
 // build image, sorted by version.
@@ -1027,6 +1027,50 @@ var CibuildwheelPins = CibuildwheelPinTable{
 			ImageManylinux2_28X86_64: {Tag: "2026.10.09-1", Digest: "sha256:4131ddd7acb9c6c966af02fe7e71edc51e078c2d41f475966697676430bfa2ae"},
 			ImageManylinux2_34X86_64: {Tag: "2026.10.09-1", Digest: "sha256:3cb61cd981757b4ed54bc658f8bd0f4e829af49372cf8cf6c237268dacf168d0"},
 			ImageMusllinux1_2X86_64:  {Tag: "2026.10.09-1", Digest: "sha256:dc96c1f69b8a6241bcc8175a8d89b1caf0dccf959ff111a2272c42747af38350"},
+		},
+	},
+	{
+		Version:   "4.3.2",
+		Published: time.Date(2026, time.October, 20, 17, 40, 26, 0, time.UTC),
+		Commit:    "f11181315571b24e4a3c67f1a828532793f2df55",
+		Images: map[string]PinnedImage{
+			ImageManylinux2014X86_64: {Tag: "2026.10.09-1", Digest: "sha256:f6a6f153c9cf45470507ebbc27013e5db14ce21331b62fd2c540561f25e5f0a5"},
+			ImageManylinux2_28X86_64: {Tag: "2026.10.09-1", Digest: "sha256:4131ddd7acb9c6c966af02fe7e71edc51e078c2d41f475966697676430bfa2ae"},
+			ImageManylinux2_34X86_64: {Tag: "2026.10.09-1", Digest: "sha256:3cb61cd981757b4ed54bc658f8bd0f4e829af49372cf8cf6c237268dacf168d0"},
+			ImageMusllinux1_2X86_64:  {Tag: "2026.10.09-1", Digest: "sha256:dc96c1f69b8a6241bcc8175a8d89b1caf0dccf959ff111a2272c42747af38350"},
+		},
+	},
+	{
+		Version:   "4.3.3",
+		Published: time.Date(2026, time.October, 21, 9, 33, 8, 0, time.UTC),
+		Commit:    "8c2dcd2e96041a619f5ff03c9638d7941e2553a4",
+		Images: map[string]PinnedImage{
+			ImageManylinux2014X86_64: {Tag: "2026.10.21-1", Digest: "sha256:55df5597db86b0a03d5f21a03b060271efffc78ef97123c60ee9c7ce0f10ec31"},
+			ImageManylinux2_28X86_64: {Tag: "2026.10.21-1", Digest: "sha256:b74a5b6f1705ecff17be8bd792589bef9b3b039766d12205720ecd2a9e919192"},
+			ImageManylinux2_34X86_64: {Tag: "2026.10.21-1", Digest: "sha256:d70bccf2554c89cc074a77e195aa83916af867528a2c524e25c0e18d8044a6c8"},
+			ImageMusllinux1_2X86_64:  {Tag: "2026.10.21-1", Digest: "sha256:767e9118e48b4b8de84d3262ba95a3bc5f6679a09247f0bf9e283445608f37c1"},
+		},
+	},
+	{
+		Version:   "4.3.4",
+		Published: time.Date(2026, time.October, 22, 13, 32, 51, 0, time.UTC),
+		Commit:    "b9e566a2b284570af229f6c2a33673410d0389a3",
+		Images: map[string]PinnedImage{
+			ImageManylinux2014X86_64: {Tag: "2026.10.21-1", Digest: "sha256:55df5597db86b0a03d5f21a03b060271efffc78ef97123c60ee9c7ce0f10ec31"},
+			ImageManylinux2_28X86_64: {Tag: "2026.10.21-1", Digest: "sha256:b74a5b6f1705ecff17be8bd792589bef9b3b039766d12205720ecd2a9e919192"},
+			ImageManylinux2_34X86_64: {Tag: "2026.10.21-1", Digest: "sha256:d70bccf2554c89cc074a77e195aa83916af867528a2c524e25c0e18d8044a6c8"},
+			ImageMusllinux1_2X86_64:  {Tag: "2026.10.21-1", Digest: "sha256:767e9118e48b4b8de84d3262ba95a3bc5f6679a09247f0bf9e283445608f37c1"},
+		},
+	},
+	{
+		Version:   "4.3.5",
+		Published: time.Date(2026, time.October, 27, 19, 1, 53, 0, time.UTC),
+		Commit:    "f9b966cfadf4109556cadc5bb39ddb72d0ce664e",
+		Images: map[string]PinnedImage{
+			ImageManylinux2014X86_64: {Tag: "2026.10.26-1", Digest: "sha256:296069bc05d85275248f168f6e3b34ba8aa06181b67e40cd7447c64d56d3a851"},
+			ImageManylinux2_28X86_64: {Tag: "2026.10.26-1", Digest: "sha256:e0adf18521ad35192df733a6c62d35df7801957d24e0470238aacecfab2188a3"},
+			ImageManylinux2_34X86_64: {Tag: "2026.10.26-1", Digest: "sha256:834a2a31de5eabacd4411417b3bbc9fcb6ff9f959972711ab3b73355e7b0928d"},
+			ImageMusllinux1_2X86_64:  {Tag: "2026.10.26-1", Digest: "sha256:04e877afa939007f6784f9076d2aa797d1156f31281cfe19f203945d7b624970"},
 		},
 	},
 }
