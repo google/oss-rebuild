@@ -7,6 +7,7 @@ import (
 	"archive/zip"
 	"bytes"
 	"context"
+	"debug/elf"
 	"fmt"
 	"io"
 	"io/fs"
@@ -567,6 +568,23 @@ func inferBuild(ctx context.Context, t rebuild.Target, mux rebuild.RegistryMux, 
 		if cythonReq != "" {
 			reqs = append(reqs, cythonReq)
 		}
+		var buildEnv map[string]string
+		buildEnv, reqs, err = inferHatchlingOptInHooks(tree, dir, zr, reqs)
+		if err != nil {
+			return nil, errors.Wrap(err, "inferring Hatchling opt-in hooks")
+		}
+		mypycEnv, mypycSysDeps, err := inferMypycBuildEnv(tree, dir, zr, highest.LibcImpl, reqs)
+		if err != nil {
+			return nil, errors.Wrap(err, "inferring mypyc build env")
+		}
+		if len(mypycEnv) > 0 {
+			if buildEnv == nil {
+				buildEnv = mypycEnv
+			} else {
+				maps.Copy(buildEnv, mypycEnv)
+			}
+			sysDeps = mergeMypycSystemDeps(sysDeps, mypycSysDeps)
+		}
 		rustVersion, err := inferRustVersion(zr, reqs, a.UploadTime)
 		if err != nil {
 			return nil, errors.Wrap(err, "inferring Rust version")
@@ -587,6 +605,7 @@ func inferBuild(ctx context.Context, t rebuild.Target, mux rebuild.RegistryMux, 
 			BaseImage:    inferBaseImage(platform.CibuildwheelPins, tags.Platform, a.UploadTime, cibwSpecs...),
 			BuildRoot:    buildRoot,
 			BuildEnvPath: buildEnvPath,
+			BuildEnv:     buildEnv,
 			RustVersion:  rustVersion,
 			CargoTarget:  rustVersion != "" && maturinTakesTarget(reqs),
 		}, nil
@@ -687,11 +706,18 @@ func inferBuildPaths(zr *zip.Reader, tree *git2.Tree, usesCibuildwheel bool) (bu
 var (
 	// setupCythonImportPat matches a setup.py that compiles extensions with Cython.
 	setupCythonImportPat = re.MustCompile(`(?m)^\s*(?:from\s+Cython\b|import\s+[Cc]ython\b)`)
+	// setupMypycDebugEnvPat matches a setup.py that reads MYPYC_DEBUG_LEVEL on a non-comment line.
+	setupMypycDebugEnvPat = re.MustCompile(`(?m)^[^#\n]*\bMYPYC_DEBUG_LEVEL\b`)
 	// cythonABIModulePat matches the Cython version embedded in extension modules.
 	// NOTE: CYTHON_ABI is the Cython version with '.' replaced by '_', optionally
 	// followed by a PEP 440 pre-release tag (a1, b2, rc1) and, from 3.1 on, by
 	// lowercase feature suffixes such as "limited" or "noamsend".
 	cythonABIModulePat = re.MustCompile(`_cython_(\d+)_(\d+)_(\d+)((?:a|b|rc)\d+)?(?:[a-z]|\b)`)
+	// extraMarkerPat matches Requires-Dist markers that apply only to an extra.
+	extraMarkerPat = re.MustCompile(`\bextra\b`)
+	// mypycClangVersionPat matches the X.Y.Z release in a clang .comment string, as
+	// in "clang version 20.1.8 (20.1.8-1.module_el8...)".
+	mypycClangVersionPat = re.MustCompile(`clang version (\d+\.\d+\.\d+)\b`)
 )
 
 // inferCythonRequirement pins Cython to the version the wheel's extension
@@ -704,23 +730,32 @@ func inferCythonRequirement(tree *git2.Tree, dir, pkg string, zr *zip.Reader, re
 	if !hasRequirement(reqs, "setuptools") || hasRequirement(reqs, "flit-core", "cython") || pypireg.NormalizedName(pkg) == "cython" {
 		return "", nil
 	}
-	f, err := tree.File(path.Join(dir, "setup.py"))
-	if errors.Is(err, git2.ErrFileNotFound) {
-		return "", nil
-	} else if err != nil {
-		return "", errors.Wrap(err, "finding setup.py")
-	}
-	src, err := f.Contents()
-	if err != nil {
-		return "", errors.Wrap(err, "reading setup.py")
-	}
-	if !setupCythonImportPat.MatchString(src) {
-		return "", nil
+	importsCython, err := setupPyMatches(tree, dir, setupCythonImportPat)
+	if err != nil || !importsCython {
+		return "", err
 	}
 	if v := wheelCythonVersion(zr); v != "" {
 		return "Cython==" + v, nil
 	}
 	return "", nil
+}
+
+func setupPyMatches(tree *git2.Tree, dir string, pat *re.Regexp) (bool, error) {
+	if tree == nil {
+		return false, nil
+	}
+	f, err := tree.File(path.Join(dir, "setup.py"))
+	if errors.Is(err, git2.ErrFileNotFound) {
+		return false, nil
+	}
+	if err != nil {
+		return false, errors.Wrap(err, "finding setup.py")
+	}
+	src, err := f.Contents()
+	if err != nil {
+		return false, errors.Wrap(err, "reading setup.py")
+	}
+	return pat.MatchString(src), nil
 }
 
 // wheelCythonVersion returns the Cython version that the wheel's extension
@@ -730,6 +765,253 @@ func wheelCythonVersion(zr *zip.Reader) string {
 		return fmt.Sprintf("%s.%s.%s%s", m[1], m[2], m[3], m[4])
 	}
 	return ""
+}
+
+// inferHatchlingOptInHooks sets HATCH_BUILD_HOOK_ENABLE_<NAME>=1 and merges
+// hook and runtime requirements for pyproject.toml wheel hooks with
+// enable-by-default = false so Hatchling compiles the wheel's extensions.
+func inferHatchlingOptInHooks(tree *git2.Tree, dir string, zr *zip.Reader, reqs []string) (env map[string]string, updatedReqs []string, err error) {
+	if tree == nil || zr == nil || !hasRequirement(reqs, "hatchling") || !hasExtensionModule(zr) {
+		return nil, reqs, nil
+	}
+	hooks, err := pypiresolver.ExtractHatchWheelHooks(tree, dir)
+	if err != nil {
+		return nil, nil, errors.Wrap(err, "extracting hatch wheel hooks")
+	}
+	cythonVersion := wheelCythonVersion(zr)
+	nativeHooks := map[string]bool{
+		"mypyc":  hasMypycModule(zr),
+		"cython": cythonVersion != "",
+		// Custom hatch_build.py hooks leave no distinct marker in the wheel, so
+		// shipping extension modules is used heuristically as evidence that the hook ran.
+		"custom": true,
+	}
+	env = make(map[string]string)
+	var extraReqs []string
+	pinExistingCython := false
+	for _, hook := range hooks {
+		if hook.EnableByDefault || !nativeHooks[hook.Name] {
+			continue
+		}
+		env["HATCH_BUILD_HOOK_ENABLE_"+strings.ToUpper(hook.Name)] = "1"
+		for _, dep := range hook.Dependencies {
+			extraReqs = append(extraReqs, pinCythonRequirement(dep, cythonVersion))
+		}
+		if hook.Name == "cython" && !hasRequirement(hook.Dependencies, "cython") {
+			extraReqs = append(extraReqs, "Cython=="+cythonVersion)
+		}
+		if cythonVersion != "" && (hook.Name == "cython" || hook.Name == "custom") {
+			pinExistingCython = true
+		}
+		if hook.RequireRuntimeDependencies {
+			extraReqs = append(extraReqs, wheelRuntimeRequirements(zr)...)
+		}
+	}
+	if len(env) == 0 {
+		return nil, reqs, nil
+	}
+	updatedReqs = slices.Clone(reqs)
+	if pinExistingCython {
+		for i, req := range updatedReqs {
+			updatedReqs[i] = pinCythonRequirement(req, cythonVersion)
+		}
+	}
+	return env, mergeRequirements(updatedReqs, extraReqs), nil
+}
+
+// wheelRuntimeRequirements returns the Requires-Dist entries from the RFC 822
+// headers of the wheel's top-level METADATA. Vendored dist-info directories,
+// body text after the blank header separator and extra-only markers are skipped.
+func wheelRuntimeRequirements(zr *zip.Reader) []string {
+	for _, f := range zr.File {
+		if !strings.HasSuffix(f.Name, ".dist-info/METADATA") || path.Dir(path.Dir(f.Name)) != "." {
+			continue
+		}
+		data, err := getFile(f.Name, zr)
+		if err != nil {
+			continue
+		}
+		var reqs []string
+		for _, rawLine := range strings.Split(string(data), "\n") {
+			if strings.TrimRight(rawLine, "\r") == "" {
+				break
+			}
+			after, ok := strings.CutPrefix(rawLine, "Requires-Dist:")
+			if !ok {
+				continue
+			}
+			req := strings.TrimSpace(after)
+			if req == "" || extraMarkerPat.MatchString(requirementMarker(req)) {
+				continue
+			}
+			reqs = append(reqs, req)
+		}
+		return reqs
+	}
+	return nil
+}
+
+func hasExtensionModule(zr *zip.Reader) bool {
+	return slices.ContainsFunc(zr.File, func(f *zip.File) bool {
+		return isExtensionModule(f.Name)
+	})
+}
+
+// hasMypycModule reports whether the wheel has the shared library that mypyc
+// names "<group>__mypyc" and compiles all modules of a group into.
+func hasMypycModule(zr *zip.Reader) bool {
+	return slices.ContainsFunc(zr.File, func(f *zip.File) bool {
+		return isMypycModule(f.Name)
+	})
+}
+
+// pinCythonRequirement replaces req's version constraint with cythonVersion
+// unless req already pins an exact version. Wildcards like "==3.2.*" are not
+// exact, and an "==" inside the marker does not constrain the version.
+func pinCythonRequirement(req, cythonVersion string) string {
+	spec, _, _ := strings.Cut(req, ";")
+	if cythonVersion == "" || requirementName(req) != "cython" || (strings.Contains(spec, "==") && !strings.Contains(spec, "*")) {
+		return req
+	}
+	if marker := requirementMarker(req); marker != "" {
+		return "Cython==" + cythonVersion + "; " + marker
+	}
+	return "Cython==" + cythonVersion
+}
+
+// inferMypycBuildEnv returns any BuildEnv variables and SystemDeps compiler
+// packages needed to match the compiler and debug-info stripping observed in
+// zr's __mypyc shared libraries, or nil when defaults match.
+func inferMypycBuildEnv(tree *git2.Tree, dir string, zr *zip.Reader, libc platform.LibcImpl, reqs []string) (buildEnv map[string]string, sysDeps []string, err error) {
+	// NOTE: inferRequirements derives a setuptools ceiling from the wheel's
+	// Generator header even when pyproject.toml selects flit_core.
+	isSetuptools := hasRequirement(reqs, "setuptools") && !hasRequirement(reqs, "flit-core")
+	isHatchling := hasRequirement(reqs, "hatchling")
+	if zr == nil || (!isHatchling && !isSetuptools) {
+		return nil, nil, nil
+	}
+	info := inspectMypycModules(zr)
+	buildEnv = make(map[string]string)
+	if info.hasClang {
+		buildEnv["CC"] = "clang"
+		sysDeps = []string{info.clangSystemDep(libc)}
+	}
+	// NOTE: mypyc.build.mypycify takes debug_level as a keyword argument (appending
+	// "-g0" after sysconfig CFLAGS) and ignores the environment. hatch-mypyc passes
+	// pyproject.toml options directly, so "MYPYC_DEBUG_LEVEL=0" applies only when
+	// setup.py reads it, as mypy's setup.py does.
+	if info.debugStripped() && isSetuptools {
+		readsDebugEnv, err := setupPyMatches(tree, dir, setupMypycDebugEnvPat)
+		if err != nil {
+			return nil, nil, err
+		}
+		if readsDebugEnv {
+			buildEnv["MYPYC_DEBUG_LEVEL"] = "0"
+		}
+	}
+	if len(buildEnv) == 0 {
+		return nil, nil, nil
+	}
+	return buildEnv, sysDeps, nil
+}
+
+// mergeMypycSystemDeps merges mypycDeps into sysDeps, replacing any unpinned
+// clang toolchain or companion packages from cibuildwheel hooks when mypycDeps
+// pins "clang-<X.Y.Z>*" so the package manager does not also resolve the
+// latest clang stream.
+func mergeMypycSystemDeps(sysDeps, mypycDeps []string) []string {
+	out := slices.Clone(sysDeps)
+	for _, dep := range mypycDeps {
+		if isClangPin(dep) {
+			if idx := slices.IndexFunc(out, isUnpinnedClangDep); idx >= 0 && !slices.Contains(out, dep) {
+				out[idx] = dep
+			}
+			out = slices.DeleteFunc(out, isUnpinnedClangDep)
+		}
+		out = appendUnique(out, dep)
+	}
+	return out
+}
+
+func isUnpinnedClangDep(dep string) bool {
+	switch dep {
+	case "clang", "llvm-toolset", "clang-libs", "clang-devel", "clang-tools-extra":
+		return true
+	default:
+		return false
+	}
+}
+
+type mypycModuleInfo struct {
+	inspected    bool // at least one __mypyc ELF parsed
+	hasClang     bool
+	clangVersion string // X.Y.Z release from .comment, or "" when unversioned
+	hasDebug     bool
+}
+
+// clangSystemDep pins "clang-<X.Y.Z>*" on glibc manylinux images because
+// AlmaLinux AppStream retains older clang module RPMs alongside newer streams
+// whose transitive gcc-toolset dependency shifts clang's selected C runtime.
+// The trailing "*" matches any RPM release, which .comment can omit.
+// NOTE: Alpine musllinux repositories carry a single clang release per image,
+// and custom or pre-release builds can omit an X.Y.Z version in .comment. Both
+// fall back to unpinned "clang", installing the repository's current release.
+func (i mypycModuleInfo) clangSystemDep(libc platform.LibcImpl) string {
+	if libc == platform.Glibc && i.clangVersion != "" {
+		return "clang-" + i.clangVersion + "*"
+	}
+	return "clang"
+}
+
+func isClangPin(dep string) bool {
+	return strings.HasPrefix(dep, "clang-") && strings.HasSuffix(dep, "*")
+}
+
+func (i mypycModuleInfo) debugStripped() bool {
+	return i.inspected && !i.hasDebug
+}
+
+// inspectMypycModules summarizes the compiler and debug sections recorded in
+// the wheel's __mypyc shared libraries. Unparseable files are skipped so they
+// are not mistaken for modules built without debug info.
+func inspectMypycModules(zr *zip.Reader) mypycModuleInfo {
+	var info mypycModuleInfo
+	for _, f := range zr.File {
+		if !isMypycModule(f.Name) || f.UncompressedSize64 > maxModuleSize {
+			continue
+		}
+		if info.clangVersion != "" && info.hasDebug {
+			break
+		}
+		ef, err := openELF(f)
+		if err != nil {
+			continue
+		}
+		info.inspected = true
+		// NOTE: clang-built shared objects still carry "GCC: (GNU) ..." entries in
+		// .comment from the container's C runtime objects, so check for
+		// "clang version " rather than the absence of GCC.
+		if sec := ef.Section(".comment"); sec != nil {
+			if b, err := sec.Data(); err == nil && bytes.Contains(b, []byte("clang version ")) {
+				info.hasClang = true
+				if info.clangVersion == "" {
+					if m := mypycClangVersionPat.FindSubmatch(b); m != nil {
+						info.clangVersion = string(m[1])
+					}
+				}
+			}
+		}
+		if slices.ContainsFunc(ef.Sections, func(sec *elf.Section) bool {
+			return strings.HasPrefix(sec.Name, ".debug_") || strings.HasPrefix(sec.Name, ".zdebug_")
+		}) {
+			info.hasDebug = true
+		}
+	}
+	return info
+}
+
+func isMypycModule(name string) bool {
+	return isExtensionModule(name) && strings.Contains(path.Base(name), "__mypyc.")
 }
 
 // rustcStampPat matches the version a stable rustc records in .comment, as in
