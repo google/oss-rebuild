@@ -765,6 +765,16 @@ var testPins = platform.CibuildwheelPinTable{
 			platform.ImageMusllinux1_2X86_64:  {Tag: "2026.02.20-1", Digest: testDigest("3")},
 		},
 	},
+	{
+		Version:   "4.2.0",
+		Published: time.Date(2026, time.August, 5, 0, 0, 0, 0, time.UTC),
+		Commit:    testCommit("8"),
+		Images: map[string]platform.PinnedImage{
+			platform.ImageManylinux2014X86_64: {Tag: "2026.08.04-1", Digest: testDigest("4")},
+			platform.ImageManylinux2_28X86_64: {Tag: "2026.08.04-1", Digest: testDigest("5")},
+			platform.ImageMusllinux1_2X86_64:  {Tag: "2026.08.04-1", Digest: testDigest("6")},
+		},
+	},
 }
 
 // testDigest returns a well-formed digest made of the character c.
@@ -780,6 +790,8 @@ func testCommit(c string) string {
 func TestInferBaseImage(t *testing.T) {
 	tests := []struct {
 		name        string
+		pythonTag   string
+		abiTag      string
 		platformTag string
 		cibwSpecs   []string
 		uploaded    time.Time
@@ -847,11 +859,62 @@ func TestInferBaseImage(t *testing.T) {
 			uploaded:    time.Date(2026, time.May, 1, 0, 0, 0, 0, time.UTC),
 			want:        "",
 		},
+		{
+			// 3.4.0 no longer builds cp37, so the highest release that does
+			// pins the image.
+			name:        "DroppedInterpreter",
+			pythonTag:   "cp37",
+			abiTag:      "cp37m",
+			platformTag: "manylinux2014_x86_64",
+			uploaded:    time.Date(2026, time.May, 1, 0, 0, 0, 0, time.UTC),
+			want:        "quay.io/pypa/manylinux2014_x86_64:2026.02.20-1@" + testDigest("1"),
+		},
+		{
+			name:        "ConfigVersionWithoutInterpreter",
+			pythonTag:   "cp37",
+			abiTag:      "cp37m",
+			platformTag: "manylinux2014_x86_64",
+			cibwSpecs:   []string{"3.4.0"},
+			uploaded:    time.Date(2026, time.May, 1, 0, 0, 0, 0, time.UTC),
+			want:        "quay.io/pypa/manylinux2014_x86_64:2026.02.20-1@" + testDigest("1"),
+		},
+		{
+			// 3.4.0 predates cp315 in the PyPA images, so a CI config pinning
+			// 3.4.0 falls back to the upload-time release (4.2.0).
+			name:        "ConfigVersionPredatingInterpreter",
+			pythonTag:   "cp315",
+			abiTag:      "cp315",
+			platformTag: "manylinux_2_28_x86_64",
+			cibwSpecs:   []string{"3.4.0"},
+			uploaded:    time.Date(2026, time.August, 20, 0, 0, 0, 0, time.UTC),
+			want:        "quay.io/pypa/manylinux_2_28_x86_64:2026.08.04-1@" + testDigest("5"),
+		},
+		{
+			// abi3 wheels for an old minimum version can be built by newer
+			// interpreters.
+			name:        "Abi3",
+			pythonTag:   "cp37",
+			abiTag:      "abi3",
+			platformTag: "manylinux2014_x86_64",
+			uploaded:    time.Date(2026, time.May, 1, 0, 0, 0, 0, time.UTC),
+			want:        "quay.io/pypa/manylinux2014_x86_64:2026.03.01-1@" + testDigest("d"),
+		},
+		{
+			// A wheel with ABI "none" and a CPython tag still requires that
+			// interpreter in setup-venv/manylinux.
+			name:        "NoneABIWithInterpreter",
+			pythonTag:   "cp37",
+			abiTag:      "none",
+			platformTag: "manylinux2014_x86_64",
+			uploaded:    time.Date(2026, time.May, 1, 0, 0, 0, 0, time.UTC),
+			want:        "quay.io/pypa/manylinux2014_x86_64:2026.02.20-1@" + testDigest("1"),
+		},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			if got := inferBaseImage(testPins, tt.platformTag, tt.uploaded, tt.cibwSpecs...); got != tt.want {
-				t.Errorf("inferBaseImage(%q, %v, %v) = %q, want %q", tt.platformTag, tt.uploaded, tt.cibwSpecs, got, tt.want)
+			tags := WheelTags{Python: tt.pythonTag, ABI: tt.abiTag, Platform: tt.platformTag}
+			if got := inferBaseImage(testPins, tags, tt.uploaded, tt.cibwSpecs...); got != tt.want {
+				t.Errorf("inferBaseImage(%+v, %v, %v) = %q, want %q", tags, tt.uploaded, tt.cibwSpecs, got, tt.want)
 			}
 		})
 	}

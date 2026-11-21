@@ -40,6 +40,49 @@ type PinnedImage struct {
 // against a synthetic table.
 type CibuildwheelPinTable []CibuildwheelRelease
 
+// cibuildwheelPythonAdditions maps CPython tags to the first cibuildwheel
+// release that builds wheels for that interpreter, including prerelease
+// support. Interpreters omitted from the map (cp27 and cp35 through cp38)
+// were already present in 1.4.0, where CibuildwheelPins begins.
+// https://cibuildwheel.pypa.io/en/stable/changelog/
+var cibuildwheelPythonAdditions = map[string]string{
+	"cp39":  "1.6.0",
+	"cp310": "2.0.0",
+	"cp311": "2.6.0",
+	"cp312": "2.13.0",
+	"cp313": "2.19.0",
+	"cp314": "2.23.0",
+	"cp315": "4.0.0",
+}
+
+// cibuildwheelPythonRemovals maps CPython tags to the first cibuildwheel
+// release that no longer builds wheels for that interpreter.
+// https://cibuildwheel.pypa.io/en/stable/changelog/
+var cibuildwheelPythonRemovals = map[string]string{
+	"cp27": "2.0.0",
+	"cp35": "2.0.0",
+	"cp36": "3.0.0",
+	"cp37": "3.0.0",
+	"cp38": "4.0.0",
+}
+
+// BuildingPython returns the releases that build wheels for the CPython
+// interpreter pythonTag. An empty pythonTag or a tag missing from the addition
+// and removal tables (such as PyPy tags or newer CPython releases) selects
+// every release so inference fails open.
+func (p CibuildwheelPinTable) BuildingPython(pythonTag string) CibuildwheelPinTable {
+	if pythonTag == "" {
+		return p
+	}
+	var building CibuildwheelPinTable
+	for _, rel := range p {
+		if rel.buildsPython(pythonTag) {
+			building = append(building, rel)
+		}
+	}
+	return building
+}
+
 // ImageAt returns the digest-pinned reference to the repo image that the
 // highest matching cibuildwheel release pins, along with that release's
 // version.
@@ -68,6 +111,19 @@ func (p CibuildwheelPinTable) ImageAt(repo string, t time.Time, specs ...string)
 		return "", "", false
 	}
 	return img.reference(repo), best.Version, true
+}
+
+// buildsPython reports whether r builds wheels for the CPython interpreter
+// pythonTag, such as "cp38" or "cp315". Tags missing from the addition and
+// removal tables return true so inference fails open.
+func (r CibuildwheelRelease) buildsPython(pythonTag string) bool {
+	if added, ok := cibuildwheelPythonAdditions[pythonTag]; ok && semver.Cmp(r.Version, added) < 0 {
+		return false
+	}
+	if removed, ok := cibuildwheelPythonRemovals[pythonTag]; ok && semver.Cmp(r.Version, removed) >= 0 {
+		return false
+	}
+	return true
 }
 
 // matches reports whether r satisfies any spec in specs at time t, or whether r
