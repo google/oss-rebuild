@@ -1298,3 +1298,129 @@ func TestMaturinTakesTarget(t *testing.T) {
 		}
 	}
 }
+
+func TestInferStrategySanitizeSetupCfg(t *testing.T) {
+	const releaseURL = "https://pypi.org/pypi/SQLAlchemy/2.0.52/json"
+	const wheelURL = "https://files.pythonhosted.org/sqlalchemy-2.0.52-cp312-cp312-musllinux_1_2_x86_64.whl"
+	defaultUploadTime := time.Date(2026, time.August, 11, 21, 16, 59, 0, time.UTC)
+	tests := []struct {
+		name         string
+		generator    string
+		uploadTime   time.Time
+		setupCfg     string
+		wantReqs     []string
+		wantSanitize bool
+	}{
+		{
+			name:      "ConflictingTagBuildSanitized",
+			generator: "setuptools (84.0.0)",
+			setupCfg: `[metadata]
+name = SQLAlchemy
+version = attr: sqlalchemy.__version__
+
+[egg_info]
+tag_build = dev
+`,
+			wantReqs:     []string{"setuptools==84.0.0"},
+			wantSanitize: true,
+		},
+		{
+			name:      "EmptyTagBuildNotSanitized",
+			generator: "setuptools (84.0.0)",
+			setupCfg: `[metadata]
+name = SQLAlchemy
+version = attr: sqlalchemy.__version__
+
+[egg_info]
+tag_build =
+tag_date = 0
+`,
+			wantReqs:     []string{"setuptools==84.0.0"},
+			wantSanitize: false,
+		},
+		{
+			name:      "OldSetuptoolsNotSanitized",
+			generator: "setuptools (60.0.0)",
+			setupCfg: `[metadata]
+name = SQLAlchemy
+version = attr: sqlalchemy.__version__
+
+[egg_info]
+tag_build = dev
+`,
+			wantReqs:     []string{"setuptools==60.0.0"},
+			wantSanitize: false,
+		},
+		{
+			name:       "UploadBeforeExtraConfigNotSanitized",
+			generator:  "bdist_wheel (0.37.1)",
+			uploadTime: time.Date(2022, time.May, 1, 0, 0, 0, 0, time.UTC),
+			setupCfg: `[metadata]
+name = SQLAlchemy
+version = attr: sqlalchemy.__version__
+
+[egg_info]
+tag_build = dev
+`,
+			wantReqs:     []string{"wheel==0.37.1", "setuptools<=67.7.2"},
+			wantSanitize: false,
+		},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			uploadTime := defaultUploadTime
+			if !tc.uploadTime.IsZero() {
+				uploadTime = tc.uploadTime
+			}
+			whlBytes := wheelZip(t, []archive.ZipEntry{
+				zipEntry("sqlalchemy-2.0.52.dist-info/WHEEL", fmt.Sprintf("Wheel-Version: 1.0\nGenerator: %s\nRoot-Is-Purelib: false\nTag: cp312-cp312-musllinux_1_2_x86_64\n", tc.generator)),
+				zipEntry("sqlalchemy-2.0.52.dist-info/METADATA", "Metadata-Version: 2.1\nName: SQLAlchemy\nVersion: 2.0.52\nLicense-File: LICENSE\n"),
+			})
+			releaseJSON := fmt.Sprintf(`{"info":{"name":"SQLAlchemy","version":"2.0.52"},"urls":[{"filename":"sqlalchemy-2.0.52-cp312-cp312-musllinux_1_2_x86_64.whl","url":%q,"size":%d,"upload_time_iso_8601":%q}]}`, wheelURL, len(whlBytes), uploadTime.Format(time.RFC3339))
+			repo := must(gitxtest.CreateRepo([]gitxtest.Commit{
+				{
+					ID:  "c1",
+					Tag: "v2.0.52",
+					Files: gitxtest.FileContent{
+						"pyproject.toml": "[build-system]\nrequires = [\"setuptools>=61.0\"]\n",
+						"setup.cfg":      tc.setupCfg,
+					},
+				},
+			}, nil))
+			ref := repo.Commits["c1"].String()
+			calls := []httpxtest.Call{
+				{URL: releaseURL, Response: &http.Response{StatusCode: 200, Body: httpxtest.Body(releaseJSON)}},
+				{URL: releaseURL, Response: &http.Response{StatusCode: 200, Body: httpxtest.Body(releaseJSON)}},
+				{URL: wheelURL, Response: &http.Response{StatusCode: 200, Body: httpxtest.Body(string(whlBytes))}},
+			}
+			mux := rebuild.RegistryMux{PyPI: pypireg.HTTPRegistry{Client: &httpxtest.MockClient{Calls: calls, URLValidator: httpxtest.NewURLValidator(t)}}}
+			rcfg := &rebuild.RepoConfig{Repo: gitx.Repo{Repository: repo.Repository}, URI: "https://github.com/sqlalchemy/sqlalchemy"}
+			target := rebuild.Target{
+				Ecosystem: rebuild.PyPI,
+				Package:   "SQLAlchemy",
+				Version:   "2.0.52",
+				Artifact:  "sqlalchemy-2.0.52-cp312-cp312-musllinux_1_2_x86_64.whl",
+			}
+			got, err := Rebuilder{}.InferStrategy(context.Background(), target, mux, rcfg, nil)
+			if err != nil {
+				t.Fatalf("InferStrategy() error = %v", err)
+			}
+			want := &PlatformWheelBuild{
+				Location: rebuild.Location{
+					Repo: "https://github.com/sqlalchemy/sqlalchemy",
+					Ref:  ref,
+				},
+				PythonTag:        "cp312",
+				ABITag:           "cp312",
+				PlatformTag:      "musllinux_1_2_x86_64",
+				Requirements:     tc.wantReqs,
+				RegistryTime:     uploadTime,
+				BaseImage:        inferBaseImage(platform.CibuildwheelPins, "musllinux_1_2_x86_64", uploadTime),
+				SanitizeSetupCfg: tc.wantSanitize,
+			}
+			if diff := cmp.Diff(want, got); diff != "" {
+				t.Errorf("InferStrategy() diff (-want +got):\n%s", diff)
+			}
+		})
+	}
+}

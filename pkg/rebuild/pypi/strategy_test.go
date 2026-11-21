@@ -173,6 +173,26 @@ export PIP_INDEX_URL=http://pypi:2006-01-02T03:04:05Z@orange/simple`,
 				OutputPath: "the_dir/dist/the_artifact",
 			},
 		},
+		{
+			"WithSanitizeSetupCfg",
+			&PureWheelBuild{
+				Location:         defaultLocation,
+				SanitizeSetupCfg: true,
+			},
+			rebuild.Instructions{
+				Location: defaultLocation,
+				Source:   "git checkout --force 'the_ref'",
+				Deps: `/usr/bin/python3 -m venv /deps
+/deps/bin/pip install build`,
+				Build: `printf '[egg_info]\ntag_build =\ntag_date = 0\n' >/tmp/dist-extra.cfg
+export DIST_EXTRA_CONFIG=/tmp/dist-extra.cfg
+/deps/bin/python3 -m build --wheel -n the_dir`,
+				Requires: rebuild.RequiredEnv{
+					SystemDeps: []string{"git", "python3", "uv"},
+				},
+				OutputPath: "the_dir/dist/the_artifact",
+			},
+		},
 	}
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
@@ -293,6 +313,26 @@ export PIP_INDEX_URL=http://pypi:2006-01-02T03:04:05Z@orange/simple`,
 					SystemDeps: []string{"git", "python3", "uv"},
 				},
 				OutputPath: "dist/the_artifact",
+			},
+		},
+		{
+			"WithSanitizeSetupCfg",
+			&SdistBuild{
+				Location:         defaultLocation,
+				SanitizeSetupCfg: true,
+			},
+			rebuild.Instructions{
+				Location: defaultLocation,
+				Source:   "git checkout --force 'the_ref'",
+				Deps: `/usr/bin/python3 -m venv /deps
+/deps/bin/pip install build`,
+				Build: `printf '[egg_info]\ntag_build =\ntag_date = 0\n' >/tmp/dist-extra.cfg
+export DIST_EXTRA_CONFIG=/tmp/dist-extra.cfg
+/deps/bin/python3 -m build --sdist -n the_dir`,
+				Requires: rebuild.RequiredEnv{
+					SystemDeps: []string{"git", "python3", "uv"},
+				},
+				OutputPath: "the_dir/dist/the_artifact",
 			},
 		},
 	}
@@ -903,6 +943,40 @@ PATH=/deps/bin/:$PATH /deps/bin/python3 -m build --wheel -n the_dir
 				Requires: rebuild.RequiredEnv{
 					BaseImage:  "quay.io/pypa/musllinux_1_2_x86_64",
 					SystemDeps: []string{"git", "wget"},
+				},
+				OutputPath: "the_dir/dist/the_artifact",
+			},
+		},
+		{
+			"WithSanitizeSetupCfg",
+			&PlatformWheelBuild{
+				Location:         defaultLocation,
+				PythonTag:        "cp310",
+				ABITag:           "cp310",
+				PlatformTag:      "manylinux_2_17_x86_64",
+				SanitizeSetupCfg: true,
+			},
+			rebuild.Instructions{
+				Location: defaultLocation,
+				Source:   "git checkout --force 'the_ref'",
+				Deps: `for py in /opt/python/cp310-cp310/bin/python /opt/python/cp310-*/bin/python; do [ -x "$py" ] && break; done
+"$py" -m venv /deps
+/deps/bin/pip install build wheel`,
+				Build: `printf '[egg_info]\ntag_build =\ntag_date = 0\n' >/tmp/dist-extra.cfg
+export DIST_EXTRA_CONFIG=/tmp/dist-extra.cfg
+/deps/bin/python3 -m build --wheel -n the_dir
+mkdir -p the_dir/dist/repaired
+AUDITWHEEL="/deps/bin/auditwheel"
+if [ ! -x "$AUDITWHEEL" ]; then
+  AUDITWHEEL="auditwheel"
+fi
+$AUDITWHEEL repair the_dir/dist/*.whl --plat manylinux_2_17_x86_64 --only-plat -w the_dir/dist/repaired/
+rm -f the_dir/dist/*.whl
+mv the_dir/dist/repaired/*.whl the_dir/dist/the_artifact
+rm -rf the_dir/dist/repaired`,
+				Requires: rebuild.RequiredEnv{
+					BaseImage:  "quay.io/pypa/manylinux2014_x86_64",
+					SystemDeps: []string{"git"},
 				},
 				OutputPath: "the_dir/dist/the_artifact",
 			},

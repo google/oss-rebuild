@@ -23,6 +23,10 @@ type PureWheelBuild struct {
 	PythonTag     string    `json:"python_tag,omitempty" yaml:"python_tag,omitempty"`
 	Requirements  []string  `json:"requirements" yaml:"requirements"`
 	RegistryTime  time.Time `json:"registry_time" yaml:"registry_time,omitempty"`
+	// SanitizeSetupCfg clears [egg_info] tag_build and tag_date via
+	// DIST_EXTRA_CONFIG so a committed dev snapshot suffix does not leak into
+	// the built version. Set when setup.cfg carries a tag the release lacks.
+	SanitizeSetupCfg bool `json:"sanitize_setup_cfg,omitempty" yaml:"sanitize_setup_cfg,omitempty"`
 }
 
 var _ rebuild.Strategy = &PureWheelBuild{}
@@ -31,6 +35,10 @@ func (b *PureWheelBuild) ToWorkflow() *rebuild.WorkflowStrategy {
 	var registryTime string
 	if !b.RegistryTime.IsZero() {
 		registryTime = b.RegistryTime.Format(time.RFC3339)
+	}
+	var sanitizeSetupCfg string
+	if b.SanitizeSetupCfg {
+		sanitizeSetupCfg = "1"
 	}
 	return &rebuild.WorkflowStrategy{
 		Location: b.Location,
@@ -49,10 +57,11 @@ func (b *PureWheelBuild) ToWorkflow() *rebuild.WorkflowStrategy {
 		Build: []flow.Step{{
 			Uses: "pypi/build/wheel",
 			With: map[string]string{
-				"dir":        b.Location.Dir,
-				"locator":    "/deps/bin/",
-				"venvOnPath": needsVenvOnPath(b.Requirements),
-				"pythonTag":  b.PythonTag,
+				"dir":              b.Location.Dir,
+				"locator":          "/deps/bin/",
+				"venvOnPath":       needsVenvOnPath(b.Requirements),
+				"pythonTag":        b.PythonTag,
+				"sanitizeSetupCfg": sanitizeSetupCfg,
 			},
 		}},
 		OutputDir: func() string {
@@ -84,6 +93,10 @@ type SdistBuild struct {
 	PythonVersion string    `json:"python_version" yaml:"python_version"`
 	Requirements  []string  `json:"requirements" yaml:"requirements"`
 	RegistryTime  time.Time `json:"registry_time" yaml:"registry_time,omitempty"`
+	// SanitizeSetupCfg clears [egg_info] tag_build and tag_date via
+	// DIST_EXTRA_CONFIG so a committed dev snapshot suffix does not leak into
+	// the built version. Set when setup.cfg carries a tag the release lacks.
+	SanitizeSetupCfg bool `json:"sanitize_setup_cfg,omitempty" yaml:"sanitize_setup_cfg,omitempty"`
 }
 
 var _ rebuild.Strategy = &SdistBuild{}
@@ -92,6 +105,10 @@ func (b *SdistBuild) ToWorkflow() *rebuild.WorkflowStrategy {
 	var registryTime string
 	if !b.RegistryTime.IsZero() {
 		registryTime = b.RegistryTime.Format(time.RFC3339)
+	}
+	var sanitizeSetupCfg string
+	if b.SanitizeSetupCfg {
+		sanitizeSetupCfg = "1"
 	}
 	return &rebuild.WorkflowStrategy{
 		Location: b.Location,
@@ -110,9 +127,10 @@ func (b *SdistBuild) ToWorkflow() *rebuild.WorkflowStrategy {
 		Build: []flow.Step{{
 			Uses: "pypi/build/sdist",
 			With: map[string]string{
-				"dir":        b.Location.Dir,
-				"locator":    "/deps/bin/",
-				"venvOnPath": needsVenvOnPath(b.Requirements),
+				"dir":              b.Location.Dir,
+				"locator":          "/deps/bin/",
+				"venvOnPath":       needsVenvOnPath(b.Requirements),
+				"sanitizeSetupCfg": sanitizeSetupCfg,
 			},
 		}},
 		OutputDir: func() string {
@@ -153,6 +171,10 @@ type PlatformWheelBuild struct {
 	// CargoTarget builds with an explicit --target, which Cargo hashes into symbol
 	// names, and has maturin tag the wheel in place of auditwheel. It needs RustVersion.
 	CargoTarget bool `json:"cargo_target,omitempty" yaml:"cargo_target,omitempty"`
+	// SanitizeSetupCfg clears [egg_info] tag_build and tag_date via
+	// DIST_EXTRA_CONFIG so a committed dev snapshot suffix does not leak into
+	// the built version. Set when setup.cfg carries a tag the release lacks.
+	SanitizeSetupCfg bool `json:"sanitize_setup_cfg,omitempty" yaml:"sanitize_setup_cfg,omitempty"`
 }
 
 var _ rebuild.Strategy = &PlatformWheelBuild{}
@@ -257,6 +279,10 @@ func (b *PlatformWheelBuild) ToWorkflow() (*rebuild.WorkflowStrategy, error) {
 	if !strings.Contains(b.PlatformTag, ".") && strings.HasPrefix(b.PlatformTag, "manylinux_") {
 		onlyPlat = "true"
 	}
+	var sanitizeSetupCfg string
+	if b.SanitizeSetupCfg {
+		sanitizeSetupCfg = "1"
+	}
 	return &rebuild.WorkflowStrategy{
 		Location: b.Location,
 		Requires: rebuild.RequiredEnv{
@@ -293,6 +319,7 @@ func (b *PlatformWheelBuild) ToWorkflow() (*rebuild.WorkflowStrategy, error) {
 				"cargoHome":          cargoHome,
 				"rustupHome":         rustupHome,
 				"maturinArgs":        maturinArgs,
+				"sanitizeSetupCfg":   sanitizeSetupCfg,
 			},
 		}},
 		OutputDir: distDir,
@@ -427,11 +454,18 @@ var toolkit = []*flow.Tool{
 		},
 	},
 	{
+		// NOTE: DIST_EXTRA_CONFIG is read after setup.cfg so it overrides committed
+		// [egg_info] tags. It requires setuptools >= 65.4.0 with the vendored
+		// distutils (the default since 60.0). Older pins ignore it silently.
 		Name: "pypi/build/wheel",
 		Steps: []flow.Step{{
 			Runs: textwrap.Dedent(`
 				{{- if .With.pythonTag -}}
 				printf '[bdist_wheel]\npython-tag = {{.With.pythonTag}}\n' >~/.pydistutils.cfg
+				{{end -}}
+				{{- if .With.sanitizeSetupCfg -}}
+				printf '[egg_info]\ntag_build =\ntag_date = 0\n' >/tmp/dist-extra.cfg
+				export DIST_EXTRA_CONFIG=/tmp/dist-extra.cfg
 				{{end -}}
 				{{if .With.venvOnPath}}PATH={{.With.locator}}:$PATH {{end}}{{.With.locator}}python3 -m build --wheel -n{{if and (ne .With.dir ".") (ne .With.dir "")}} {{.With.dir}}{{end}}`)[1:],
 		}},
@@ -441,6 +475,10 @@ var toolkit = []*flow.Tool{
 		Steps: []flow.Step{
 			{
 				Runs: textwrap.Dedent(`
+				{{- if .With.sanitizeSetupCfg -}}
+				printf '[egg_info]\ntag_build =\ntag_date = 0\n' >/tmp/dist-extra.cfg
+				export DIST_EXTRA_CONFIG=/tmp/dist-extra.cfg
+				{{end -}}
 				{{if .With.venvOnPath}}PATH={{.With.locator}}:$PATH {{end}}{{.With.locator}}python3 -m build --sdist -n{{if and (ne .With.dir ".") (ne .With.dir "")}} {{.With.dir}}{{end}}`)[1:],
 			}},
 	},
@@ -452,6 +490,10 @@ var toolkit = []*flow.Tool{
 				export CARGO_HOME={{.With.cargoHome}} RUSTUP_HOME={{.With.rustupHome}} RUSTUP_TOOLCHAIN={{.With.rustVersion}} PATH={{.With.rustupHome}}/toolchains/{{.With.rustVersion}}-{{.With.rustHost}}/bin:{{.With.cargoHome}}/bin:$PATH
 				{{if .With.maturinArgs}}export MATURIN_PEP517_ARGS='{{.With.maturinArgs}}'
 				{{end}}{{end -}}
+				{{- if .With.sanitizeSetupCfg -}}
+				printf '[egg_info]\ntag_build =\ntag_date = 0\n' >/tmp/dist-extra.cfg
+				export DIST_EXTRA_CONFIG=/tmp/dist-extra.cfg
+				{{end -}}
 				{{if .With.buildRoot -}}
 				{{- /* NOTE: No -p on the root so the copy can't merge into an existing directory. */ -}}
 				mkdir -p $(dirname {{.With.buildRoot}})
