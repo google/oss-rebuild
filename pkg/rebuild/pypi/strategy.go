@@ -11,6 +11,7 @@ import (
 
 	"github.com/google/oss-rebuild/internal/textwrap"
 	"github.com/google/oss-rebuild/pkg/rebuild/flow"
+	"github.com/google/oss-rebuild/pkg/rebuild/pypi/parsing"
 	"github.com/google/oss-rebuild/pkg/rebuild/pypi/platform"
 	"github.com/google/oss-rebuild/pkg/rebuild/rebuild"
 	"github.com/pkg/errors"
@@ -72,7 +73,7 @@ func (b *PureWheelBuild) GenerateFor(t rebuild.Target, be rebuild.BuildEnv) (reb
 // needsVenvOnPath flags backends that find their binary on PATH rather than
 // beside the interpreter, such as uv_build, maturin, meson, and ninja/cmake.
 func needsVenvOnPath(reqs []string) string {
-	if hasRequirement(reqs, "uv-build", "meson-python", "scikit-build-core", "maturin") {
+	if parsing.HasRequirement(reqs, "uv-build", "meson-python", "scikit-build-core", "maturin") {
 		return "1"
 	}
 	return ""

@@ -337,18 +337,6 @@ func hasZipDir(dir string, zr *zip.Reader) bool {
 	return false
 }
 
-// requirementName extracts the normalized distribution name from a dependency
-// specifier, dropping extras, version specifiers, direct references and
-// markers, so "SetupTools[core]<=67.7.2" yields "setuptools".
-// https://packaging.python.org/en/latest/specifications/dependency-specifiers/#grammar
-func requirementName(req string) string {
-	fields := strings.FieldsFunc(req, func(r rune) bool { return strings.ContainsRune("=<>~!;[(@ \t", r) })
-	if len(fields) == 0 {
-		return ""
-	}
-	return pypireg.NormalizedName(fields[0])
-}
-
 // urlMarkerSepPat matches the separator before a direct reference's marker.
 var urlMarkerSepPat = re.MustCompile(`[ \t]+;`)
 
@@ -373,15 +361,9 @@ func requirementMarker(req string) string {
 	return strings.TrimSpace(req[semi+1:])
 }
 
-// hasRequirement reports whether reqs name any of the packages under any
-// specifier. The names must be normalized.
-func hasRequirement(reqs []string, names ...string) bool {
-	return slices.ContainsFunc(reqs, func(r string) bool { return slices.Contains(names, requirementName(r)) })
-}
-
 // implicitRequirements returns implicit build tools required by any of the detected requirements (e.g. meson-python needs "ninja" but packages don't always declare it).
 func implicitRequirements(reqs []string) []string {
-	if hasRequirement(reqs, "meson-python", "scikit-build-core") {
+	if pypiresolver.HasRequirement(reqs, "meson-python", "scikit-build-core") {
 		return []string{"ninja"}
 	}
 	return nil
@@ -396,11 +378,11 @@ func implicitRequirements(reqs []string) []string {
 func mergeRequirements(reqs, buildReqs []string) []string {
 	pinned := make(map[string]bool)
 	for _, req := range reqs {
-		pinned[requirementName(req)] = true
+		pinned[pypiresolver.RequirementName(req)] = true
 	}
 	seen := make(map[string]bool)
 	for _, newReq := range buildReqs {
-		pkg := requirementName(newReq)
+		pkg := pypiresolver.RequirementName(newReq)
 		if pkg == "" || pinned[pkg] {
 			continue
 		}
@@ -701,7 +683,7 @@ func inferCythonRequirement(tree *git2.Tree, dir, pkg string, zr *zip.Reader, re
 	// NOTE: inferRequirements derives setuptools from the wheel's Generator header
 	// even when pyproject.toml selects flit_core, which ignores setup.py. Cython's
 	// own setup.py imports Cython from the source checkout.
-	if !hasRequirement(reqs, "setuptools") || hasRequirement(reqs, "flit-core", "cython") || pypireg.NormalizedName(pkg) == "cython" {
+	if !pypiresolver.HasRequirement(reqs, "setuptools") || pypiresolver.HasRequirement(reqs, "flit-core", "cython") || pypireg.NormalizedName(pkg) == "cython" {
 		return "", nil
 	}
 	f, err := tree.File(path.Join(dir, "setup.py"))
@@ -741,7 +723,7 @@ var rustcStampPat = re.MustCompile(`rustc version (\d+\.\d+\.\d+)(?:-nightly \([
 // extension modules record, else the latest Rust release at upload time, or ""
 // without Rust.
 func inferRustVersion(zr *zip.Reader, reqs []string, uploaded time.Time) (string, error) {
-	if !hasRequirement(reqs, "maturin", "setuptools-rust") {
+	if !pypiresolver.HasRequirement(reqs, "maturin", "setuptools-rust") {
 		return "", nil
 	}
 	if m := moduleSectionMatch(zr, ".comment", rustcStampPat); m != nil {
@@ -813,7 +795,7 @@ func inferPythonVersion(reqs []string, registryTime time.Time) string {
 		return "3.11"
 	}
 	for _, req := range reqs {
-		if requirementName(req) != "setuptools" {
+		if pypiresolver.RequirementName(req) != "setuptools" {
 			continue
 		}
 		for _, m := range versionCeilingPat.FindAllStringSubmatch(req, -1) {
@@ -830,7 +812,7 @@ var py2WheelPat = re.MustCompile(`-(py2(?:\.py3)?)-[^-]+-[^-]+\.whl$`)
 
 // pythonTag returns the tag setuptools has to be told to give the wheel, if any.
 func pythonTag(filename string, reqs []string) string {
-	if m := py2WheelPat.FindStringSubmatch(filename); m != nil && hasRequirement(reqs, "setuptools", "wheel") {
+	if m := py2WheelPat.FindStringSubmatch(filename); m != nil && pypiresolver.HasRequirement(reqs, "setuptools", "wheel") {
 		return m[1]
 	}
 	return ""
