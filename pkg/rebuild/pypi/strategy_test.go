@@ -517,6 +517,179 @@ rm -rf the_dir/dist/repaired`,
 			},
 		},
 		{
+			"WithTimewarpBeforeCutoff",
+			&PlatformWheelBuild{
+				Location:     defaultLocation,
+				PlatformTag:  "manylinux_2_17_x86_64",
+				RegistryTime: time.Date(2021, time.December, 31, 23, 59, 59, 0, time.UTC),
+			},
+			rebuild.Instructions{
+				Location: defaultLocation,
+				Source:   "git checkout --force 'the_ref'",
+				Deps: `for py in /opt/python/cp3*/bin/python; do [ -x "$py" ] && break; done
+"$py" -m venv /deps
+/deps/bin/pip install build wheel
+export PIP_INDEX_URL=http://pypi:2021-12-31T23:59:59Z@orange/simple`,
+				Build: `/deps/bin/python3 -m build --wheel -n the_dir
+mkdir -p the_dir/dist/repaired
+AUDITWHEEL="/deps/bin/auditwheel"
+if [ ! -x "$AUDITWHEEL" ]; then
+  AUDITWHEEL="auditwheel"
+fi
+$AUDITWHEEL repair the_dir/dist/*.whl --plat manylinux_2_17_x86_64 --only-plat -w the_dir/dist/repaired/
+rm -f the_dir/dist/*.whl
+mv the_dir/dist/repaired/*.whl the_dir/dist/the_artifact
+rm -rf the_dir/dist/repaired`,
+				Requires: rebuild.RequiredEnv{
+					BaseImage:  "quay.io/pypa/manylinux2014_x86_64",
+					SystemDeps: []string{"git"},
+				},
+				OutputPath: "the_dir/dist/the_artifact",
+			},
+		},
+		{
+			"WithTimewarpBeforeCutoffKeepsDeclaredBuildLive",
+			&PlatformWheelBuild{
+				Location:     defaultLocation,
+				PlatformTag:  "manylinux_2_17_x86_64",
+				Requirements: []string{"build", "setuptools"},
+				RegistryTime: time.Date(2021, time.December, 31, 23, 59, 59, 0, time.UTC),
+			},
+			rebuild.Instructions{
+				Location: defaultLocation,
+				Source:   "git checkout --force 'the_ref'",
+				Deps: `for py in /opt/python/cp3*/bin/python; do [ -x "$py" ] && break; done
+"$py" -m venv /deps
+/deps/bin/pip install build wheel
+export PIP_INDEX_URL=http://pypi:2021-12-31T23:59:59Z@orange/simple
+/deps/bin/pip install 'build'
+/deps/bin/pip install 'setuptools'`,
+				Build: `/deps/bin/python3 -m build --wheel -n the_dir
+mkdir -p the_dir/dist/repaired
+AUDITWHEEL="/deps/bin/auditwheel"
+if [ ! -x "$AUDITWHEEL" ]; then
+  AUDITWHEEL="auditwheel"
+fi
+$AUDITWHEEL repair the_dir/dist/*.whl --plat manylinux_2_17_x86_64 --only-plat -w the_dir/dist/repaired/
+rm -f the_dir/dist/*.whl
+mv the_dir/dist/repaired/*.whl the_dir/dist/the_artifact
+rm -rf the_dir/dist/repaired`,
+				Requires: rebuild.RequiredEnv{
+					BaseImage:  "quay.io/pypa/manylinux2014_x86_64",
+					SystemDeps: []string{"git"},
+				},
+				OutputPath: "the_dir/dist/the_artifact",
+			},
+		},
+		{
+			"WithFrontendUnderTimewarp",
+			&PlatformWheelBuild{
+				Location:     defaultLocation,
+				PythonTag:    "cp312",
+				ABITag:       "cp312",
+				PlatformTag:  "manylinux_2_17_x86_64",
+				Requirements: []string{"wheel==0.41.2", "setuptools<=67.7.2"},
+				RegistryTime: time.Date(2023, time.September, 7, 16, 0, 47, 0, time.UTC),
+			},
+			rebuild.Instructions{
+				Location: defaultLocation,
+				Source:   "git checkout --force 'the_ref'",
+				Deps: `for py in /opt/python/cp312-cp312/bin/python /opt/python/cp312-*/bin/python; do [ -x "$py" ] && break; done
+"$py" -m venv /deps
+export PIP_INDEX_URL=http://pypi:2023-09-07T16:00:47Z@orange/simple
+/deps/bin/pip install build wheel
+/deps/bin/pip install 'wheel==0.41.2'
+/deps/bin/pip install 'setuptools<=67.7.2'`,
+				Build: `/deps/bin/python3 -m build --wheel -n the_dir
+mkdir -p the_dir/dist/repaired
+AUDITWHEEL="/deps/bin/auditwheel"
+if [ ! -x "$AUDITWHEEL" ]; then
+  AUDITWHEEL="auditwheel"
+fi
+$AUDITWHEEL repair the_dir/dist/*.whl --plat manylinux_2_17_x86_64 --only-plat -w the_dir/dist/repaired/
+rm -f the_dir/dist/*.whl
+mv the_dir/dist/repaired/*.whl the_dir/dist/the_artifact
+rm -rf the_dir/dist/repaired`,
+				Requires: rebuild.RequiredEnv{
+					BaseImage:  "quay.io/pypa/manylinux2014_x86_64",
+					SystemDeps: []string{"git"},
+				},
+				OutputPath: "the_dir/dist/the_artifact",
+			},
+		},
+		{
+			"WithFrontendUnderTimewarpDeduplicatesBuild",
+			&PlatformWheelBuild{
+				Location:     defaultLocation,
+				PythonTag:    "cp312",
+				ABITag:       "cp312",
+				PlatformTag:  "manylinux_2_17_x86_64",
+				Requirements: []string{"build==1.0.3", "setuptools==68.2.2"},
+				RegistryTime: time.Date(2022, time.January, 1, 0, 0, 0, 0, time.UTC),
+			},
+			rebuild.Instructions{
+				Location: defaultLocation,
+				Source:   "git checkout --force 'the_ref'",
+				Deps: `for py in /opt/python/cp312-cp312/bin/python /opt/python/cp312-*/bin/python; do [ -x "$py" ] && break; done
+"$py" -m venv /deps
+export PIP_INDEX_URL=http://pypi:2022-01-01T00:00:00Z@orange/simple
+/deps/bin/pip install wheel
+/deps/bin/pip install 'build==1.0.3'
+/deps/bin/pip install 'setuptools==68.2.2'`,
+				Build: `/deps/bin/python3 -m build --wheel -n the_dir
+mkdir -p the_dir/dist/repaired
+AUDITWHEEL="/deps/bin/auditwheel"
+if [ ! -x "$AUDITWHEEL" ]; then
+  AUDITWHEEL="auditwheel"
+fi
+$AUDITWHEEL repair the_dir/dist/*.whl --plat manylinux_2_17_x86_64 --only-plat -w the_dir/dist/repaired/
+rm -f the_dir/dist/*.whl
+mv the_dir/dist/repaired/*.whl the_dir/dist/the_artifact
+rm -rf the_dir/dist/repaired`,
+				Requires: rebuild.RequiredEnv{
+					BaseImage:  "quay.io/pypa/manylinux2014_x86_64",
+					SystemDeps: []string{"git"},
+				},
+				OutputPath: "the_dir/dist/the_artifact",
+			},
+		},
+		{
+			"WithFrontendUnderTimewarpKeepsMarkerGatedBuild",
+			&PlatformWheelBuild{
+				Location:     defaultLocation,
+				PythonTag:    "cp312",
+				ABITag:       "cp312",
+				PlatformTag:  "manylinux_2_17_x86_64",
+				Requirements: []string{"build; python_version < '3.8'", "setuptools==68.2.2"},
+				RegistryTime: time.Date(2022, time.January, 1, 0, 0, 0, 0, time.UTC),
+			},
+			rebuild.Instructions{
+				Location: defaultLocation,
+				Source:   "git checkout --force 'the_ref'",
+				Deps: `for py in /opt/python/cp312-cp312/bin/python /opt/python/cp312-*/bin/python; do [ -x "$py" ] && break; done
+"$py" -m venv /deps
+export PIP_INDEX_URL=http://pypi:2022-01-01T00:00:00Z@orange/simple
+/deps/bin/pip install build wheel
+/deps/bin/pip install 'build; python_version < '\''3.8'\'''
+/deps/bin/pip install 'setuptools==68.2.2'`,
+				Build: `/deps/bin/python3 -m build --wheel -n the_dir
+mkdir -p the_dir/dist/repaired
+AUDITWHEEL="/deps/bin/auditwheel"
+if [ ! -x "$AUDITWHEEL" ]; then
+  AUDITWHEEL="auditwheel"
+fi
+$AUDITWHEEL repair the_dir/dist/*.whl --plat manylinux_2_17_x86_64 --only-plat -w the_dir/dist/repaired/
+rm -f the_dir/dist/*.whl
+mv the_dir/dist/repaired/*.whl the_dir/dist/the_artifact
+rm -rf the_dir/dist/repaired`,
+				Requires: rebuild.RequiredEnv{
+					BaseImage:  "quay.io/pypa/manylinux2014_x86_64",
+					SystemDeps: []string{"git"},
+				},
+				OutputPath: "the_dir/dist/the_artifact",
+			},
+		},
+		{
 			"WithoutDir",
 			&PlatformWheelBuild{
 				Location:    rebuild.Location{Ref: "the_ref", Repo: "the_repo"},
