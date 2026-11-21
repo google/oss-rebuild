@@ -4,6 +4,7 @@
 package pypi
 
 import (
+	"cmp"
 	"maps"
 	"path"
 	re "regexp"
@@ -36,6 +37,11 @@ var (
 	// cibuildwheelCmdPat matches a command that names cibuildwheel, such as
 	// "pipx run cibuildwheel" or "python -m cibuildwheel".
 	cibuildwheelCmdPat = re.MustCompile(`\bcibuildwheel\b`)
+	// cibuildwheelReqLinePat matches a requirements file line naming cibuildwheel.
+	cibuildwheelReqLinePat = re.MustCompile(`^\s*cibuildwheel\b`)
+	// pipRequirementFilePat matches a -r or --requirement option in a command,
+	// capturing the requirements file path.
+	pipRequirementFilePat = re.MustCompile(`(?:^|\s)(?:-r|--requirement)(?:\s+|=)["']?([^\s"';&|]+)["']?`)
 	// packageSpecPat matches a package name with an optional version pin, such
 	// as "graphviz-dev=14.1.5-r0" or "cairo-dev>=1.18".
 	packageSpecPat = re.MustCompile(`^(?P<pkg>[\w.+:()-]+)(?:(?P<op>[<>~=]=?|=~)[\w.+:-]+)?$`)
@@ -45,10 +51,21 @@ var (
 // cibuildwheel.
 // https://docs.github.com/en/actions/reference/workflows-and-actions/workflow-syntax
 type ghaWorkflow struct {
+	Defaults struct {
+		Run struct {
+			WorkingDirectory string `yaml:"working-directory"`
+		} `yaml:"run"`
+	} `yaml:"defaults"`
 	Jobs map[string]struct {
+		Defaults struct {
+			Run struct {
+				WorkingDirectory string `yaml:"working-directory"`
+			} `yaml:"run"`
+		} `yaml:"defaults"`
 		Steps []struct {
-			Uses string `yaml:"uses"`
-			Run  string `yaml:"run"`
+			Uses             string `yaml:"uses"`
+			Run              string `yaml:"run"`
+			WorkingDirectory string `yaml:"working-directory"`
 		} `yaml:"steps"`
 	} `yaml:"jobs"`
 }
@@ -76,20 +93,28 @@ func extractCibuildwheelSpecs(tree *git2.Tree) (specs []string, usesCibuildwheel
 		if err != nil {
 			return nil, false, errors.Wrapf(err, "reading workflow %s", entry.Name)
 		}
-		s, u := cibuildwheelSpecs([]byte(contents))
+		s, u, err := cibuildwheelSpecs([]byte(contents), tree)
+		if err != nil {
+			return nil, false, errors.Wrapf(err, "extracting specs from workflow %s", entry.Name)
+		}
 		specs = append(specs, s...)
 		usesCibuildwheel = usesCibuildwheel || u
 	}
 	return specs, usesCibuildwheel, nil
 }
 
-func cibuildwheelSpecs(workflow []byte) (specs []string, usesCibuildwheel bool) {
+// cibuildwheelSpecs extracts cibuildwheel version specs and usage from a GitHub
+// Actions workflow YAML. If tree is nil, requirements files named by -r are not
+// followed.
+func cibuildwheelSpecs(workflow []byte, tree *git2.Tree) (specs []string, usesCibuildwheel bool, err error) {
 	var wf ghaWorkflow
 	if err := yaml.Unmarshal(workflow, &wf); err != nil {
-		return nil, false
+		return nil, false, nil
 	}
 	for _, name := range slices.Sorted(maps.Keys(wf.Jobs)) {
-		for _, step := range wf.Jobs[name].Steps {
+		job := wf.Jobs[name]
+		jobWorkDir := cmp.Or(job.Defaults.Run.WorkingDirectory, wf.Defaults.Run.WorkingDirectory)
+		for _, step := range job.Steps {
 			uses := strings.TrimSpace(step.Uses)
 			if m := cibuildwheelActionPat.FindStringSubmatch(uses); m != nil {
 				specs = append(specs, m[1])
@@ -100,9 +125,73 @@ func cibuildwheelSpecs(workflow []byte) (specs []string, usesCibuildwheel bool) 
 			if strings.HasPrefix(uses, "pypa/cibuildwheel@") || cibuildwheelCmdPat.MatchString(step.Run) {
 				usesCibuildwheel = true
 			}
+			if tree != nil {
+				workDir := cmp.Or(step.WorkingDirectory, jobWorkDir)
+				for _, m := range pipRequirementFilePat.FindAllStringSubmatch(step.Run, -1) {
+					reqSpecs, reqUses, err := cibuildwheelSpecsFromRequirementFile(tree, workDir, m[1])
+					if err != nil {
+						return nil, false, err
+					}
+					specs = append(specs, reqSpecs...)
+					usesCibuildwheel = usesCibuildwheel || reqUses
+				}
+			}
 		}
 	}
-	return specs, usesCibuildwheel
+	return specs, usesCibuildwheel, nil
+}
+
+// cibuildwheelSpecsFromRequirementFile extracts cibuildwheel version specs from
+// a pip requirements file referenced by a workflow run step.
+func cibuildwheelSpecsFromRequirementFile(tree *git2.Tree, workDir, reqPath string) (specs []string, usesCibuildwheel bool, err error) {
+	f, ok, err := findRequirementFile(tree, workDir, reqPath)
+	if err != nil || !ok {
+		return nil, false, err
+	}
+	contents, err := f.Contents()
+	if err != nil {
+		return nil, false, errors.Wrapf(err, "reading requirements file %s", f.Name)
+	}
+	for _, line := range strings.Split(contents, "\n") {
+		if i := strings.IndexByte(line, '#'); i != -1 {
+			line = line[:i]
+		}
+		for _, m := range cibuildwheelReqPat.FindAllStringSubmatch(line, -1) {
+			specs = append(specs, m[1])
+		}
+		if cibuildwheelReqLinePat.MatchString(line) {
+			usesCibuildwheel = true
+		}
+	}
+	return specs, usesCibuildwheel, nil
+}
+
+// findRequirementFile locates reqPath in tree.
+// Candidates are checked in order: relative to workDir first, then relative to
+// the repository root for working directories that use GitHub Actions
+// expressions or point outside the tree.
+func findRequirementFile(tree *git2.Tree, workDir, reqPath string) (*git2.File, bool, error) {
+	if path.IsAbs(reqPath) {
+		return nil, false, nil
+	}
+	var candidates []string
+	if workDir := strings.TrimSpace(workDir); workDir != "" {
+		candidates = append(candidates, path.Join(workDir, reqPath))
+	}
+	candidates = append(candidates, path.Clean(reqPath))
+	for _, cand := range candidates {
+		if cand == "." || cand == ".." || path.IsAbs(cand) || strings.HasPrefix(cand, "../") {
+			continue
+		}
+		f, err := tree.File(cand)
+		if errors.Is(err, git2.ErrFileNotFound) {
+			continue
+		} else if err != nil {
+			return nil, false, errors.Wrapf(err, "finding requirements file %s", cand)
+		}
+		return f, true, nil
+	}
+	return nil, false, nil
 }
 
 // extractCibuildwheelDependencies extracts system dependencies from

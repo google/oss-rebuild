@@ -131,7 +131,10 @@ func TestCibuildwheelSpecs(t *testing.T) {
 	}
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
-			got, gotUses := cibuildwheelSpecs([]byte(textwrap.Dedent(tc.workflow)))
+			got, gotUses, err := cibuildwheelSpecs([]byte(textwrap.Dedent(tc.workflow)), nil)
+			if err != nil {
+				t.Fatalf("cibuildwheelSpecs() unexpected error: %v", err)
+			}
 			if diff := cmp.Diff(tc.want, got); diff != "" {
 				t.Errorf("cibuildwheelSpecs() specs diff (-want +got):\n%s", diff)
 			}
@@ -167,6 +170,145 @@ func TestExtractCibuildwheelSpecs(t *testing.T) {
 				".github/workflows/nested/wheels.yaml": wheels,
 			},
 			want:     []string{"2.3.1", "2.16.2"},
+			wantUses: true,
+		},
+		{
+			name: "FromRequirementsFileWithWorkingDirectory",
+			files: gitxtest.FileContent{
+				".github/workflows/wheel.yml": textwrap.Dedent(`
+					jobs:
+					  build_wheels:
+					    steps:
+					      - working-directory: python
+					        run: |
+					          python -m pip install --require-hashes --no-dependencies -r ../.github/workflows/requirements/base.txt
+					          python -m pip install --require-hashes --no-dependencies -r ../.github/workflows/requirements/cibuildwheel.txt`),
+				".github/workflows/requirements/base.txt": "build==1.4.2\n",
+				".github/workflows/requirements/cibuildwheel.txt": textwrap.Dedent(`
+					# cibuildwheel==1.0.0 in comment
+					cibuildwheel==3.4.0 \
+					    --hash=sha256:aae9fa8e3716e4b5cca76c92f8d4c704361618424d23814c0cea0e229d624862
+				`),
+			},
+			want:     []string{"3.4.0"},
+			wantUses: true,
+		},
+		{
+			name: "FromLongRequirementFlagAndJobDefaults",
+			files: gitxtest.FileContent{
+				".github/workflows/wheel.yml": textwrap.Dedent(`
+					jobs:
+					  build_wheels:
+					    defaults:
+					      run:
+					        working-directory: sub
+					    steps:
+					      - run: pip install --requirement ../requirements/ci.txt`),
+				"requirements/ci.txt": "cibuildwheel[uv]==3.1.0\n",
+			},
+			want:     []string{"3.1.0"},
+			wantUses: true,
+		},
+		{
+			name: "FromWorkflowDefaultsAndMissingRequirementFile",
+			files: gitxtest.FileContent{
+				".github/workflows/wheel.yml": textwrap.Dedent(`
+					defaults:
+					  run:
+					    working-directory: python
+					jobs:
+					  build_wheels:
+					    steps:
+					      - run: |
+					          pip install -r /tmp/generated.txt
+					          pip install -r missing.txt
+					          pip install -r requirements.txt`),
+				"python/requirements.txt": "cibuildwheel==3.4.0\n",
+			},
+			want:     []string{"3.4.0"},
+			wantUses: true,
+		},
+		{
+			name: "StepWorkingDirectoryOverridesJobAndWorkflowDefaults",
+			files: gitxtest.FileContent{
+				".github/workflows/wheel.yml": textwrap.Dedent(`
+					defaults:
+					  run:
+					    working-directory: wf
+					jobs:
+					  build_wheels:
+					    defaults:
+					      run:
+					        working-directory: job
+					    steps:
+					      - working-directory: step
+					        run: pip install -r req.txt`),
+				"wf/req.txt":   "cibuildwheel==1.0.0\n",
+				"job/req.txt":  "cibuildwheel==2.0.0\n",
+				"step/req.txt": "cibuildwheel==3.0.0\n",
+			},
+			want:     []string{"3.0.0"},
+			wantUses: true,
+		},
+		{
+			name: "JobWorkingDirectoryOverridesWorkflowDefault",
+			files: gitxtest.FileContent{
+				".github/workflows/wheel.yml": textwrap.Dedent(`
+					defaults:
+					  run:
+					    working-directory: wf
+					jobs:
+					  build_wheels:
+					    defaults:
+					      run:
+					        working-directory: job
+					    steps:
+					      - run: pip install -r req.txt`),
+				"wf/req.txt":  "cibuildwheel==1.0.0\n",
+				"job/req.txt": "cibuildwheel==2.0.0\n",
+			},
+			want:     []string{"2.0.0"},
+			wantUses: true,
+		},
+		{
+			name: "RequirementPathThroughRegularFileIgnored",
+			files: gitxtest.FileContent{
+				"README.md": "# pkg\n",
+				".github/workflows/wheel.yml": textwrap.Dedent(`
+					jobs:
+					  build_wheels:
+					    steps:
+					      - run: pip install -r README.md/ci.txt`),
+			},
+			want:     nil,
+			wantUses: false,
+		},
+		{
+			name: "ExpressionWorkingDirectoryFallsBackToRoot",
+			files: gitxtest.FileContent{
+				".github/workflows/wheel.yml": textwrap.Dedent(`
+					jobs:
+					  build_wheels:
+					    steps:
+					      - working-directory: ${{ github.workspace }}
+					        run: pip install -r requirements/expr.txt`),
+				"requirements/expr.txt": "cibuildwheel==3.2.0\n",
+			},
+			want:     []string{"3.2.0"},
+			wantUses: true,
+		},
+		{
+			name: "AbsoluteWorkingDirectoryFallsBackToRootWithUnpinnedRequirement",
+			files: gitxtest.FileContent{
+				".github/workflows/wheel.yml": textwrap.Dedent(`
+					jobs:
+					  build_wheels:
+					    steps:
+					      - working-directory: /github/workspace
+					        run: pip install -r requirements/ci.txt`),
+				"requirements/ci.txt": "cibuildwheel>=3.0\n",
+			},
+			want:     nil,
 			wantUses: true,
 		},
 		{
